@@ -60,6 +60,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/gbf', require('./gbf')); // Painel Beija-Flor (módulo à parte, login próprio) — ver server/gbf
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);

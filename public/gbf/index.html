@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Painel Beija-Flor</title>
+  <link rel="stylesheet" href="/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/vendor/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/gbf/gbf.css">
+</head>
+<body>
+  <!-- Login -->
+  <section id="tela-login" class="login-wrap d-none">
+    <form id="form-login" class="login-card" autocomplete="on">
+      <div class="login-brand">
+        <div class="brand-mark"><i class="bi bi-feather"></i></div>
+        <div>
+          <h1 id="login-titulo">Painel Beija-Flor</h1>
+          <p>Demandas da Orcim e atividades do nosso time</p>
+        </div>
+      </div>
+      <label class="form-label" for="login-user">Usuário</label>
+      <input class="form-control mb-3" id="login-user" name="username" autocomplete="username" required>
+      <label class="form-label" for="login-pass">Senha</label>
+      <input class="form-control mb-3" id="login-pass" name="password" type="password" autocomplete="current-password" required>
+      <div class="alert alert-danger py-2 d-none" id="login-erro"></div>
+      <button class="btn btn-brand w-100" type="submit">Entrar</button>
+      <p class="login-foot">Acesso separado da Central de Serviços.</p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="shell d-none">
+    <aside class="side" id="side">
+      <div class="side-brand">
+        <div class="brand-mark sm"><i class="bi bi-feather"></i></div>
+        <div><strong id="side-titulo">Painel Beija-Flor</strong><small>Acompanhamento Orcim</small></div>
+      </div>
+      <nav class="side-nav" id="side-nav"></nav>
+      <div class="side-user">
+        <div class="avatar" id="side-avatar">?</div>
+        <div class="flex-grow-1 min-w-0">
+          <strong id="side-nome">—</strong>
+          <small id="side-papel">—</small>
+        </div>
+        <button class="icon-btn" id="btn-sair" title="Sair"><i class="bi bi-box-arrow-right"></i></button>
+      </div>
+    </aside>
+    <div class="side-backdrop" id="side-backdrop"></div>
+
+    <main class="main">
+      <header class="top">
+        <button class="icon-btn d-lg-none" id="btn-menu" aria-label="Menu"><i class="bi bi-list"></i></button>
+        <h2 class="top-title" id="top-titulo">Visão geral</h2>
+        <div class="top-actions">
+          <div class="position-relative">
+            <button class="icon-btn" id="btn-sino" aria-label="Notificações">
+              <i class="bi bi-bell"></i><span class="badge-dot d-none" id="sino-badge">0</span>
+            </button>
+            <div class="notif-panel d-none" id="notif-panel">
+              <div class="notif-head">
+                <strong>Notificações</strong>
+                <button class="btn btn-link btn-sm p-0" id="notif-ler-todas">Marcar todas como lidas</button>
+              </div>
+              <div class="notif-browser d-none" id="notif-browser">
+                <button class="btn btn-sm btn-outline-brand w-100" id="btn-ativar-avisos">
+                  <i class="bi bi-bell-fill"></i> Ativar avisos no navegador
+                </button>
+              </div>
+              <div class="notif-list" id="notif-list"></div>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div class="content" id="view"></div>
+    </main>
+  </div>
+
+  <div class="toast-area" id="toasts"></div>
+
+  <script src="/vendor/bootstrap.bundle.min.js"></script>
+  <script src="/gbf/gbf.js"></script>
+</body>
+</html>
