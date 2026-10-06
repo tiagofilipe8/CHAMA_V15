@@ -209,7 +209,11 @@
     if (!EU) return;
     const seq = ++renderSeq;
     const { partes, qs } = rotaAtual();
-    if (EU.must_change_password && partes[0] !== 'conta') { location.hash = '#/conta'; return; }
+    if (EU.must_change_password && partes[0] !== 'conta') {
+      toast('Antes de usar o painel, crie sua senha nova aqui em "Minha conta".', true);
+      location.hash = '#/conta';
+      return;
+    }
     const [a, b] = partes;
     try {
       carregando();
@@ -832,7 +836,7 @@
   function vConta() {
     titulo('Minha conta');
     view().innerHTML = `
-      ${EU.must_change_password ? '<div class="alert alert-warning" style="max-width:520px"><i class="bi bi-shield-lock"></i> Primeiro acesso: defina uma senha só sua para continuar.</div>' : ''}
+      ${EU.must_change_password ? '<div class="alert alert-warning" style="max-width:520px"><i class="bi bi-shield-lock"></i> <strong>Crie sua senha para liberar o painel.</strong> Digite a senha que você recebeu em "Senha atual" e escolha uma nova (mínimo 8 caracteres). Depois de salvar, todas as páginas do menu abrem.</div>' : ''}
       <form class="card-x" id="form-senha" style="max-width:520px">
         <h3><i class="bi bi-key"></i>Trocar senha</h3>
         <div class="small-muted mb-3">${esc(EU.name)} · usuário <span class="num">${esc(EU.username)}</span></div>
@@ -1030,18 +1034,178 @@
     concluida: ['tag-green', 'Concluída'], a_fazer: ['tag-blue', 'A fazer'], aguardando: ['tag-amber', 'Aguardando'],
   };
 
+  // Itens que podem ser arrastados: visita prevista do posto, atividade e solicitação ainda abertas
+  const arrastavel = (i) => !!i.reagendar && !['concluida', 'em_andamento'].includes(i.status);
+  const dadosArrasto = (i) => esc(JSON.stringify({ tipo: i.reagendar, id: i.posto_id || i.id, data: i.data, hora: i.hora || null }));
+
   function itemAgenda(i) {
-    const reag = i.reagendar && !['concluida', 'em_andamento'].includes(i.status)
-      ? btnReag({ tipo: i.reagendar, id: i.posto_id || i.id, data: i.data, hora: i.hora }) : '';
+    const reag = arrastavel(i) ? btnReag({ tipo: i.reagendar, id: i.posto_id || i.id, data: i.data, hora: i.hora }) : '';
     const iniciar = i.tipo === 'visita' && i.status !== 'em_andamento'
       ? btnIniciar({ id: i.posto_id, name: i.local }, null, false) : '';
-    return `<div class="ag-item ag-${i.tipo} st-${i.status}" data-href="${i.link}">
+    return `<div class="ag-item ag-${i.tipo} st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}"
+        ${arrastavel(i) ? `data-drag="${dadosArrasto(i)}" title="Arraste para outro dia"` : ''}>
       <div class="ag-hora">${i.hora || '<span class="muted">dia</span>'}</div>
       <div class="ag-body min-w-0">
         <div class="ag-tit"><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.titulo)}</div>
         <div class="small-muted">${tag(...(STATUS_AG[i.status] || ['tag-gray', i.status]))} ${esc(TIPO_AG[i.tipo][1])}${i.local && i.tipo !== 'visita' && i.tipo !== 'visita_realizada' ? ` · ${esc(i.local)}` : ''}${i.obs ? ` · ${esc(i.obs)}` : ''}</div>
       </div>
       <div class="ag-acoes">${iniciar}${reag}</div></div>`;
+  }
+
+  /**
+   * Regra do soltar (função pura): troca o DIA e preserva o HORÁRIO.
+   * Devolve a chamada à API, ou null quando nada muda.
+   */
+  function moverPara(alvo, novoDia) {
+    if (!alvo || !/^\d{4}-\d{2}-\d{2}$/.test(novoDia || '') || alvo.data === novoDia) return null;
+    if (alvo.tipo === 'posto') return { url: `/postos/${alvo.id}`, corpo: { next_visit_date: novoDia, next_visit_time: alvo.hora || null } };
+    if (alvo.tipo === 'atividade') return { url: `/atividades/${alvo.id}`, corpo: { due_at: deInputLocal(`${novoDia}T${alvo.hora || '09:00'}`) } };
+    if (alvo.tipo === 'solicitacao') return { url: `/solicitacoes/${alvo.id}`, corpo: { desired_date: novoDia } };
+    return null;
+  }
+
+  /**
+   * Arrastar e soltar entre dias (semana e mês), sem biblioteca.
+   * Mouse: começa depois de mover ~6px (clique continua abrindo o item).
+   * Toque (iPhone): segurar ~0,4 s para pegar; antes disso o dedo só rola a tela.
+   */
+  let suprimirClique = false;
+  function ativarArrasto(raiz) {
+    // #view é o mesmo elemento em todas as telas: registra os eventos uma vez só (delegação)
+    if (raiz.dataset.arrastoAtivo) return;
+    raiz.dataset.arrastoAtivo = '1';
+    let a = null;
+    const alvoEm = (x, y) => document.elementFromPoint(x, y)?.closest('[data-drop-dia]') || null;
+    const marcar = (el) => {
+      $$('.drop-alvo', raiz).forEach((d) => d !== el && d.classList.remove('drop-alvo'));
+      if (el) el.classList.add('drop-alvo');
+    };
+    const comecar = (x, y) => {
+      a.iniciou = true;
+      const r = a.el.getBoundingClientRect();
+      a.dx = x - r.left; a.dy = y - r.top;
+      a.fantasma = a.el.cloneNode(true);
+      a.fantasma.classList.add('ag-fantasma');
+      a.fantasma.style.width = `${r.width}px`;
+      document.body.appendChild(a.fantasma);
+      a.el.classList.add('ag-origem');
+      document.body.classList.add('arrastando');
+      if (navigator.vibrate) navigator.vibrate(15);
+      mover(x, y);
+    };
+    const mover = (x, y) => {
+      a.fantasma.style.transform = `translate(${x - a.dx}px, ${y - a.dy}px)`;
+      marcar(alvoEm(x, y));
+    };
+    const limpar = () => {
+      if (!a) return;
+      clearTimeout(a.timer);
+      a.fantasma?.remove();
+      a.el.classList.remove('ag-origem');
+      document.body.classList.remove('arrastando');
+      marcar(null);
+      a = null;
+    };
+    const soltar = async (x, y) => {
+      const destino = alvoEm(x, y);
+      const dados = a.dados;
+      const el = a.el;
+      suprimirClique = true;
+      setTimeout(() => { suprimirClique = false; }, 50);
+      limpar();
+      const chamada = destino && moverPara(dados, destino.dataset.dropDia);
+      if (!chamada) return;
+      // Atualização otimista: o bloco já aparece no novo dia; se o servidor recusar, a tela volta
+      (destino.querySelector('[data-drop-lista]') || destino).appendChild(el);
+      try {
+        await API.patch(chamada.url, chamada.corpo);
+        toast(`Movido para ${dataCurta(destino.dataset.dropDia)}.`);
+      } catch (e) { toast(e.message, true); }
+      render();
+    };
+    const pegar = (ev, x, y, toque) => {
+      const el = ev.target.closest('[data-drag]');
+      if (!el || ev.target.closest('button, .btn, input, select')) return;
+      a = { el, dados: JSON.parse(el.dataset.drag), x, y, iniciou: false, toque };
+      if (toque) a.timer = setTimeout(() => a && comecar(a.x, a.y), 400);
+    };
+
+    // Mouse / caneta
+    raiz.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType === 'touch' || ev.button !== 0) return;
+      pegar(ev, ev.clientX, ev.clientY, false);
+    });
+    window.addEventListener('pointermove', (ev) => {
+      if (!a || a.toque) return;
+      if (!a.iniciou && Math.hypot(ev.clientX - a.x, ev.clientY - a.y) > 6) comecar(ev.clientX, ev.clientY);
+      if (a?.iniciou) { ev.preventDefault(); mover(ev.clientX, ev.clientY); }
+    });
+    window.addEventListener('pointerup', (ev) => {
+      if (!a || a.toque) return;
+      if (a.iniciou) soltar(ev.clientX, ev.clientY); else limpar();
+    });
+
+    // Toque: segurar para pegar
+    raiz.addEventListener('touchstart', (ev) => {
+      const t = ev.touches[0];
+      if (ev.touches.length === 1) pegar(ev, t.clientX, t.clientY, true);
+    }, { passive: true });
+    raiz.addEventListener('touchmove', (ev) => {
+      if (!a) return;
+      const t = ev.touches[0];
+      if (!a.iniciou) {
+        if (Math.hypot(t.clientX - a.x, t.clientY - a.y) > 8) limpar(); // virou rolagem
+        return;
+      }
+      ev.preventDefault(); // pegou o bloco: a tela não rola
+      mover(t.clientX, t.clientY);
+    }, { passive: false });
+    raiz.addEventListener('touchend', (ev) => {
+      if (!a) return;
+      const t = ev.changedTouches[0];
+      if (a.iniciou) { ev.preventDefault(); soltar(t.clientX, t.clientY); } else limpar();
+    });
+    raiz.addEventListener('touchcancel', limpar);
+    raiz.addEventListener('contextmenu', (ev) => { if (ev.target.closest('[data-drag]')) ev.preventDefault(); });
+    // Clique logo depois de soltar não abre o item
+    raiz.addEventListener('click', (ev) => {
+      if (suprimirClique) { ev.stopPropagation(); ev.preventDefault(); }
+    }, true);
+  }
+
+  // "+" do dia: cria atividade rápida já naquela data
+  async function novaAtividadeNoDia(dia) {
+    const [postos, users] = await Promise.all([API.get('/postos'), ehGestor() ? carregarUsuarios() : []]);
+    janela(`Nova atividade · ${dataCurta(dia)}`, `
+      <label class="form-label" for="na-tit">O que precisa ser feito *</label>
+      <input class="form-control form-control-lg mb-3" id="na-tit" maxlength="200">
+      <div class="row g-2 mb-3">
+        <div class="col-6"><label class="form-label" for="na-dia">Dia</label><input type="date" class="form-control" id="na-dia" value="${dia}"></div>
+        <div class="col-6"><label class="form-label" for="na-hora">Horário</label><input type="time" class="form-control" id="na-hora" value="09:00"></div>
+      </div>
+      <label class="form-label" for="na-posto">Posto</label>
+      <select class="form-select mb-3" id="na-posto"><option value="">Nenhum</option>${postos.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+      ${ehGestor() ? `<label class="form-label" for="na-resp">Responsável</label>
+      <select class="form-select mb-3" id="na-resp">${users.filter((u) => u.role !== 'unidade').map((u) => `<option value="${u.id}" ${String(u.id) === String(EU.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>` : ''}
+      <label class="form-label" for="na-desc">Detalhes</label>
+      <textarea class="form-control" id="na-desc" rows="2"></textarea>`, {
+      ok: 'Criar atividade',
+      onOk: async (el) => {
+        const titulo = el.querySelector('#na-tit').value.trim();
+        if (!titulo) throw new Error('Escreva o que precisa ser feito.');
+        const d = el.querySelector('#na-dia').value || dia;
+        const body = {
+          title: titulo, description: el.querySelector('#na-desc').value,
+          due_at: deInputLocal(`${d}T${el.querySelector('#na-hora').value || '09:00'}`),
+          location_id: el.querySelector('#na-posto').value || null,
+        };
+        if (ehGestor()) body.assignee_id = el.querySelector('#na-resp').value || null;
+        await API.post('/atividades', body);
+        toast('Atividade criada.');
+        render();
+      },
+    });
+    setTimeout(() => $('#na-tit')?.focus(), 300);
   }
 
   async function vAgenda(qs, seq) {
@@ -1072,29 +1236,37 @@
     const porDia = {};
     r.itens.forEach((i) => { (porDia[i.data] = porDia[i.data] || []).push(i); });
     const ir = (o) => `#/agenda?${new URLSearchParams({ modo, data: base, ...o })}`;
+    const btnMais = (d) => `<button type="button" class="cal-add" data-add-dia="${d}" aria-label="Adicionar atividade em ${dataCurta(d)}" title="Adicionar atividade"><i class="bi bi-plus-lg"></i></button>`;
 
     let corpo = '';
     const atrasadasHtml = r.visitas_atrasadas.length && (modo === 'lista' || de <= hoje)
-      ? `<div class="card-x mb-3 border-danger-subtle"><h3 class="text-danger"><i class="bi bi-exclamation-triangle"></i>Visitas atrasadas</h3>
-          ${r.visitas_atrasadas.map((i) => itemAgenda({ ...i, hora: dataBR(i.data).slice(0, 5) })).join('')}</div>` : '';
+      ? `<div class="card-x mb-3 border-danger-subtle"><h3 class="text-danger"><i class="bi bi-exclamation-triangle"></i>Visitas atrasadas
+          ${modo === 'semana' || modo === 'mes' ? '<span class="sub">arraste para um dia da agenda</span>' : ''}</h3>
+          ${r.visitas_atrasadas.map((i) => itemAgenda({ ...i, hora: i.hora })).join('')}</div>` : '';
     if (modo === 'dia') {
-      corpo = `<div class="card-x">${(porDia[base] || []).map(itemAgenda).join('') || vazio('Nada agendado neste dia.', 'calendar')}</div>`;
+      corpo = `<div class="card-x"><div class="d-flex justify-content-end mb-2">${btnMais(base)}</div>
+        ${(porDia[base] || []).map(itemAgenda).join('') || vazio('Nada agendado neste dia.', 'calendar')}</div>`;
     } else if (modo === 'semana') {
-      corpo = `<div class="cal-semana">${[0, 1, 2, 3, 4, 5, 6].map((n) => {
+      corpo = `<div class="small-muted mb-2"><i class="bi bi-arrows-move"></i> Arraste um bloco para outro dia (no celular, segure o bloco um instante antes de arrastar). O <strong>+</strong> cria uma atividade no dia.</div>
+        <div class="cal-semana">${[0, 1, 2, 3, 4, 5, 6].map((n) => {
         const d = isoMais(de, n);
-        return `<div class="cal-dia ${d === hoje ? 'hoje' : ''}"><a class="cal-dia-tit" href="${ir({ modo: 'dia', data: d })}">${dataCurta(d)}</a>
-          ${(porDia[d] || []).map(itemAgenda).join('') || '<div class="small-muted px-1">—</div>'}</div>`;
+        return `<div class="cal-dia ${d === hoje ? 'hoje' : ''}" data-drop-dia="${d}">
+          <div class="cal-dia-cab"><a class="cal-dia-tit" href="${ir({ modo: 'dia', data: d })}">${dataCurta(d)}</a>${btnMais(d)}</div>
+          <div data-drop-lista>${(porDia[d] || []).map(itemAgenda).join('')}</div></div>`;
       }).join('')}</div>`;
     } else if (modo === 'mes') {
       const dias = [];
       for (let d = de; d <= ate; d = isoMais(d, 1)) dias.push(d);
-      corpo = `<div class="cal-mes"><div class="cal-mes-cab">${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((s) => `<div>${s}</div>`).join('')}</div>
+      corpo = `<div class="small-muted mb-2"><i class="bi bi-arrows-move"></i> Arraste para outro dia · clique no item para abrir · <strong>+</strong> cria atividade.</div>
+        <div class="cal-mes"><div class="cal-mes-cab">${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((s) => `<div>${s}</div>`).join('')}</div>
         <div class="cal-mes-grade">${dias.map((d) => {
     const its = porDia[d] || [];
-    return `<a class="cal-cel ${d.slice(0, 7) !== base.slice(0, 7) ? 'fora' : ''} ${d === hoje ? 'hoje' : ''}" href="${ir({ modo: 'dia', data: d })}">
-            <span class="n">${Number(d.slice(8, 10))}</span>
-            ${its.slice(0, 3).map((i) => `<span class="mini st-${i.status}"><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.hora ? `${i.hora} ` : '')}${esc(i.local || i.titulo)}</span>`).join('')}
-            ${its.length > 3 ? `<span class="mini mais">+${its.length - 3}</span>` : ''}</a>`;
+    return `<div class="cal-cel ${d.slice(0, 7) !== base.slice(0, 7) ? 'fora' : ''} ${d === hoje ? 'hoje' : ''}" data-drop-dia="${d}">
+            <div class="cal-cel-cab"><a class="n" href="${ir({ modo: 'dia', data: d })}" title="Ver o dia">${Number(d.slice(8, 10))}</a>${btnMais(d)}</div>
+            <div data-drop-lista class="cal-cel-itens">
+            ${its.slice(0, 4).map((i) => `<span class="mini st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}" title="${esc(i.titulo)}"
+                ${arrastavel(i) ? `data-drag="${dadosArrasto(i)}"` : ''}><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.hora ? `${i.hora} ` : '')}${esc(i.tipo === 'atividade' || i.tipo === 'solicitacao' ? i.titulo : (i.local || i.titulo))}</span>`).join('')}
+            ${its.length > 4 ? `<a class="mini mais" href="${ir({ modo: 'dia', data: d })}">+${its.length - 4} mais</a>` : ''}</div></div>`;
   }).join('')}</div></div>`;
     } else {
       const datas = Object.keys(porDia).sort();
@@ -1118,6 +1290,11 @@
     ligarCliques();
     ligarReagendar();
     ligarIniciar();
+    $$('[data-add-dia]').forEach((b) => b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      novaAtividadeNoDia(b.dataset.addDia).catch((e) => toast(e.message, true));
+    }));
+    if (modo === 'semana' || modo === 'mes') ativarArrasto(view());
   }
 
   // -------------------------------- Postos ------------------------------

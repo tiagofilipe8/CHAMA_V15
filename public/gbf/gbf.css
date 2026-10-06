@@ -308,3 +308,31 @@ a.kpi:hover { border-color: var(--brand); }
   .kpi .val, .kpis-hoje .kpi .val { font-size: 1.45rem; }
   .kpi .hint { font-size: .7rem; }
 }
+
+/* Agenda: arrastar e soltar + "+" do dia */
+.arrastavel { cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body.arrastando, body.arrastando * { cursor: grabbing !important; -webkit-user-select: none; user-select: none; }
+.ag-origem { opacity: .35; }
+.ag-fantasma { position: fixed; left: 0; top: 0; z-index: 3000; pointer-events: none; opacity: .92;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .28); transform-origin: top left; margin: 0 !important; }
+.drop-alvo { outline: 2px dashed var(--brand, #0f766e) !important; outline-offset: -2px; background: #ecfdf5 !important; }
+.cal-dia-cab, .cal-cel-cab { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.cal-dia-cab { margin-bottom: 6px; }
+.cal-dia-cab .cal-dia-tit { margin: 2px; }
+.cal-add { border: 1px dashed #94a3b8; background: #fff; color: #475569; border-radius: 8px; width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; flex: 0 0 auto; }
+.cal-add:hover { border-color: var(--brand, #0f766e); color: var(--brand, #0f766e); }
+.cal-cel { cursor: default; }
+.cal-cel .cal-add { width: 22px; height: 22px; font-size: .7rem; opacity: .55; }
+.cal-cel:hover .cal-add, .cal-cel .cal-add:focus { opacity: 1; }
+.cal-cel .n { text-decoration: none; color: inherit; border-radius: 6px; padding: 0 4px; }
+.cal-cel .n:hover { background: #e2e8f0; }
+.cal-cel-itens { display: flex; flex-direction: column; gap: 2px; min-height: 20px; }
+.cal-cel .mini[data-href] { cursor: pointer; }
+.cal-cel .mini[data-href]:hover { filter: brightness(.95); text-decoration: underline; }
+a.mini.mais { text-decoration: none; }
+[data-drop-lista] { min-height: 24px; }
+@media (max-width: 760px) {
+  .cal-cel .cal-add { opacity: 1; width: 20px; height: 20px; }
+  .cal-cel .mini[data-href] { min-width: 12px; min-height: 12px; }
+}
