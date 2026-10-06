@@ -205,3 +205,106 @@ a.kpi:hover { border-color: var(--brand); }
 .toast-x.err { background: var(--bad); }
 
 .loading { padding: 40px; text-align: center; color: var(--muted); }
+
+/* ===================== Rotina do técnico ===================== */
+.btn-acao { font-weight: 700; letter-spacing: .02em; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-sm.btn-acao { min-height: 34px; font-size: .8rem; }
+.acoes-grandes { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.form-grande .form-control, .form-grande .form-select { min-height: 46px; font-size: 16px; } /* 16px evita zoom no iPhone */
+.kpis-hoje .kpi .val { font-size: 1.9rem; }
+
+.banner-andamento { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; cursor: pointer; }
+.visita-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+.visita-row:last-child { border-bottom: 0; }
+.visita-row > div:first-child { cursor: pointer; }
+.hist-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
+.click-li { cursor: pointer; }
+[data-href] { cursor: pointer; }
+
+/* Postos e checklists em cartões */
+.postos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.posto-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.posto-card:active { border-color: var(--brand); }
+.posto-card.inativo { opacity: .6; }
+.posto-card .meta { display: flex; flex-wrap: wrap; gap: 5px; }
+
+/* Checklist da visita: alvos grandes para o dedo */
+.ck-item { padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
+.ck-item:last-child { border-bottom: 0; }
+.ck-item.ck-falta { background: #fef2f2; border-radius: 10px; padding: 14px 10px; }
+.ck-label { font-weight: 600; margin-bottom: 8px; font-size: 1rem; }
+.ck-botoes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ck-btn { min-height: 52px; border-radius: 12px; border: 2px solid var(--line); background: #fff; font-weight: 800; font-size: .95rem; color: #475569; }
+.ck-btn.ck-ok.on { background: #16a34a; border-color: #16a34a; color: #fff; }
+.ck-btn.ck-nao.on { background: #dc2626; border-color: #dc2626; color: #fff; }
+.ck-btn.ck-na.on { background: #64748b; border-color: #64748b; color: #fff; }
+.ck-obs-btn { margin-top: 6px; text-decoration: none; }
+.ck-edit { display: flex; gap: 6px; margin-bottom: 6px; }
+.ck-edit .form-control { flex: 1; }
+
+/* Barra fixa para concluir a visita */
+.barra-concluir { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 10px;
+  background: rgba(244, 246, 249, .96); backdrop-filter: blur(6px); padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+
+/* Fotos */
+.fotos { display: flex; flex-wrap: wrap; gap: 8px; }
+.fotos img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+.foto { position: relative; }
+.foto-del { position: absolute; top: -6px; right: -6px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--bad); color: #fff; font-size: .8rem; }
+
+/* Agenda */
+.ag-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.ag-rotulo { font-size: 1rem; }
+.ag-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: #fff;
+  border: 1px solid var(--line); border-left: 4px solid var(--info); margin-bottom: 8px; }
+.ag-item.ag-atividade { border-left-color: var(--brand); }
+.ag-item.ag-solicitacao { border-left-color: #8b5cf6; }
+.ag-item.ag-visita_realizada { border-left-color: #94a3b8; }
+.ag-item.st-atrasada { border-left-color: var(--bad); background: #fff7f7; }
+.ag-item.st-concluida { opacity: .75; }
+.ag-hora { font-weight: 800; min-width: 46px; font-size: .9rem; }
+.ag-body { flex: 1; }
+.ag-tit { font-weight: 600; }
+.ag-acoes { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cal-semana { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.cal-dia { background: #eef2f6; border-radius: 12px; padding: 8px; min-height: 140px; }
+.cal-dia.hoje { background: var(--brand-50); outline: 2px solid var(--brand); }
+.cal-dia-tit { display: block; font-weight: 700; font-size: .82rem; margin: 2px 2px 8px; color: var(--ink); text-decoration: none; text-transform: capitalize; }
+.cal-dia .ag-item { flex-wrap: wrap; padding: 8px; font-size: .82rem; }
+.cal-dia .ag-hora { min-width: 0; }
+.cal-dia .ag-acoes { width: 100%; justify-content: flex-start; }
+.cal-mes-cab, .cal-mes-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-mes-cab div { text-align: center; font-size: .75rem; color: var(--muted); font-weight: 600; padding: 4px 0; }
+.cal-cel { background: #fff; border: 1px solid var(--line); border-radius: 8px; min-height: 92px; padding: 4px 5px;
+  display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: var(--ink); overflow: hidden; }
+.cal-cel.fora { opacity: .45; }
+.cal-cel.hoje { outline: 2px solid var(--brand); }
+.cal-cel .n { font-weight: 700; font-size: .8rem; }
+.cal-cel .mini { font-size: .68rem; background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-cel .mini.st-atrasada { background: #fee2e2; color: #b91c1c; }
+.cal-cel .mini.st-concluida { background: #dcfce7; color: #166534; }
+.cal-cel .mini.mais { background: transparent; color: var(--muted); }
+@media (max-width: 991.98px) {
+  .cal-semana { grid-template-columns: 1fr; }
+  .cal-dia { min-height: 0; }
+}
+@media (max-width: 760px) {
+  .cal-cel { min-height: 54px; }
+  .cal-cel .mini { font-size: 0; padding: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
+  .cal-cel .mini.st-atrasada { background: var(--bad); }
+  .cal-cel .mini.st-concluida { background: var(--ok); }
+  .cal-cel .mini.mais { font-size: .62rem; width: auto; height: auto; background: transparent; }
+  .ag-item { flex-wrap: wrap; }
+  .ag-acoes { width: 100%; justify-content: flex-start; }
+  .acoes-grandes .btn { flex: 1 1 100%; }
+  .visita-row .btn-acao { flex: 1; }
+}
+.data-hoje::first-letter { text-transform: uppercase; }
+@media (max-width: 760px) {
+  .kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .kpi { padding: 10px 12px; }
+  .kpi .val, .kpis-hoje .kpi .val { font-size: 1.45rem; }
+  .kpi .hint { font-size: .7rem; }
+}

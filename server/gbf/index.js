@@ -60,6 +60,11 @@ router.use(contas.publico);
 router.use(contas.privado); // daqui para baixo exige login do painel
 router.use('/demandas', require('./demandas'));
 router.use('/atividades', require('./atividades'));
+// Rotina do técnico (Prompt do TI): postos, checklists, visitas, agenda, solicitações
+router.use('/', require('./postos'));
+router.use('/visitas', require('./visitas'));
+router.use('/solicitacoes', require('./solicitacoes'));
+router.use('/', require('./rotina'));
 
 router.use((req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 

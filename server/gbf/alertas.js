@@ -97,12 +97,33 @@ async function verificarAtividades() {
   }
 }
 
+// Visita prevista para hoje (ou atrasada) -> avisa os técnicos uma vez por dia
+async function verificarVisitas() {
+  const { rows } = await query(
+    `UPDATE gbf_locations SET visit_notified_date = (now() AT TIME ZONE 'America/Sao_Paulo')::date
+     WHERE active AND next_visit_date <= (now() AT TIME ZONE 'America/Sao_Paulo')::date
+       AND (visit_notified_date IS NULL OR visit_notified_date < (now() AT TIME ZONE 'America/Sao_Paulo')::date)
+     RETURNING id, name, next_visit_date, to_char(next_visit_time, 'HH24:MI') AS hora,
+               next_visit_date < (now() AT TIME ZONE 'America/Sao_Paulo')::date AS atrasada`);
+  if (!rows.length) return;
+  const tecnicos = await usuariosAtivos('tecnico');
+  for (const p of rows) {
+    await notificar(tecnicos, {
+      kind: 'visita_prevista',
+      title: p.atrasada ? `Visita atrasada: ${p.name}` : `Visita hoje: ${p.name}${p.hora ? ` às ${p.hora}` : ''}`,
+      message: p.atrasada ? `Estava prevista para ${new Date(p.next_visit_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : null,
+      link: `#/postos/${p.id}`,
+    });
+  }
+}
+
 async function rodar() {
   if (rodando) return;
   rodando = true;
   try {
     await verificarDemandas();
     await verificarAtividades();
+    await verificarVisitas();
   } catch (e) {
     console.error('[gbf] alertas:', e.message);
   } finally {

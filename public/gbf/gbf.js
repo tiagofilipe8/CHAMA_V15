@@ -163,15 +163,20 @@
   // ------------------------------------------------------------------
   function montarMenu() {
     const itens = [
+      ['grp', 'Dia a dia da TI'],
+      ehGestor() ? ['#/', 'binoculars', 'Acompanhamento'] : ['#/', 'sun', 'Meu dia'],
+      ['#/agenda', 'calendar3', 'Agenda'],
+      ['#/postos', 'geo-alt', 'Postos'],
+      ['#/solicitacoes', 'megaphone', 'Solicitações'],
+      ['#/atividades', 'kanban', ehGestor() ? 'Atividades' : 'Minhas atividades'],
+      ['#/checklists', 'ui-checks', 'Checklists'],
       ['grp', 'Orcim'],
-      ['#/', 'speedometer2', 'Visão geral'],
+      ['#/orcim', 'speedometer2', 'Visão Orcim'],
       ['#/demandas', 'inboxes', 'Demandas'],
       ['#/manutencoes', 'tools', 'Manutenções'],
-      ['grp', 'Nosso time'],
-      ['#/atividades', 'kanban', ehGestor() ? 'Atividades' : 'Minhas atividades'],
     ];
     if (ehGestor()) {
-      itens.push(['grp', 'Administração'], ['#/usuarios', 'people', 'Usuários'], ['#/config', 'sliders', 'Configurações']);
+      itens.push(['grp', 'Administração'], ['#/hoje', 'sun', 'Dia do técnico'], ['#/usuarios', 'people', 'Usuários'], ['#/config', 'sliders', 'Configurações']);
     }
     itens.push(['#/conta', 'person-lock', 'Minha conta']);
     $('#side-nav').innerHTML = itens.map((i) => (i[0] === 'grp'
@@ -208,7 +213,21 @@
     const [a, b] = partes;
     try {
       carregando();
-      if (!a) { marcarMenu('#/'); await vVisao(seq); }
+      if (!a) { marcarMenu('#/'); if (ehGestor()) await vAcompanhamento(qs, seq); else await vHoje(seq); }
+      else if (a === 'hoje') { marcarMenu(ehGestor() ? '#/hoje' : '#/'); await vHoje(seq); }
+      else if (a === 'orcim') { marcarMenu('#/orcim'); await vVisao(seq); }
+      else if (a === 'agenda') { marcarMenu('#/agenda'); await vAgenda(qs, seq); }
+      else if (a === 'postos' && b === 'novo') { marcarMenu('#/postos'); await vFormPosto(null, seq); }
+      else if (a === 'postos' && b && partes[2] === 'editar') { marcarMenu('#/postos'); await vFormPosto(b, seq); }
+      else if (a === 'postos' && b) { marcarMenu('#/postos'); await vPosto(b, seq); }
+      else if (a === 'postos') { marcarMenu('#/postos'); await vPostos(qs, seq); }
+      else if (a === 'visitas' && b) { marcarMenu('#/postos'); await vVisita(b, seq); }
+      else if (a === 'checklists' && b) { marcarMenu('#/checklists'); await vFormChecklist(b === 'novo' ? null : b, seq); }
+      else if (a === 'checklists') { marcarMenu('#/checklists'); await vChecklists(seq); }
+      else if (a === 'solicitacoes' && b === 'nova' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(null, qs, seq); }
+      else if (a === 'solicitacoes' && b && partes[2] === 'editar' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(b, qs, seq); }
+      else if (a === 'solicitacoes' && b) { marcarMenu('#/solicitacoes'); await vSolicitacao(b, seq); }
+      else if (a === 'solicitacoes') { marcarMenu('#/solicitacoes'); await vSolicitacoes(qs, seq); }
       else if (a === 'demandas' && b) { marcarMenu('#/demandas'); await vDemanda(b, seq); }
       else if (a === 'demandas') { marcarMenu('#/demandas'); await vDemandas(qs, seq); }
       else if (a === 'manutencoes') { marcarMenu('#/manutencoes'); await vManutencoes(seq); }
@@ -221,6 +240,7 @@
       else if (a === 'conta') { marcarMenu('#/conta'); vConta(); }
       else { location.hash = '#/'; }
     } catch (e) {
+      if (!e.status) console.error(e);
       if (seq === renderSeq && e.status !== 401) falha(e);
     }
   }
@@ -270,7 +290,7 @@
   let periodo = Number(store.get('gbf_periodo')) || 30;
 
   async function vVisao(seq) {
-    titulo('Visão geral');
+    titulo('Visão Orcim');
     const [r, at, minhas] = await Promise.all([
       API.get(`/demandas/resumo?dias=${periodo}`),
       API.get(`/atividades/resumo?dias=${periodo}`),
@@ -514,6 +534,7 @@
         ${tagPrazoTarefa(t.prazo)}
         ${t.due_at ? `<span><i class="bi bi-calendar"></i> ${fmtData(t.due_at)}</span>` : ''}
         ${t.ticket_number ? `<span><i class="bi bi-link-45deg"></i>${esc(t.ticket_number)}</span>` : ''}
+        ${t.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(t.location_name)}</span>` : ''}
         ${ehGestor() && t.assignee_name ? `<span><i class="bi bi-person"></i> ${esc(t.assignee_name)}</span>` : ''}
       </div></div>`;
   }
@@ -572,14 +593,16 @@
   }
 
   async function vFormAtividade(id, qs, seq) {
-    const [t, users, demandas] = await Promise.all([
+    const [t, users, demandas, postos] = await Promise.all([
       id ? API.get(`/atividades/${encodeURIComponent(id)}`) : null,
       ehGestor() ? carregarUsuarios() : [],
       API.get('/demandas?situacao=todas&limite=400'),
+      API.get('/postos'),
     ]);
     if (seq !== renderSeq) return;
     titulo(id ? 'Editar atividade' : 'Nova atividade');
     const demandaSel = t ? t.ticket_id : qs.get('demanda');
+    const postoSel = t ? t.location_id : qs.get('posto');
     const opcoesDemanda = demandas
       .filter((d) => d.aberto || String(d.id) === String(demandaSel))
       .map((d) => `<option value="${d.id}" ${String(d.id) === String(demandaSel) ? 'selected' : ''}>${esc(d.number || '#' + d.id)} — ${esc(d.title)} (${esc(d.entity_name)})</option>`).join('');
@@ -596,7 +619,9 @@
             ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(t?.priority || 2) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
           ${ehGestor() ? `<div class="col-sm-6"><label class="form-label">Responsável</label><select class="form-select" name="assignee_id">
             <option value="">Sem responsável</option>${users.map((u) => `<option value="${u.id}" ${String(t ? t.assignee_id : EU.id) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>` : ''}
-          <div class="col-sm-6"><label class="form-label">Local / unidade</label><input class="form-control" name="location" value="${esc(t?.location || '')}" placeholder="Ex.: Posto Centro, sala do servidor"></div>
+          <div class="col-sm-6"><label class="form-label">Posto</label><select class="form-select" name="location_id">
+            <option value="">Nenhum</option>${postos.map((p) => `<option value="${p.id}" ${String(p.id) === String(postoSel) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label">Local / detalhe</label><input class="form-control" name="location" value="${esc(t?.location || '')}" placeholder="Ex.: sala do servidor, caixa 2"></div>
         </div>
         <div class="mb-3"><label class="form-label">Demanda da Orcim relacionada</label>
           <select class="form-select" name="ticket_id"><option value="">Nenhuma</option>${opcoesDemanda}</select>
@@ -610,6 +635,7 @@
       const body = {
         title: fd.get('title'), description: fd.get('description'), priority: Number(fd.get('priority')),
         due_at: deInputLocal(fd.get('due_at')), location: fd.get('location'), ticket_id: fd.get('ticket_id') || null,
+        location_id: fd.get('location_id') || null,
       };
       if (ehGestor()) body.assignee_id = fd.get('assignee_id') || null;
       try {
@@ -652,6 +678,7 @@
           <dl class="kv">
             <dt>Responsável</dt><dd>${esc(t.assignee_name || 'Sem responsável')}</dd>
             <dt>Prazo</dt><dd>${fmtData(t.due_at)}</dd>
+            <dt>Posto</dt><dd>${t.location_id ? `<a href="#/postos/${t.location_id}">${esc(t.location_name)}</a>` : '—'}${t.visit_id ? ` · <a href="#/visitas/${t.visit_id}">pendência de visita</a>` : ''}</dd>
             <dt>Local</dt><dd>${esc(t.location || '—')}</dd>
             <dt>Criada por</dt><dd>${esc(t.created_by_name || '—')} em ${fmtData(t.created_at)}</dd>
             <dt>Começou em</dt><dd>${fmtData(t.started_at)}</dd>
@@ -828,6 +855,830 @@
         location.hash = '#/';
       } catch (e) { erro.textContent = e.message; erro.classList.remove('d-none'); }
     });
+  }
+
+  // ==================================================================
+  // ROTINA DO TÉCNICO (Prompt do TI)
+  // POSTO -> AGENDA -> VISITA -> CHECKLIST -> CONCLUSÃO -> HISTÓRICO
+  // ==================================================================
+  const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
+  const isoMais = (iso, n) => {
+    const d = new Date(`${iso}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const diaSemana = (iso) => new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = domingo
+  const segunda = (iso) => isoMais(iso, -((diaSemana(iso) + 6) % 7));
+  const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const dataCurta = (iso) => (iso ? `${SEMANA[diaSemana(iso)]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '—');
+  const dataBR = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
+
+  // Janela simples (Bootstrap) para reagendar, iniciar visita, concluir etc.
+  function janela(tituloTxt, corpo, { ok = 'Salvar', onOk, perigo = false } = {}) {
+    let el = $('#gbf-modal');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'gbf-modal';
+      el.className = 'modal fade';
+      el.tabIndex = -1;
+      document.body.appendChild(el);
+    }
+    el.innerHTML = `<div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">${esc(tituloTxt)}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body">${corpo}<div class="alert alert-danger py-2 mt-3 mb-0 d-none" data-erro></div></div>
+      <div class="modal-footer"><button type="button" class="btn btn-lg btn-outline-secondary" data-bs-dismiss="modal">Voltar</button>
+        <button type="button" class="btn btn-lg ${perigo ? 'btn-danger' : 'btn-brand'}" data-ok>${esc(ok)}</button></div></div></div>`;
+    const m = bootstrap.Modal.getOrCreateInstance(el);
+    const btn = el.querySelector('[data-ok]');
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await onOk(el);
+        m.hide();
+      } catch (e) {
+        const er = el.querySelector('[data-erro]');
+        er.textContent = e.message;
+        er.classList.remove('d-none');
+      } finally { btn.disabled = false; }
+    };
+    m.show();
+    return el;
+  }
+
+  function iniciarVisita(postoId, nome, emAndamentoId) {
+    if (emAndamentoId) { location.hash = `#/visitas/${emAndamentoId}`; return; }
+    janela(`Iniciar visita — ${nome}`, `
+      <label class="form-label">Data e hora de início</label>
+      <input type="datetime-local" class="form-control form-control-lg" name="inicio" value="${paraInputLocal(new Date())}">
+      <div class="form-text">Já vem com agora. Mude só se a visita começou em outro horário.</div>`, {
+      ok: 'Iniciar visita',
+      onOk: async (el) => {
+        const r = await API.post('/visitas', { location_id: postoId, started_at: deInputLocal(el.querySelector('[name=inicio]').value) });
+        location.hash = `#/visitas/${r.id}`;
+      },
+    });
+  }
+
+  // Reagendar: visita prevista do posto, atividade ou solicitação
+  function reagendar(alvo) {
+    const comHora = alvo.tipo !== 'solicitacao';
+    janela('Reagendar', `
+      <label class="form-label">Nova data</label>
+      <input type="date" class="form-control form-control-lg mb-3" name="data" value="${esc(alvo.data || hojeISO())}">
+      ${comHora ? `<label class="form-label">Novo horário</label>
+      <input type="time" class="form-control form-control-lg" name="hora" value="${esc(alvo.hora || '')}">` : ''}`, {
+      onOk: async (el) => {
+        const data = el.querySelector('[name=data]').value;
+        const hora = comHora ? el.querySelector('[name=hora]').value : '';
+        if (!data) throw new Error('Escolha a nova data.');
+        if (alvo.tipo === 'posto') await API.patch(`/postos/${alvo.id}`, { next_visit_date: data, next_visit_time: hora || null });
+        else if (alvo.tipo === 'atividade') await API.patch(`/atividades/${alvo.id}`, { due_at: deInputLocal(`${data}T${hora || '09:00'}`) });
+        else await API.patch(`/solicitacoes/${alvo.id}`, { desired_date: data });
+        toast('Reagendado.');
+        render();
+      },
+    });
+  }
+
+  function ligarReagendar() {
+    $$('[data-reag]').forEach((b) => b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      reagendar(JSON.parse(b.dataset.reag));
+    }));
+  }
+  function ligarIniciar() {
+    $$('[data-iniciar]').forEach((b) => b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      iniciarVisita(b.dataset.iniciar, b.dataset.nome, b.dataset.visita || null);
+    }));
+  }
+  const btnReag = (alvo, extra = '') => `<button type="button" class="btn btn-sm btn-outline-secondary ${extra}" data-reag="${esc(JSON.stringify(alvo))}"><i class="bi bi-calendar2-week"></i> Reagendar</button>`;
+  const btnIniciar = (p, visitaId, grande = true) => `<button type="button" class="btn ${grande ? 'btn-lg' : 'btn-sm'} ${visitaId ? 'btn-warning' : 'btn-brand'} btn-acao"
+      data-iniciar="${p.id}" data-nome="${esc(p.name)}" ${visitaId ? `data-visita="${visitaId}"` : ''}>
+      <i class="bi bi-${visitaId ? 'arrow-right-circle' : 'play-circle'}"></i> ${visitaId ? 'CONTINUAR VISITA' : 'INICIAR VISITA'}</button>`;
+
+  const STATUS_SOLIC = { a_fazer: ['tag-blue', 'A fazer'], em_andamento: ['tag-teal', 'Em andamento'], concluida: ['tag-green', 'Concluída'], cancelada: ['tag-gray', 'Cancelada'] };
+  const tagSolic = (s) => tag(...(STATUS_SOLIC[s] || ['tag-gray', s]));
+
+  // ------------------------------- Meu dia ------------------------------
+  async function vHoje(seq) {
+    titulo(ehGestor() ? 'Dia do técnico' : 'Meu dia');
+    const h = await API.get('/hoje');
+    if (seq !== renderSeq) return;
+    const atrasadasV = h.visitas_hoje.filter((v) => v.atrasada).length;
+    const novas = h.solicitacoes.filter((s) => s.status === 'a_fazer').length;
+    view().innerHTML = `
+      <div class="small-muted mb-2 data-hoje">${new Date().toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'long', day: '2-digit', month: 'long' })}</div>
+      <div class="kpis kpis-hoje">
+        ${kpi('Visitas para hoje', h.visitas_hoje.length, { cls: atrasadasV ? 'warn' : '', hint: atrasadasV ? `${atrasadasV} atrasada(s)` : '', icon: 'geo-alt', href: '#/agenda' })}
+        ${kpi('Atividades de hoje', h.atividades_hoje.length, { icon: 'check2-square', href: '#/atividades?situacao=hoje' })}
+        ${kpi('Atividades atrasadas', h.atividades_atrasadas.length, { cls: h.atividades_atrasadas.length ? 'bad' : 'ok', icon: 'alarm', href: '#/atividades?situacao=atrasadas' })}
+        ${kpi('Solicitações novas', novas, { cls: novas ? 'warn' : '', icon: 'megaphone', href: '#/solicitacoes' })}
+        ${kpi('Feito hoje', h.concluidas_hoje.visitas + h.concluidas_hoje.atividades + h.concluidas_hoje.solicitacoes, {
+    cls: 'ok', hint: `${h.concluidas_hoje.visitas} visita(s) · ${h.concluidas_hoje.atividades} atividade(s) · ${h.concluidas_hoje.solicitacoes} solicitação(ões)`, icon: 'check2-all',
+  })}
+      </div>
+      ${h.em_andamento.map((v) => `<div class="banner-andamento" data-href="#/visitas/${v.id}">
+        <div><strong>Visita em andamento — ${esc(v.location_name)}</strong>
+          <div class="small">${v.faltam ? `Faltam ${v.faltam} item(ns) do checklist` : 'Checklist completo, falta concluir'} · desde ${fmtData(v.started_at)}${ehGestor() && v.user_name ? ` · ${esc(v.user_name)}` : ''}</div></div>
+        <span class="btn btn-lg btn-warning btn-acao"><i class="bi bi-arrow-right-circle"></i> CONTINUAR</span></div>`).join('')}
+      <div class="grid-2">
+        <div class="card-x"><h3><i class="bi bi-geo-alt"></i>Visitas de hoje <a class="sub" href="#/agenda">agenda</a></h3>
+          ${h.visitas_hoje.length ? h.visitas_hoje.map((p) => `<div class="visita-row">
+            <div class="min-w-0" data-href="#/postos/${p.id}">
+              <div class="fw-semibold">${esc(p.name)} ${p.atrasada ? tag('tag-red', `atrasada · ${dataBR(p.data)}`) : ''}</div>
+              <div class="small-muted">${p.hora ? `<i class="bi bi-clock"></i> ${p.hora} · ` : ''}${esc(p.address || '')}${p.checklist_name ? ` · ${esc(p.checklist_name)}` : ''}</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">${btnIniciar(p, p.visita_id)}${p.visita_id ? '' : btnReag({ tipo: 'posto', id: p.id, data: p.data, hora: p.hora })}</div>
+          </div>`).join('') : vazio('Nenhuma visita prevista para hoje.', 'cup-hot')}
+        </div>
+        <div class="card-x"><h3><i class="bi bi-megaphone"></i>Solicitações do gestor <a class="sub" href="#/solicitacoes">ver todas</a></h3>
+          ${h.solicitacoes.length ? h.solicitacoes.map((s) => `<div class="task" data-href="#/solicitacoes/${s.id}">
+            <div class="ttl">${esc(s.title)}</div>
+            <div class="meta">${tagSolic(s.status)}${s.priority >= 3 ? tag(s.priority === 4 ? 'tag-red' : 'tag-amber', PRIO_TAREFA[s.priority]) : ''}
+              ${s.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(s.location_name)}</span>` : ''}
+              ${s.desired_date ? `<span><i class="bi bi-calendar"></i> ${dataBR(s.desired_date)}</span>` : ''}
+              <span>· ${relativo(s.created_at)}</span></div></div>`).join('') : vazio('Nenhuma solicitação aberta.', 'emoji-smile')}
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card-x"><h3><i class="bi bi-check2-square"></i>Atividades <a class="sub" href="#/atividades/nova">+ nova</a></h3>
+          ${h.atividades_atrasadas.length ? `<div class="small-muted mb-1">Atrasadas</div>${h.atividades_atrasadas.map((t) => cartaoTarefa({ ...t, prazo: 'atrasada', location_name: t.location_name })).join('')}` : ''}
+          ${h.atividades_hoje.length ? `<div class="small-muted mb-1">Para hoje</div>${h.atividades_hoje.map((t) => cartaoTarefa({ ...t, prazo: 'vence_logo' })).join('')}` : ''}
+          ${!h.atividades_atrasadas.length && !h.atividades_hoje.length ? vazio('Nada para hoje.', 'check2-all') : ''}
+        </div>
+        <div class="card-x"><h3><i class="bi bi-calendar-week"></i>Próximas visitas</h3>
+          ${h.proximas_visitas.length ? h.proximas_visitas.map((p) => `<div class="d-flex justify-content-between align-items-center py-2 border-bottom gap-2" data-href="#/postos/${p.id}">
+            <span class="fw-semibold">${esc(p.name)}</span><span class="text-nowrap small-muted">${dataCurta(p.data)}${p.hora ? ` · ${p.hora}` : ''}</span></div>`).join('')
+    : vazio('Nenhuma visita programada.', 'calendar')}
+        </div>
+      </div>`;
+    ligarCliques();
+    ligarIniciar();
+    ligarReagendar();
+  }
+
+  // -------------------------------- Agenda ------------------------------
+  const TIPO_AG = {
+    visita: ['geo-alt', 'Visita'], visita_realizada: ['clipboard-check', 'Visita'],
+    atividade: ['check2-square', 'Atividade'], solicitacao: ['megaphone', 'Solicitação'],
+  };
+  const STATUS_AG = {
+    agendada: ['tag-blue', 'Agendada'], atrasada: ['tag-red', 'Atrasada'], em_andamento: ['tag-teal', 'Em andamento'],
+    concluida: ['tag-green', 'Concluída'], a_fazer: ['tag-blue', 'A fazer'], aguardando: ['tag-amber', 'Aguardando'],
+  };
+
+  function itemAgenda(i) {
+    const reag = i.reagendar && !['concluida', 'em_andamento'].includes(i.status)
+      ? btnReag({ tipo: i.reagendar, id: i.posto_id || i.id, data: i.data, hora: i.hora }) : '';
+    const iniciar = i.tipo === 'visita' && i.status !== 'em_andamento'
+      ? btnIniciar({ id: i.posto_id, name: i.local }, null, false) : '';
+    return `<div class="ag-item ag-${i.tipo} st-${i.status}" data-href="${i.link}">
+      <div class="ag-hora">${i.hora || '<span class="muted">dia</span>'}</div>
+      <div class="ag-body min-w-0">
+        <div class="ag-tit"><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.titulo)}</div>
+        <div class="small-muted">${tag(...(STATUS_AG[i.status] || ['tag-gray', i.status]))} ${esc(TIPO_AG[i.tipo][1])}${i.local && i.tipo !== 'visita' && i.tipo !== 'visita_realizada' ? ` · ${esc(i.local)}` : ''}${i.obs ? ` · ${esc(i.obs)}` : ''}</div>
+      </div>
+      <div class="ag-acoes">${iniciar}${reag}</div></div>`;
+  }
+
+  async function vAgenda(qs, seq) {
+    titulo('Agenda');
+    const modo = ['dia', 'semana', 'mes', 'lista'].includes(qs.get('modo')) ? qs.get('modo') : (store.get('gbf_ag_modo') || 'semana');
+    store.set('gbf_ag_modo', modo);
+    const base = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('data') || '') ? qs.get('data') : hojeISO();
+    let de; let ate; let anterior; let proximo; let rotulo;
+    if (modo === 'dia') {
+      de = base; ate = base; anterior = isoMais(base, -1); proximo = isoMais(base, 1);
+      rotulo = new Date(`${base}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: 'long' });
+    } else if (modo === 'semana') {
+      de = segunda(base); ate = isoMais(de, 6); anterior = isoMais(de, -7); proximo = isoMais(de, 7);
+      rotulo = `${dataBR(de).slice(0, 5)} a ${dataBR(ate).slice(0, 5)}`;
+    } else if (modo === 'mes') {
+      const primeiro = `${base.slice(0, 7)}-01`;
+      const ultimo = isoMais(`${isoMais(primeiro, 32).slice(0, 7)}-01`, -1);
+      de = segunda(primeiro); ate = isoMais(segunda(ultimo), 6);
+      anterior = `${isoMais(primeiro, -1).slice(0, 7)}-01`; proximo = isoMais(ultimo, 1);
+      rotulo = `${MESES[Number(base.slice(5, 7)) - 1]} ${base.slice(0, 4)}`;
+    } else {
+      de = base; ate = isoMais(base, 30); anterior = isoMais(base, -30); proximo = isoMais(base, 30);
+      rotulo = `Próximos 30 dias a partir de ${dataBR(base)}`;
+    }
+    const r = await API.get(`/agenda?de=${de}&ate=${ate}`);
+    if (seq !== renderSeq) return;
+    const hoje = r.hoje;
+    const porDia = {};
+    r.itens.forEach((i) => { (porDia[i.data] = porDia[i.data] || []).push(i); });
+    const ir = (o) => `#/agenda?${new URLSearchParams({ modo, data: base, ...o })}`;
+
+    let corpo = '';
+    const atrasadasHtml = r.visitas_atrasadas.length && (modo === 'lista' || de <= hoje)
+      ? `<div class="card-x mb-3 border-danger-subtle"><h3 class="text-danger"><i class="bi bi-exclamation-triangle"></i>Visitas atrasadas</h3>
+          ${r.visitas_atrasadas.map((i) => itemAgenda({ ...i, hora: dataBR(i.data).slice(0, 5) })).join('')}</div>` : '';
+    if (modo === 'dia') {
+      corpo = `<div class="card-x">${(porDia[base] || []).map(itemAgenda).join('') || vazio('Nada agendado neste dia.', 'calendar')}</div>`;
+    } else if (modo === 'semana') {
+      corpo = `<div class="cal-semana">${[0, 1, 2, 3, 4, 5, 6].map((n) => {
+        const d = isoMais(de, n);
+        return `<div class="cal-dia ${d === hoje ? 'hoje' : ''}"><a class="cal-dia-tit" href="${ir({ modo: 'dia', data: d })}">${dataCurta(d)}</a>
+          ${(porDia[d] || []).map(itemAgenda).join('') || '<div class="small-muted px-1">—</div>'}</div>`;
+      }).join('')}</div>`;
+    } else if (modo === 'mes') {
+      const dias = [];
+      for (let d = de; d <= ate; d = isoMais(d, 1)) dias.push(d);
+      corpo = `<div class="cal-mes"><div class="cal-mes-cab">${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((s) => `<div>${s}</div>`).join('')}</div>
+        <div class="cal-mes-grade">${dias.map((d) => {
+    const its = porDia[d] || [];
+    return `<a class="cal-cel ${d.slice(0, 7) !== base.slice(0, 7) ? 'fora' : ''} ${d === hoje ? 'hoje' : ''}" href="${ir({ modo: 'dia', data: d })}">
+            <span class="n">${Number(d.slice(8, 10))}</span>
+            ${its.slice(0, 3).map((i) => `<span class="mini st-${i.status}"><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.hora ? `${i.hora} ` : '')}${esc(i.local || i.titulo)}</span>`).join('')}
+            ${its.length > 3 ? `<span class="mini mais">+${its.length - 3}</span>` : ''}</a>`;
+  }).join('')}</div></div>`;
+    } else {
+      const datas = Object.keys(porDia).sort();
+      corpo = datas.length ? datas.map((d) => `<div class="card-x mb-2"><h3 class="${d === hoje ? 'text-success' : ''}">${dataCurta(d)}${d === hoje ? ' · hoje' : ''}</h3>${porDia[d].map(itemAgenda).join('')}</div>`).join('')
+        : `<div class="card-x">${vazio('Nada agendado nos próximos 30 dias.', 'calendar')}</div>`;
+    }
+    view().innerHTML = `
+      <div class="ag-topo">
+        <div class="btn-group" role="group" aria-label="Visualização">
+          ${[['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês'], ['lista', 'Lista']].map(([m, t]) => `<a class="btn ${m === modo ? 'btn-dark' : 'btn-outline-secondary'}" href="#/agenda?modo=${m}&data=${base}">${t}</a>`).join('')}
+        </div>
+        <div class="d-flex align-items-center gap-1">
+          <a class="btn btn-outline-secondary" href="${ir({ data: anterior })}" aria-label="Anterior"><i class="bi bi-chevron-left"></i></a>
+          <a class="btn btn-outline-secondary" href="${ir({ data: hoje })}">Hoje</a>
+          <a class="btn btn-outline-secondary" href="${ir({ data: proximo })}" aria-label="Próximo"><i class="bi bi-chevron-right"></i></a>
+        </div>
+        <div class="fw-semibold data-hoje ag-rotulo">${esc(rotulo)}</div>
+        <a class="btn btn-brand ms-auto" href="#/atividades/nova"><i class="bi bi-plus-lg"></i> Atividade</a>
+      </div>
+      ${atrasadasHtml}${corpo}`;
+    ligarCliques();
+    ligarReagendar();
+    ligarIniciar();
+  }
+
+  // -------------------------------- Postos ------------------------------
+  function situacaoPosto(p) {
+    if (p.visita_em_andamento_id) return tag('tag-teal', 'Visita em andamento');
+    if (!p.next_visit_date) return tag('tag-gray', 'Sem data');
+    if (p.visita_atrasada) return tag('tag-red', `Atrasada · ${dataBR(p.next_visit_date)}`);
+    if (p.visita_hoje) return tag('tag-amber', `Hoje${p.next_visit_time ? ` · ${p.next_visit_time}` : ''}`);
+    return tag('tag-green', `${dataCurta(p.next_visit_date)}${p.next_visit_time ? ` · ${p.next_visit_time}` : ''}`);
+  }
+
+  async function vPostos(qs, seq) {
+    titulo('Postos');
+    const todos = qs.get('todos') === '1';
+    const lista = await API.get(`/postos${todos ? '?todos=1' : ''}`);
+    if (seq !== renderSeq) return;
+    view().innerHTML = `
+      <div class="filters">
+        <input class="form-control grow" id="busca-posto" placeholder="Buscar posto">
+        <label class="form-check mb-0"><input type="checkbox" class="form-check-input" id="ver-inativos" ${todos ? 'checked' : ''}> <span class="form-check-label">Mostrar inativos</span></label>
+        <a class="btn btn-brand ms-auto" href="#/postos/novo"><i class="bi bi-plus-lg"></i> Novo posto</a>
+      </div>
+      ${lista.length ? `<div class="postos-grid">${lista.map((p) => `<div class="posto-card ${p.active ? '' : 'inativo'}" data-href="#/postos/${p.id}" data-nome="${esc(p.name.toLowerCase())}">
+        <div class="d-flex justify-content-between gap-2 align-items-start">
+          <div class="min-w-0"><div class="fw-bold">${esc(p.name)}</div><div class="small-muted">${esc(p.address || 'Sem endereço')}</div></div>
+          ${p.active ? '' : tag('tag-gray', 'Inativo')}
+        </div>
+        <div class="my-2">${situacaoPosto(p)}</div>
+        <div class="small-muted">${esc(p.frequency_label)} · última visita ${p.last_visit_at ? fmtData(p.last_visit_at).slice(0, 8) : '—'}</div>
+        <div class="meta mt-2">
+          ${p.atividades_abertas ? tag('tag-teal', `${p.atividades_abertas} atividade(s)`, 'check2-square') : ''}
+          ${p.solicitacoes_abertas ? tag('tag-amber', `${p.solicitacoes_abertas} solicitação(ões)`, 'megaphone') : ''}
+          ${p.demandas_orcim_abertas ? tag('tag-violet', `${p.demandas_orcim_abertas} demanda(s) Orcim`, 'inboxes') : ''}
+        </div>
+        ${p.active ? `<div class="mt-2">${btnIniciar(p, p.visita_em_andamento_id, false)}</div>` : ''}
+      </div>`).join('')}</div>` : `<div class="card-x">${vazio('Nenhum posto cadastrado ainda. Comece cadastrando o primeiro.', 'geo-alt')}</div>`}`;
+    $('#busca-posto').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      $$('.posto-card').forEach((c) => { c.style.display = c.dataset.nome.includes(q) ? '' : 'none'; });
+    });
+    $('#ver-inativos').addEventListener('change', (e) => { location.hash = e.target.checked ? '#/postos?todos=1' : '#/postos'; });
+    ligarCliques();
+    ligarIniciar();
+  }
+
+  async function vPosto(id, seq) {
+    const p = await API.get(`/postos/${encodeURIComponent(id)}`);
+    if (seq !== renderSeq) return;
+    titulo(p.name);
+    view().innerHTML = `
+      <a href="#/postos" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Postos</a>
+      <div class="detail-head">
+        <div class="min-w-0"><h3>${esc(p.name)}</h3><div class="mt-1">${situacaoPosto(p)} ${p.active ? '' : tag('tag-gray', 'Inativo')}</div></div>
+      </div>
+      <div class="acoes-grandes">
+        ${p.active ? btnIniciar(p, p.visita_em_andamento_id) : ''}
+        <a class="btn btn-lg btn-outline-secondary btn-acao" href="#/postos/${p.id}/editar"><i class="bi bi-pencil"></i> EDITAR POSTO</a>
+      </div>
+      <div class="grid-2">
+        <div class="card-x">
+          <h3><i class="bi bi-card-text"></i>Ficha</h3>
+          <dl class="kv">
+            <dt>Endereço</dt><dd>${esc(p.address || '—')}</dd>
+            <dt>Responsável</dt><dd>${esc(p.contact_name || '—')}</dd>
+            <dt>Telefone</dt><dd>${p.phone ? `<a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a>` : '—'}</dd>
+            <dt>Última visita</dt><dd>${fmtData(p.last_visit_at)}</dd>
+            <dt>Próxima visita</dt><dd>${p.next_visit_date ? `${dataCurta(p.next_visit_date)} ${dataBR(p.next_visit_date).slice(6)}${p.next_visit_time ? ` · ${p.next_visit_time}` : ''}` : '—'}
+              ${btnReag({ tipo: 'posto', id: p.id, data: p.next_visit_date, hora: p.next_visit_time }, 'ms-1')}</dd>
+            <dt>Frequência</dt><dd>${esc(p.frequency_label)}</dd>
+            <dt>Checklist</dt><dd>${p.checklist_id ? `<a href="#/checklists/${p.checklist_id}">${esc(p.checklist_name)}</a>` : 'Nenhum'}</dd>
+            <dt>Empresa na Orcim</dt><dd>${esc(p.entity_name || 'Não vinculada')}</dd>
+          </dl>
+          ${p.notes ? `<hr><div class="small-muted mb-1">Observações</div><div style="white-space:pre-wrap">${esc(p.notes)}</div>` : ''}
+        </div>
+        <div class="card-x">
+          <h3><i class="bi bi-clock-history"></i>Histórico do posto</h3>
+          ${p.historico.length ? p.historico.map((v) => `<div class="hist-row" data-href="#/visitas/${v.id}">
+            <div><div class="fw-semibold">${fmtData(v.started_at).slice(0, 8)} — ${v.status === 'concluida' ? 'Visita concluída' : 'Visita em andamento'}</div>
+              <div class="small-muted">${esc(v.user_name || '')}${v.checklist_name ? ` · ${esc(v.checklist_name)}` : ''}</div></div>
+            ${v.status === 'concluida' ? (v.nao_ok ? tag('tag-red', `${v.nao_ok} NÃO OK`) : tag('tag-green', 'Tudo OK')) : tag('tag-teal', 'Em andamento')}
+          </div>`).join('') : vazio('Nenhuma visita registrada ainda.', 'clock-history')}
+        </div>
+      </div>
+      <div class="grid-3">
+        <div class="card-x"><h3><i class="bi bi-inboxes"></i>Demandas Orcim abertas</h3>
+          ${!p.entity_id ? '<div class="small-muted">Vincule o posto a uma empresa da Orcim (em Editar posto) para ver as demandas dela aqui.</div>'
+    : p.demandas_orcim.length ? p.demandas_orcim.map((d) => `<div class="task" data-href="#/demandas/${d.id}"><div class="ttl">${esc(d.title)}</div>
+              <div class="meta"><span class="num">${esc(d.number || '#' + d.id)}</span>${tag('tag-gray', d.status_label)}${d.due_at && new Date(d.due_at) < new Date() ? tag('tag-red', 'Atrasada') : ''}</div></div>`).join('')
+      : vazio('Nenhuma demanda aberta na Orcim.', 'emoji-smile')}
+        </div>
+        <div class="card-x"><h3><i class="bi bi-check2-square"></i>Atividades abertas <a class="sub" href="#/atividades/nova?posto=${p.id}">+ nova</a></h3>
+          ${p.atividades.length ? p.atividades.map((t) => `<div class="task" data-href="#/atividades/${t.id}"><div class="ttl">${esc(t.title)}</div>
+            <div class="meta">${tagTarefa(t.status)}${t.due_at ? `<span>${fmtData(t.due_at)}</span>` : ''}</div></div>`).join('') : vazio('Nenhuma atividade aberta.', 'check2-all')}
+        </div>
+        <div class="card-x"><h3><i class="bi bi-megaphone"></i>Solicitações abertas ${ehGestor() ? `<a class="sub" href="#/solicitacoes/nova?posto=${p.id}">+ nova</a>` : ''}</h3>
+          ${p.solicitacoes.length ? p.solicitacoes.map((s) => `<div class="task" data-href="#/solicitacoes/${s.id}"><div class="ttl">${esc(s.title)}</div>
+            <div class="meta">${tagSolic(s.status)}${s.desired_date ? `<span>${dataBR(s.desired_date)}</span>` : ''}</div></div>`).join('') : vazio('Nenhuma solicitação aberta.', 'emoji-smile')}
+        </div>
+      </div>`;
+    ligarCliques();
+    ligarIniciar();
+    ligarReagendar();
+  }
+
+  async function vFormPosto(id, seq) {
+    const [p, checklists, empresas] = await Promise.all([
+      id ? API.get(`/postos/${encodeURIComponent(id)}`) : null,
+      API.get('/checklists'),
+      API.get('/postos-empresas'),
+    ]);
+    if (seq !== renderSeq) return;
+    titulo(id ? `Editar ${p.name}` : 'Novo posto');
+    const v = (k) => esc(p?.[k] ?? '');
+    const freq = p?.frequency || 'mensal';
+    view().innerHTML = `
+      <a href="${id ? `#/postos/${id}` : '#/postos'}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Voltar</a>
+      <form class="card-x mt-2 form-grande" id="form-posto" style="max-width:760px">
+        <div class="mb-3"><label class="form-label" for="fp-nome">Nome do posto *</label><input class="form-control" id="fp-nome" name="name" required value="${v('name')}"></div>
+        <div class="mb-3"><label class="form-label" for="fp-end">Endereço</label><input class="form-control" id="fp-end" name="address" value="${v('address')}"></div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6"><label class="form-label" for="fp-resp">Responsável no posto</label><input class="form-control" id="fp-resp" name="contact_name" value="${v('contact_name')}"></div>
+          <div class="col-sm-6"><label class="form-label" for="fp-tel">Telefone</label><input class="form-control" id="fp-tel" name="phone" type="tel" value="${v('phone')}"></div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6"><label class="form-label" for="fp-freq">Frequência da visita</label>
+            <select class="form-select" id="fp-freq" name="frequency">
+              ${[['semanal', 'Semanal'], ['quinzenal', 'Quinzenal'], ['mensal', 'Mensal'], ['dias', 'A cada X dias'], ['nenhuma', 'Sem recorrência']].map(([k, t]) => `<option value="${k}" ${k === freq ? 'selected' : ''}>${t}</option>`).join('')}
+            </select></div>
+          <div class="col-sm-6" id="fp-dias-box"><label class="form-label" for="fp-dias">A cada quantos dias</label>
+            <input class="form-control" id="fp-dias" name="frequency_days" type="number" min="1" max="365" inputmode="numeric" value="${v('frequency_days') || 30}"></div>
+        </div>
+        <div class="row g-3 mb-1">
+          <div class="col-6"><label class="form-label" for="fp-data">Próxima visita</label><input class="form-control" id="fp-data" name="next_visit_date" type="date" value="${v('next_visit_date')}"></div>
+          <div class="col-6"><label class="form-label" for="fp-hora">Horário</label><input class="form-control" id="fp-hora" name="next_visit_time" type="time" value="${v('next_visit_time')}"></div>
+        </div>
+        <div class="form-text mb-3">Ao concluir uma visita, o sistema calcula sozinho a próxima data pela frequência. Você pode mudar a data aqui quando quiser.</div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6"><label class="form-label" for="fp-ck">Checklist da visita</label>
+            <select class="form-select" id="fp-ck" name="checklist_id"><option value="">Nenhum</option>
+              ${checklists.filter((c) => c.active || String(c.id) === String(p?.checklist_id)).map((c) => `<option value="${c.id}" ${String(c.id) === String(p?.checklist_id) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+            ${checklists.length ? '' : '<div class="form-text">Crie um modelo em <a href="#/checklists/novo">Checklists</a>.</div>'}</div>
+          <div class="col-sm-6"><label class="form-label" for="fp-ent">Empresa correspondente na Orcim</label>
+            <select class="form-select" id="fp-ent" name="entity_id"><option value="">Não vincular</option>
+              ${empresas.map((e) => `<option value="${e.id}" ${String(e.id) === String(p?.entity_id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+            <div class="form-text">Mostra as demandas da Orcim deste posto na ficha e na visita.</div></div>
+        </div>
+        <div class="mb-3"><label class="form-label" for="fp-obs">Observações</label><textarea class="form-control" id="fp-obs" name="notes" rows="3">${v('notes')}</textarea></div>
+        ${id ? `<div class="mb-3"><label class="form-check"><input type="checkbox" class="form-check-input" name="active" ${p.active ? 'checked' : ''}> <span class="form-check-label">Posto ativo</span></label></div>` : ''}
+        <div class="alert alert-danger py-2 d-none" id="fp-erro"></div>
+        <button class="btn btn-brand btn-lg" type="submit">${id ? 'Salvar' : 'Cadastrar posto'}</button>
+      </form>`;
+    const caixaDias = () => { $('#fp-dias-box').style.display = $('#fp-freq').value === 'dias' ? '' : 'none'; };
+    $('#fp-freq').addEventListener('change', caixaDias);
+    caixaDias();
+    $('#form-posto').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const body = {
+        name: f.name.value, address: f.address.value, contact_name: f.contact_name.value, phone: f.phone.value,
+        frequency: f.frequency.value, frequency_days: f.frequency_days.value, next_visit_date: f.next_visit_date.value || null,
+        next_visit_time: f.next_visit_time.value || null, checklist_id: f.checklist_id.value || null,
+        entity_id: f.entity_id.value || null, notes: f.notes.value,
+      };
+      if (id) body.active = f.active.checked;
+      try {
+        const r = id ? await API.patch(`/postos/${id}`, body) : await API.post('/postos', body);
+        toast(id ? 'Posto salvo.' : 'Posto cadastrado.');
+        location.hash = `#/postos/${id || r.id}`;
+      } catch (e) { $('#fp-erro').textContent = e.message; $('#fp-erro').classList.remove('d-none'); }
+    });
+  }
+
+  // -------------------------------- Visita ------------------------------
+  const RESP = { ok: ['OK', 'ok'], nao_ok: ['NÃO OK', 'nao'], na: ['N/A', 'na'] };
+
+  async function vVisita(id, seq) {
+    const v = await API.get(`/visitas/${encodeURIComponent(id)}`);
+    if (seq !== renderSeq) return;
+    titulo(`Visita — ${v.location_name}`);
+    const total = v.respostas.length;
+    const feitas = () => $$('.ck-item').filter((el) => el.dataset.resp).length;
+    const tokenQ = `?token=${encodeURIComponent(API.token)}`;
+
+    if (!v.pode_editar) {
+      // Relatório da visita (somente leitura)
+      const naoOk = v.respostas.filter((r) => r.answer === 'nao_ok').length;
+      view().innerHTML = `
+        <a href="#/postos/${v.location_id}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> ${esc(v.location_name)}</a>
+        <div class="detail-head"><div><h3>Visita — ${esc(v.location_name)}</h3>
+          <div class="mt-1">${v.status === 'concluida' ? tag('tag-green', 'Concluída') : v.status === 'cancelada' ? tag('tag-gray', 'Cancelada') : tag('tag-teal', 'Em andamento')}
+          ${total ? (naoOk ? tag('tag-red', `${naoOk} NÃO OK`) : tag('tag-green', 'Checklist todo OK')) : ''}</div></div></div>
+        <div class="grid-2">
+          <div class="card-x"><dl class="kv">
+            <dt>Técnico</dt><dd>${esc(v.user_name || '—')}</dd>
+            <dt>Início</dt><dd>${fmtData(v.started_at)}</dd>
+            <dt>Conclusão</dt><dd>${fmtData(v.finished_at)}</dd>
+            <dt>Duração</dt><dd>${v.finished_at ? dur((new Date(v.finished_at) - new Date(v.started_at)) / 1000) : '—'}</dd>
+            <dt>Estava prevista</dt><dd>${dataBR(v.scheduled_for)}</dd>
+          </dl>
+          ${v.notes ? `<hr><div class="small-muted">Observações</div><div style="white-space:pre-wrap">${esc(v.notes)}</div>` : ''}
+          ${v.pending_notes ? `<hr><div class="small-muted">Pendências</div><div style="white-space:pre-wrap">${esc(v.pending_notes)}</div>` : ''}
+          ${v.atividades.length ? `<hr><div class="small-muted mb-1">Atividades criadas</div>${v.atividades.map((t) => `<div><a href="#/atividades/${t.id}">${esc(t.title)}</a> ${tagTarefa(t.status)}</div>`).join('')}` : ''}
+          </div>
+          <div class="card-x"><h3><i class="bi bi-ui-checks"></i>${esc(v.checklist_name || 'Checklist')}</h3>
+            ${total ? v.respostas.map((r) => `<div class="d-flex justify-content-between gap-2 py-2 border-bottom">
+              <div><div>${esc(r.item_label)}</div>${r.note ? `<div class="small-muted">${esc(r.note)}</div>` : ''}</div>
+              ${r.answer === 'ok' ? tag('tag-green', 'OK') : r.answer === 'nao_ok' ? tag('tag-red', 'NÃO OK') : r.answer === 'na' ? tag('tag-gray', 'N/A') : tag('tag-gray', '—')}</div>`).join('') : '<div class="small-muted">Visita sem checklist.</div>'}
+          </div>
+        </div>
+        ${v.fotos.length ? `<div class="card-x"><h3><i class="bi bi-camera"></i>Fotos</h3><div class="fotos">${v.fotos.map((f) => `<a href="/api/gbf/visitas/${v.id}/fotos/${f.id}${tokenQ}" target="_blank" rel="noopener"><img src="/api/gbf/visitas/${v.id}/fotos/${f.id}${tokenQ}" alt="${esc(f.file_name)}" loading="lazy"></a>`).join('')}</div></div>` : ''}`;
+      return;
+    }
+
+    // Execução da visita
+    view().innerHTML = `
+      <a href="#/postos/${v.location_id}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> ${esc(v.location_name)}</a>
+      <div class="detail-head"><div><h3>${esc(v.location_name)}</h3>
+        <div class="small-muted">Iniciada em ${fmtData(v.started_at)}${v.user_name ? ` por ${esc(v.user_name)}` : ''}</div></div></div>
+      ${v.demandas_orcim.length ? `<details class="card-x mb-3"><summary class="fw-semibold"><i class="bi bi-inboxes"></i> ${v.demandas_orcim.length} demanda(s) da Orcim abertas neste posto</summary>
+        <div class="mt-2">${v.demandas_orcim.map((d) => `<div class="py-1"><a href="#/demandas/${d.id}">${esc(d.number || '#' + d.id)}</a> — ${esc(d.title)} ${tag('tag-gray', d.status_label)}</div>`).join('')}</div></details>` : ''}
+      <div class="card-x mb-3">
+        <h3><i class="bi bi-ui-checks"></i>${esc(v.checklist_name || 'Checklist')} <span class="sub" id="ck-prog"></span></h3>
+        ${total ? v.respostas.map((r) => `<div class="ck-item" data-rid="${r.id}" data-resp="${r.answer || ''}">
+          <div class="ck-label">${esc(r.item_label)}</div>
+          <div class="ck-botoes" role="group" aria-label="${esc(r.item_label)}">
+            ${Object.entries(RESP).map(([k, [txt, cls]]) => `<button type="button" class="ck-btn ck-${cls} ${r.answer === k ? 'on' : ''}" data-ans="${k}" aria-pressed="${r.answer === k}">${txt}</button>`).join('')}
+          </div>
+          <button type="button" class="btn btn-link btn-sm p-0 ck-obs-btn">${r.note ? 'Observação' : '+ observação'}</button>
+          <textarea class="form-control mt-1 ck-obs ${r.note ? '' : 'd-none'}" rows="2" placeholder="Observação do item">${esc(r.note || '')}</textarea>
+        </div>`).join('') : '<div class="small-muted">Este posto não tem checklist. Registre as observações abaixo.</div>'}
+      </div>
+      <div class="card-x mb-3 form-grande">
+        <label class="form-label fw-semibold" for="vs-obs">Observações da visita</label>
+        <textarea class="form-control mb-3" id="vs-obs" rows="3">${esc(v.notes || '')}</textarea>
+        <label class="form-label fw-semibold" for="vs-pend">Pendências</label>
+        <textarea class="form-control" id="vs-pend" rows="2" placeholder="O que ficou para depois">${esc(v.pending_notes || '')}</textarea>
+        <label class="form-check mt-2"><input type="checkbox" class="form-check-input" id="vs-criar"> <span class="form-check-label">Criar uma atividade para acompanhar a pendência</span></label>
+        <div id="vs-ativ" class="d-none mt-2">
+          <input class="form-control mb-2" id="vs-ativ-tit" placeholder="Título da atividade">
+          <label class="form-label small" for="vs-ativ-prazo">Prazo</label>
+          <input type="datetime-local" class="form-control" id="vs-ativ-prazo">
+        </div>
+      </div>
+      <div class="card-x mb-3">
+        <h3><i class="bi bi-camera"></i>Fotos <span class="sub">opcional</span></h3>
+        <div class="fotos mb-2">${v.fotos.map((f) => `<div class="foto"><img src="/api/gbf/visitas/${v.id}/fotos/${f.id}${tokenQ}" alt="${esc(f.file_name)}" loading="lazy">
+          <button type="button" class="foto-del" data-foto="${f.id}" aria-label="Remover foto"><i class="bi bi-x-lg"></i></button></div>`).join('')}</div>
+        <label class="btn btn-outline-secondary btn-lg w-100"><i class="bi bi-camera"></i> Tirar ou escolher foto
+          <input type="file" accept="image/*" multiple class="d-none" id="vs-fotos"></label>
+      </div>
+      <div class="barra-concluir">
+        <button type="button" class="btn btn-link text-danger" id="vs-cancelar">Cancelar visita</button>
+        <button type="button" class="btn btn-lg btn-brand btn-acao flex-grow-1" id="vs-concluir"><i class="bi bi-check2-circle"></i> CONCLUIR VISITA</button>
+      </div>`;
+
+    const progresso = () => { if (total) $('#ck-prog').textContent = `${feitas()} de ${total}`; };
+    progresso();
+    $$('.ck-item').forEach((item) => {
+      const rid = item.dataset.rid;
+      $$('.ck-btn', item).forEach((b) => b.addEventListener('click', async () => {
+        const novo = item.dataset.resp === b.dataset.ans ? null : b.dataset.ans; // tocar de novo desmarca
+        try {
+          await API.req('PUT', `/visitas/${v.id}/respostas/${rid}`, { answer: novo });
+          item.dataset.resp = novo || '';
+          $$('.ck-btn', item).forEach((x) => { const on = x.dataset.ans === novo; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
+          if (novo === 'nao_ok') { $('.ck-obs', item).classList.remove('d-none'); }
+          progresso();
+        } catch (e) { toast(e.message, true); }
+      }));
+      $('.ck-obs-btn', item).addEventListener('click', () => { const t = $('.ck-obs', item); t.classList.toggle('d-none'); t.focus(); });
+      $('.ck-obs', item).addEventListener('change', (e) => {
+        API.req('PUT', `/visitas/${v.id}/respostas/${rid}`, { note: e.target.value }).catch((er) => toast(er.message, true));
+      });
+    });
+    const salvarTexto = (campo, el) => el.addEventListener('change', () => API.patch(`/visitas/${v.id}`, { [campo]: el.value }).catch((e) => toast(e.message, true)));
+    salvarTexto('notes', $('#vs-obs'));
+    salvarTexto('pending_notes', $('#vs-pend'));
+    $('#vs-criar').addEventListener('change', (e) => {
+      $('#vs-ativ').classList.toggle('d-none', !e.target.checked);
+      if (e.target.checked && !$('#vs-ativ-tit').value) $('#vs-ativ-tit').value = $('#vs-pend').value.split('\n')[0].slice(0, 120);
+    });
+    $('#vs-fotos').addEventListener('change', async (e) => {
+      const files = [...e.target.files];
+      if (!files.length) return;
+      const fd = new FormData();
+      files.forEach((f) => fd.append('fotos', f));
+      toast('Enviando foto(s)…');
+      try {
+        const res = await fetch(`/api/gbf/visitas/${v.id}/fotos`, { method: 'POST', headers: { Authorization: `Bearer ${API.token}` }, body: fd });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(j.error || 'Não foi possível enviar.');
+        await salvarAntesDeRecarregar();
+        render();
+      } catch (er) { toast(er.message, true); }
+    });
+    $$('[data-foto]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Remover esta foto?')) return;
+      await API.req('DELETE', `/visitas/${v.id}/fotos/${b.dataset.foto}`).catch((e) => toast(e.message, true));
+      await salvarAntesDeRecarregar();
+      render();
+    }));
+    async function salvarAntesDeRecarregar() {
+      await API.patch(`/visitas/${v.id}`, { notes: $('#vs-obs').value, pending_notes: $('#vs-pend').value }).catch(() => {});
+    }
+    $('#vs-cancelar').addEventListener('click', () => janela('Cancelar visita', '<p class="mb-0">A visita será descartada e não entra no histórico do posto. Continuar?</p>', {
+      ok: 'Cancelar visita', perigo: true,
+      onOk: async () => { await API.post(`/visitas/${v.id}/cancelar`); toast('Visita cancelada.'); location.hash = `#/postos/${v.location_id}`; },
+    }));
+    $('#vs-concluir').addEventListener('click', async () => {
+      const faltam = total - feitas();
+      if (faltam) {
+        toast(`Faltam ${faltam} item(ns) do checklist.`, true);
+        const pend = $$('.ck-item').find((el) => !el.dataset.resp);
+        pend?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        pend?.classList.add('ck-falta');
+        return;
+      }
+      const body = { notes: $('#vs-obs').value, pending_notes: $('#vs-pend').value };
+      if ($('#vs-criar').checked) {
+        if (!$('#vs-ativ-tit').value.trim()) { toast('Dê um título para a atividade da pendência.', true); return; }
+        body.pendencia = { title: $('#vs-ativ-tit').value, due_at: deInputLocal($('#vs-ativ-prazo').value), description: $('#vs-pend').value };
+      }
+      try {
+        const r = await API.post(`/visitas/${v.id}/concluir`, body);
+        toast(r.proxima_visita ? `Visita concluída. Próxima: ${dataBR(r.proxima_visita)}` : 'Visita concluída.');
+        location.hash = `#/visitas/${v.id}`;
+        render();
+      } catch (e) { toast(e.message, true); }
+    });
+  }
+
+  // ------------------------------ Checklists ----------------------------
+  async function vChecklists(seq) {
+    titulo('Checklists');
+    const lista = await API.get('/checklists');
+    if (seq !== renderSeq) return;
+    view().innerHTML = `
+      <div class="d-flex mb-3"><a class="btn btn-brand ms-auto" href="#/checklists/novo"><i class="bi bi-plus-lg"></i> Novo checklist</a></div>
+      ${lista.length ? `<div class="postos-grid">${lista.map((c) => `<div class="posto-card ${c.active ? '' : 'inativo'}" data-href="#/checklists/${c.id}">
+        <div class="d-flex justify-content-between gap-2"><div class="fw-bold">${esc(c.name)}</div>${c.active ? tag('tag-green', 'Ativo') : tag('tag-gray', 'Inativo')}</div>
+        ${c.description ? `<div class="small-muted">${esc(c.description)}</div>` : ''}
+        <div class="small-muted mt-2">${c.itens} item(ns) · usado em ${c.postos} posto(s)</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-dup="${c.id}"><i class="bi bi-copy"></i> Duplicar</button>
+      </div>`).join('')}</div>` : `<div class="card-x">${vazio('Nenhum checklist ainda. Crie o primeiro modelo.', 'ui-checks')}</div>`}`;
+    $$('[data-dup]').forEach((b) => b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const r = await API.post(`/checklists/${b.dataset.dup}/duplicar`).catch((e) => toast(e.message, true));
+      if (r) { toast('Checklist duplicado.'); location.hash = `#/checklists/${r.id}`; }
+    }));
+    ligarCliques();
+  }
+
+  async function vFormChecklist(id, seq) {
+    const [c, postos] = await Promise.all([
+      id ? API.get(`/checklists/${encodeURIComponent(id)}`) : { name: '', description: '', active: true, itens: ['Computador', 'Internet', 'Wi-Fi', 'Impressora', 'Telefonia', 'Sistema', 'Pendências'].map((label) => ({ label })), postos: [] },
+      API.get('/postos?todos=1'),
+    ]);
+    if (seq !== renderSeq) return;
+    titulo(id ? `Checklist — ${c.name}` : 'Novo checklist');
+    const marcados = new Set(c.postos.map(String));
+    view().innerHTML = `
+      <a href="#/checklists" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Checklists</a>
+      <form class="card-x mt-2 form-grande" id="form-ck" style="max-width:760px">
+        <div class="mb-3"><label class="form-label" for="ck-nome">Nome *</label><input class="form-control" id="ck-nome" name="name" required value="${esc(c.name)}" placeholder="Ex.: Visita ao posto"></div>
+        <div class="mb-3"><label class="form-label" for="ck-desc">Descrição</label><input class="form-control" id="ck-desc" name="description" value="${esc(c.description || '')}"></div>
+        <label class="form-label">Itens (cada um será respondido com OK / NÃO OK / N/A)</label>
+        <div id="ck-itens"></div>
+        <button type="button" class="btn btn-outline-secondary w-100 mb-3" id="ck-add"><i class="bi bi-plus-lg"></i> Adicionar item</button>
+        <label class="form-label">Usar nos postos</label>
+        <div class="row g-1 mb-3">${postos.length ? postos.map((p) => `<div class="col-sm-6"><label class="form-check">
+          <input type="checkbox" class="form-check-input" name="posto" value="${p.id}" ${marcados.has(String(p.id)) ? 'checked' : ''}>
+          <span class="form-check-label">${esc(p.name)}${p.checklist_id && !marcados.has(String(p.id)) ? ` <span class="small-muted">(usa ${esc(p.checklist_name)})</span>` : ''}</span></label></div>`).join('') : '<div class="small-muted">Nenhum posto cadastrado.</div>'}</div>
+        <label class="form-check mb-3"><input type="checkbox" class="form-check-input" name="active" ${c.active ? 'checked' : ''}> <span class="form-check-label">Ativo</span></label>
+        <div class="form-text mb-3">Mudar o modelo não altera visitas já feitas: cada visita guarda o checklist do jeito que estava.</div>
+        <div class="alert alert-danger py-2 d-none" id="ck-erro"></div>
+        <div class="d-flex gap-2 flex-wrap"><button class="btn btn-brand btn-lg" type="submit">Salvar</button>
+          ${id ? `<button type="button" class="btn btn-outline-secondary btn-lg" id="ck-dup"><i class="bi bi-copy"></i> Duplicar</button>` : ''}</div>
+      </form>`;
+    const itens = c.itens.map((i) => i.label);
+    const desenhar = () => {
+      $('#ck-itens').innerHTML = itens.map((l, i) => `<div class="ck-edit">
+        <input class="form-control" value="${esc(l)}" data-i="${i}" aria-label="Item ${i + 1}">
+        <button type="button" class="btn btn-outline-secondary" data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Subir"><i class="bi bi-arrow-up"></i></button>
+        <button type="button" class="btn btn-outline-secondary" data-down="${i}" ${i === itens.length - 1 ? 'disabled' : ''} aria-label="Descer"><i class="bi bi-arrow-down"></i></button>
+        <button type="button" class="btn btn-outline-danger" data-del="${i}" aria-label="Remover"><i class="bi bi-trash"></i></button></div>`).join('');
+      $$('#ck-itens input').forEach((inp) => inp.addEventListener('input', () => { itens[inp.dataset.i] = inp.value; }));
+      $$('[data-up]').forEach((b) => b.addEventListener('click', () => { const i = +b.dataset.up; [itens[i - 1], itens[i]] = [itens[i], itens[i - 1]]; desenhar(); }));
+      $$('[data-down]').forEach((b) => b.addEventListener('click', () => { const i = +b.dataset.down; [itens[i + 1], itens[i]] = [itens[i], itens[i + 1]]; desenhar(); }));
+      $$('[data-del]').forEach((b) => b.addEventListener('click', () => { itens.splice(+b.dataset.del, 1); desenhar(); }));
+    };
+    desenhar();
+    $('#ck-add').addEventListener('click', () => { itens.push(''); desenhar(); $$('#ck-itens input').pop().focus(); });
+    $('#ck-dup')?.addEventListener('click', async () => {
+      const r = await API.post(`/checklists/${id}/duplicar`).catch((e) => toast(e.message, true));
+      if (r) { toast('Checklist duplicado.'); location.hash = `#/checklists/${r.id}`; }
+    });
+    $('#form-ck').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const body = {
+        name: f.name.value, description: f.description.value, active: f.active.checked,
+        itens: itens.map((s) => s.trim()).filter(Boolean), postos: $$('input[name=posto]:checked').map((i) => Number(i.value)),
+      };
+      try {
+        const r = id ? await API.put(`/checklists/${id}`, body) : await API.post('/checklists', body);
+        toast('Checklist salvo.');
+        location.hash = `#/checklists/${id || r.id}`;
+        if (id) render();
+      } catch (e) { $('#ck-erro').textContent = e.message; $('#ck-erro').classList.remove('d-none'); }
+    });
+  }
+
+  // ----------------------------- Solicitações ---------------------------
+  async function vSolicitacoes(qs, seq) {
+    titulo('Solicitações');
+    const sit = qs.get('situacao') || 'abertas';
+    const lista = await API.get(`/solicitacoes?situacao=${sit}`);
+    if (seq !== renderSeq) return;
+    view().innerHTML = `
+      <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <div class="chips mb-0 me-auto">${[['abertas', 'Abertas'], ['concluidas', 'Concluídas'], ['todas', 'Todas']].map(([k, t]) => `<a class="chip ${sit === k ? 'active' : ''}" href="#/solicitacoes?situacao=${k}">${t}</a>`).join('')}</div>
+        ${ehGestor() ? '<a class="btn btn-brand" href="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i> Nova solicitação</a>' : ''}
+      </div>
+      ${lista.length ? lista.map((s) => `<div class="task solic" data-href="#/solicitacoes/${s.id}">
+        <div class="d-flex justify-content-between gap-2"><div class="ttl">${esc(s.title)}</div>${tagSolic(s.status)}</div>
+        <div class="meta">${s.priority >= 3 ? tag(s.priority === 4 ? 'tag-red' : 'tag-amber', s.priority_label) : ''}
+          ${s.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(s.location_name)}</span>` : ''}
+          ${s.desired_date ? `<span><i class="bi bi-calendar"></i> para ${dataBR(s.desired_date)}</span>` : ''}
+          <span>· pedida por ${esc(s.requested_by_name || '—')} ${relativo(s.created_at)}</span>
+          ${s.tempo_ate_concluir !== null ? `<span>· resolvida em ${dur(s.tempo_ate_concluir)}</span>` : ''}</div></div>`).join('')
+    : `<div class="card-x">${vazio(sit === 'abertas' ? 'Nenhuma solicitação aberta.' : 'Nada por aqui.', 'megaphone')}</div>`}`;
+    ligarCliques();
+  }
+
+  async function vSolicitacao(id, seq) {
+    const s = await API.get(`/solicitacoes/${encodeURIComponent(id)}`);
+    if (seq !== renderSeq) return;
+    titulo('Solicitação');
+    const aberta = ['a_fazer', 'em_andamento'].includes(s.status);
+    view().innerHTML = `
+      <a href="#/solicitacoes" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Solicitações</a>
+      <div class="detail-head"><div class="min-w-0"><div class="mt-2">${tagSolic(s.status)} ${s.priority >= 3 ? tag(s.priority === 4 ? 'tag-red' : 'tag-amber', s.priority_label) : ''}</div>
+        <h3>${esc(s.title)}</h3></div></div>
+      <div class="acoes-grandes">
+        ${s.status === 'a_fazer' ? '<button type="button" class="btn btn-lg btn-brand btn-acao" data-st="em_andamento"><i class="bi bi-play-circle"></i> COMEÇAR</button>' : ''}
+        ${aberta ? '<button type="button" class="btn btn-lg btn-success btn-acao" data-st="concluida"><i class="bi bi-check2-circle"></i> CONCLUIR</button>' : ''}
+        ${!aberta && s.status !== 'cancelada' ? '<button type="button" class="btn btn-lg btn-outline-secondary btn-acao" data-st="em_andamento"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button>' : ''}
+        ${aberta ? btnReag({ tipo: 'solicitacao', id: s.id, data: s.desired_date }, 'btn-lg') : ''}
+        ${ehGestor() ? `<a class="btn btn-lg btn-outline-secondary" href="#/solicitacoes/${s.id}/editar"><i class="bi bi-pencil"></i> Editar</a>` : ''}
+        ${ehGestor() && aberta ? '<button type="button" class="btn btn-lg btn-outline-danger" data-st="cancelada">Cancelar</button>' : ''}
+      </div>
+      <div class="card-x" style="max-width:760px"><dl class="kv">
+        <dt>Pedida por</dt><dd>${esc(s.requested_by_name || '—')} em ${fmtData(s.created_at)}</dd>
+        <dt>Posto</dt><dd>${s.location_id ? `<a href="#/postos/${s.location_id}">${esc(s.location_name)}</a>` : '—'}</dd>
+        <dt>Data desejada</dt><dd>${dataBR(s.desired_date)}</dd>
+        <dt>Atendida por</dt><dd>${esc(s.handled_by_name || '—')}</dd>
+        <dt>Começou</dt><dd>${fmtData(s.started_at)}</dd>
+        <dt>Concluída</dt><dd>${fmtData(s.completed_at)}${s.tempo_ate_concluir !== null ? ` <span class="small-muted">(${dur(s.tempo_ate_concluir)} desde o pedido)</span>` : ''}</dd>
+      </dl>
+      ${s.description ? `<hr><div style="white-space:pre-wrap">${esc(s.description)}</div>` : ''}
+      ${s.response ? `<hr><div class="small-muted mb-1">Resposta da TI</div><div style="white-space:pre-wrap">${esc(s.response)}</div>` : ''}
+      </div>`;
+    $$('[data-st]').forEach((b) => b.addEventListener('click', () => {
+      const st = b.dataset.st;
+      if (st === 'concluida') {
+        janela('Concluir solicitação', `<label class="form-label" for="sol-resp">O que foi feito</label>
+          <textarea class="form-control" id="sol-resp" rows="4">${esc(s.response || '')}</textarea>`, {
+          ok: 'Concluir',
+          onOk: async (el) => { await API.patch(`/solicitacoes/${s.id}`, { status: 'concluida', response: el.querySelector('#sol-resp').value }); toast('Solicitação concluída.'); render(); },
+        });
+      } else if (st === 'cancelada') {
+        janela('Cancelar solicitação', '<p class="mb-0">Cancelar esta solicitação?</p>', {
+          ok: 'Cancelar solicitação', perigo: true, onOk: async () => { await API.patch(`/solicitacoes/${s.id}`, { status: 'cancelada' }); render(); },
+        });
+      } else {
+        API.patch(`/solicitacoes/${s.id}`, { status: st }).then(() => { toast('Atualizado.'); render(); }).catch((e) => toast(e.message, true));
+      }
+    }));
+    ligarReagendar();
+  }
+
+  async function vFormSolicitacao(id, qs, seq) {
+    const [s, postos] = await Promise.all([id ? API.get(`/solicitacoes/${encodeURIComponent(id)}`) : null, API.get('/postos')]);
+    if (seq !== renderSeq) return;
+    titulo(id ? 'Editar solicitação' : 'Nova solicitação');
+    const postoSel = s ? s.location_id : qs.get('posto');
+    view().innerHTML = `
+      <a href="${id ? `#/solicitacoes/${id}` : '#/solicitacoes'}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Voltar</a>
+      <form class="card-x mt-2 form-grande" id="form-sol" style="max-width:640px">
+        <div class="mb-3"><label class="form-label" for="sl-tit">O que você precisa *</label><input class="form-control" id="sl-tit" name="title" required value="${esc(s?.title || '')}"></div>
+        <div class="mb-3"><label class="form-label" for="sl-desc">Detalhes</label><textarea class="form-control" id="sl-desc" name="description" rows="4">${esc(s?.description || '')}</textarea></div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6"><label class="form-label" for="sl-posto">Posto</label><select class="form-select" id="sl-posto" name="location_id"><option value="">Nenhum</option>
+            ${postos.map((p) => `<option value="${p.id}" ${String(p.id) === String(postoSel) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label" for="sl-prio">Prioridade</label><select class="form-select" id="sl-prio" name="priority">
+            ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(s?.priority || 2) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label" for="sl-data">Data desejada</label><input type="date" class="form-control" id="sl-data" name="desired_date" value="${esc(s?.desired_date || '')}"></div>
+        </div>
+        <div class="alert alert-danger py-2 d-none" id="sl-erro"></div>
+        <button class="btn btn-brand btn-lg" type="submit">${id ? 'Salvar' : 'Enviar para a TI'}</button>
+      </form>`;
+    $('#form-sol').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const body = { title: f.title.value, description: f.description.value, location_id: f.location_id.value || null, priority: Number(f.priority.value), desired_date: f.desired_date.value || null };
+      try {
+        const r = id ? await API.patch(`/solicitacoes/${id}`, body) : await API.post('/solicitacoes', body);
+        toast(id ? 'Solicitação salva.' : 'Solicitação enviada para a TI.');
+        location.hash = `#/solicitacoes/${id || r.id}`;
+      } catch (e) { $('#sl-erro').textContent = e.message; $('#sl-erro').classList.remove('d-none'); }
+    });
+  }
+
+  // --------------------------- Acompanhamento ---------------------------
+  async function vAcompanhamento(qs, seq) {
+    titulo('Acompanhamento da TI');
+    const dias = Number(qs.get('dias')) || 7;
+    const [a, h] = await Promise.all([API.get(`/acompanhamento?dias=${dias}`), API.get('/hoje')]);
+    if (seq !== renderSeq) return;
+    const r = a.resumo;
+    view().innerHTML = `
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="small-muted me-auto">O que a TI fez e o que está pendente.</div>
+        <div class="btn-group btn-group-sm">${[7, 30].map((d) => `<a class="btn ${d === dias ? 'btn-dark' : 'btn-outline-secondary'}" href="#/?dias=${d}">${d} dias</a>`).join('')}</div>
+        <a class="btn btn-brand btn-sm" href="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i> Nova solicitação</a>
+      </div>
+      <div class="kpis">
+        ${kpi(`Visitas feitas (${dias} d)`, r.visitas, { cls: 'ok', icon: 'geo-alt' })}
+        ${kpi(`Atividades concluídas (${dias} d)`, r.atividades, { cls: 'ok', icon: 'check2-square' })}
+        ${kpi(`Solicitações atendidas (${dias} d)`, r.solicitacoes, { cls: 'ok', icon: 'megaphone', hint: r.tempo_medio_solicitacao ? `média ${dur(r.tempo_medio_solicitacao)} do pedido à conclusão` : '' })}
+        ${kpi('Solicitações em aberto', r.solicitacoes_abertas, { cls: r.solicitacoes_abertas ? 'warn' : '', icon: 'hourglass-split', href: '#/solicitacoes' })}
+        ${kpi('Atividades atrasadas', r.atividades_atrasadas, { cls: r.atividades_atrasadas ? 'bad' : 'ok', icon: 'alarm', href: '#/atividades?situacao=atrasadas' })}
+        ${kpi('Postos com visita atrasada', a.postos_atrasados.length, { cls: a.postos_atrasados.length ? 'bad' : 'ok', icon: 'exclamation-triangle', href: '#/postos' })}
+      </div>
+      ${h.em_andamento.map((v) => `<div class="banner-andamento" data-href="#/visitas/${v.id}"><div><strong>Agora: visita em andamento — ${esc(v.location_name)}</strong>
+        <div class="small">${esc(v.user_name || '')} · desde ${fmtData(v.started_at)} · ${v.faltam ? `faltam ${v.faltam} item(ns)` : 'checklist completo'}</div></div></div>`).join('')}
+      <div class="grid-2">
+        <div class="card-x"><h3><i class="bi bi-activity"></i>O que foi feito</h3>
+          ${a.feed.length ? `<ul class="timeline">${a.feed.map((f) => `<li data-href="${f.link}" class="click-li">
+            <div class="${f.alerta ? 'text-danger' : ''}"><strong>${esc(f.titulo)}</strong></div>
+            ${f.detalhe ? `<div class="small">${esc(f.detalhe)}</div>` : ''}
+            <div class="when">${fmtData(f.quando)}${f.quem ? ` · ${esc(f.quem)}` : ''}</div></li>`).join('')}</ul>` : vazio(`Nada concluído nos últimos ${dias} dias.`, 'hourglass')}
+        </div>
+        <div>
+          <div class="card-x mb-3"><h3><i class="bi bi-calendar-day"></i>Hoje <a class="sub" href="#/hoje">ver o dia do técnico</a></h3>
+            <div class="small-muted mb-2">${h.visitas_hoje.length} visita(s) prevista(s) · ${h.atividades_hoje.length} atividade(s) · ${h.concluidas_hoje.visitas} visita(s) já concluída(s)</div>
+            ${h.visitas_hoje.map((p) => `<div class="d-flex justify-content-between py-1 border-bottom" data-href="#/postos/${p.id}"><span>${esc(p.name)}</span>
+              <span>${p.visita_id ? tag('tag-teal', 'em andamento') : p.atrasada ? tag('tag-red', `atrasada · ${dataBR(p.data)}`) : tag('tag-blue', p.hora || 'hoje')}</span></div>`).join('') || '<div class="small-muted">Nenhuma visita prevista.</div>'}
+          </div>
+          <div class="card-x mb-3"><h3 class="text-danger"><i class="bi bi-x-octagon"></i>Itens NÃO OK nas visitas</h3>
+            ${a.nao_ok.length ? a.nao_ok.map((n) => `<div class="py-1 border-bottom" data-href="#/visitas/${n.visit_id}"><strong>${esc(n.item_label)}</strong> — ${esc(n.local)}
+              <div class="small-muted">${fmtData(n.finished_at)}${n.note ? ` · ${esc(n.note)}` : ''}</div></div>`).join('') : '<div class="small-muted">Nenhum item com problema no período.</div>'}
+          </div>
+          <div class="card-x"><h3><i class="bi bi-exclamation-triangle"></i>Postos com visita atrasada</h3>
+            ${a.postos_atrasados.length ? a.postos_atrasados.map((p) => `<div class="d-flex justify-content-between py-1 border-bottom" data-href="#/postos/${p.id}">
+              <span>${esc(p.name)}</span><span class="text-danger small">${p.dias_atraso} dia(s) · ${dataBR(p.data)}</span></div>`).join('') : '<div class="small-muted">Tudo em dia.</div>'}
+            ${r.postos_sem_data ? `<div class="small-muted mt-2">${r.postos_sem_data} posto(s) sem próxima visita definida.</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+    ligarCliques();
   }
 
   // ------------------------------------------------------------------

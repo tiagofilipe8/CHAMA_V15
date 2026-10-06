@@ -9,11 +9,13 @@ const router = express.Router();
 
 const TASK_SELECT = `
   SELECT t.*, ua.name AS assignee_name, uc.name AS created_by_name,
-         tk.number AS ticket_number, tk.title AS ticket_title, tk.status AS ticket_status
+         tk.number AS ticket_number, tk.title AS ticket_title, tk.status AS ticket_status,
+         gl.name AS location_name
   FROM gbf_tasks t
   LEFT JOIN gbf_users ua ON ua.id = t.assignee_id
   LEFT JOIN gbf_users uc ON uc.id = t.created_by
-  LEFT JOIN tickets tk ON tk.id = t.ticket_id`;
+  LEFT JOIN tickets tk ON tk.id = t.ticket_id
+  LEFT JOIN gbf_locations gl ON gl.id = t.location_id`;
 
 const FECHADA = ['concluida', 'cancelada'];
 
@@ -81,6 +83,7 @@ router.get('/', ah(async (req, res) => {
   else if (situacao === 'concluidas') conds.push(`t.status = 'concluida'`);
   else if (situacao && STATUS_TAREFA[situacao]) add('t.status = ?', situacao);
   if (demanda && /^\d+$/.test(demanda)) add('t.ticket_id = ?', Number(demanda));
+  if (req.query.posto && /^\d+$/.test(req.query.posto)) add('t.location_id = ?', Number(req.query.posto));
   if (q) add('(t.title ILIKE ? OR t.description ILIKE $' + (params.length + 1) + ')', `%${String(q).slice(0, 100)}%`);
   const { rows } = await query(
     `${TASK_SELECT} WHERE ${conds.join(' AND ')}
@@ -140,11 +143,12 @@ router.post('/', ah(async (req, res) => {
   if (tk.erro) return res.status(422).json({ error: tk.erro });
 
   const { rows } = await query(
-    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [
+    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [
       title.slice(0, 200), String(b.description || '').trim() || null,
       Math.min(Math.max(parseInt(b.priority, 10) || 2, 1), 4),
       assignee, u.id, tk.id, String(b.location || '').trim() || null, b.due_at || null,
+      /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null,
     ]);
   const id = rows[0].id;
   await evento(id, u.id, `${u.name} criou a atividade.`);
@@ -176,6 +180,7 @@ router.patch('/:id', ah(async (req, res) => {
   }
   if (b.description !== undefined) set('description', String(b.description).trim() || null);
   if (b.location !== undefined) set('location', String(b.location).trim() || null);
+  if (b.location_id !== undefined) set('location_id', /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null);
   if (b.priority !== undefined) set('priority', Math.min(Math.max(parseInt(b.priority, 10) || 2, 1), 4));
   if (b.due_at !== undefined) {
     set('due_at', b.due_at || null);

@@ -54,6 +54,55 @@ O módulo foi feito para não interferir no que já existe:
 - **Usuários** (gestor): papéis *gestor* e *técnico*, com troca de senha obrigatória no primeiro acesso.
 - **Configurações** (gestor): escolha das empresas (entities) que o painel acompanha.
 
+### Rotina do técnico (postos, agenda, visitas, checklists, solicitações)
+
+O fluxo central é **Posto → próxima visita → agenda → iniciar visita → checklist → concluir → histórico do posto**.
+
+- **Meu dia** (página inicial do técnico): mostra
+  - as visitas de hoje e as atrasadas, com o botão INICIAR VISITA;
+  - a visita em andamento;
+  - as atividades de hoje e as atrasadas;
+  - as solicitações do gestor e as próximas visitas.
+- **Postos**: cada posto tem uma ficha com
+  - endereço, responsável, telefone e observações;
+  - frequência da visita (semanal, quinzenal, mensal, a cada X dias ou sem recorrência);
+  - próxima visita, com data e horário;
+  - checklist e a empresa correspondente na Central.
+
+  A ficha também mostra as demandas da Orcim abertas para essa empresa, as atividades, as
+  solicitações e o histórico de visitas.
+- **Agenda**: visualização por dia, semana, mês ou lista. Mostra visitas previstas, visitas
+  feitas, atividades e solicitações. Para reagendar, o técnico informa a nova data e o horário,
+  sem arrastar nada. Ao reagendar uma visita, muda só a próxima visita do posto.
+- **Visita**: o checklist do posto é **copiado para a visita**. Por isso, alterar o modelo depois
+  não muda o histórico.
+  - Cada item recebe OK, NÃO OK ou N/A, com observação opcional, e é salvo a cada toque.
+  - A visita também tem observações, pendências e fotos (opcionais).
+  - Ao concluir, o sistema atualiza a última visita e calcula **somente a próxima** data pela
+    frequência.
+  - Uma pendência pode virar atividade do posto.
+- **Checklists**: dá para criar, editar, duplicar, ativar ou desativar e reordenar itens (com
+  botões de subir e descer), e associar o modelo aos postos.
+- **Solicitações**: o gestor abre a solicitação, a TI atende (A fazer → Em andamento → Concluída,
+  com a resposta do que foi feito) e o gestor acompanha.
+- **Acompanhamento** (página inicial do gestor): mostra
+  - o que foi feito no período (visitas, atividades e solicitações);
+  - os itens NÃO OK;
+  - os postos com visita atrasada;
+  - o que está acontecendo agora.
+- **Avisos internos**:
+  - nova solicitação, para os técnicos;
+  - solicitação concluída, para quem pediu;
+  - visita concluída, para os gestores;
+  - visita prevista para hoje ou atrasada, para os técnicos, uma vez por dia;
+  - atividade que vence em 24 h ou atrasada.
+
+As fotos ficam em `uploads/gbf/visitas/<id>/`, já coberto pelo `.gitignore` (`uploads/*`).
+
+Tabelas: `gbf_locations`, `gbf_checklists`, `gbf_checklist_items`, `gbf_visits`,
+`gbf_visit_answers`, `gbf_visit_photos` e `gbf_requests`. A tabela `gbf_tasks` ganhou
+`location_id` e `visit_id`.
+
 ### Como os tempos são calculados
 
 Os tempos vêm do histórico de status. Nada é digitado.

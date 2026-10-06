@@ -88,3 +88,116 @@ CREATE TABLE IF NOT EXISTS gbf_settings (
     value      JSONB,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- =====================================================================
+-- Rotina do técnico (Prompt do TI): postos, checklists, visitas,
+-- solicitações do gestor. Fluxo: POSTO -> AGENDA -> VISITA -> CHECKLIST
+-- -> CONCLUSÃO -> HISTÓRICO.
+-- =====================================================================
+
+-- Modelos de checklist
+CREATE TABLE IF NOT EXISTS gbf_checklists (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT        NOT NULL,
+    description TEXT,
+    active      BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS gbf_checklist_items (
+    id           BIGSERIAL PRIMARY KEY,
+    checklist_id BIGINT  NOT NULL REFERENCES gbf_checklists(id) ON DELETE CASCADE,
+    label        TEXT    NOT NULL,
+    position     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_checklist_items ON gbf_checklist_items(checklist_id, position);
+
+-- Postos / unidades visitadas
+-- frequency: semanal | quinzenal | mensal | dias (a cada X dias) | nenhuma
+CREATE TABLE IF NOT EXISTS gbf_locations (
+    id               BIGSERIAL PRIMARY KEY,
+    name             TEXT        NOT NULL,
+    address          TEXT,
+    contact_name     TEXT,
+    phone            TEXT,
+    notes            TEXT,
+    entity_id        BIGINT,     -- empresa correspondente na Central/Orcim (só referência)
+    checklist_id     BIGINT      REFERENCES gbf_checklists(id) ON DELETE SET NULL,
+    frequency        TEXT        NOT NULL DEFAULT 'nenhuma'
+                     CHECK (frequency IN ('semanal','quinzenal','mensal','dias','nenhuma')),
+    frequency_days   INTEGER,
+    last_visit_at    TIMESTAMPTZ,
+    next_visit_date  DATE,
+    next_visit_time  TIME,
+    visit_notified_date DATE,
+    active           BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_locations_next ON gbf_locations(next_visit_date) WHERE active;
+
+-- Visitas realizadas (o checklist é copiado para a visita: mudar o modelo
+-- depois não altera o histórico)
+CREATE TABLE IF NOT EXISTS gbf_visits (
+    id             BIGSERIAL PRIMARY KEY,
+    location_id    BIGINT      NOT NULL REFERENCES gbf_locations(id) ON DELETE CASCADE,
+    user_id        BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    status         TEXT        NOT NULL DEFAULT 'em_andamento'
+                   CHECK (status IN ('em_andamento','concluida','cancelada')),
+    scheduled_for  DATE,
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at    TIMESTAMPTZ,
+    checklist_name TEXT,
+    notes          TEXT,
+    pending_notes  TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_visits_location ON gbf_visits(location_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gbf_visits_status   ON gbf_visits(status, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS gbf_visit_answers (
+    id         BIGSERIAL PRIMARY KEY,
+    visit_id   BIGINT  NOT NULL REFERENCES gbf_visits(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL DEFAULT 0,
+    item_label TEXT    NOT NULL,
+    answer     TEXT    CHECK (answer IN ('ok','nao_ok','na')),
+    note       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_visit_answers ON gbf_visit_answers(visit_id, position);
+
+CREATE TABLE IF NOT EXISTS gbf_visit_photos (
+    id           BIGSERIAL PRIMARY KEY,
+    visit_id     BIGINT      NOT NULL REFERENCES gbf_visits(id) ON DELETE CASCADE,
+    file_name    TEXT        NOT NULL,
+    storage_path TEXT        NOT NULL,
+    mime_type    TEXT,
+    file_size    BIGINT,
+    uploaded_by  BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Solicitações do gestor para a TI
+CREATE TABLE IF NOT EXISTS gbf_requests (
+    id            BIGSERIAL PRIMARY KEY,
+    title         TEXT        NOT NULL,
+    description   TEXT,
+    location_id   BIGINT      REFERENCES gbf_locations(id) ON DELETE SET NULL,
+    priority      SMALLINT    NOT NULL DEFAULT 2 CHECK (priority BETWEEN 1 AND 4),
+    desired_date  DATE,
+    status        TEXT        NOT NULL DEFAULT 'a_fazer'
+                  CHECK (status IN ('a_fazer','em_andamento','concluida','cancelada')),
+    requested_by  BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    handled_by    BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    response      TEXT,
+    started_at    TIMESTAMPTZ,
+    completed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_requests_status ON gbf_requests(status, created_at DESC);
+
+-- Atividades podem pertencer a um posto
+ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS location_id BIGINT REFERENCES gbf_locations(id) ON DELETE SET NULL;
+ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS visit_id BIGINT REFERENCES gbf_visits(id) ON DELETE SET NULL;
