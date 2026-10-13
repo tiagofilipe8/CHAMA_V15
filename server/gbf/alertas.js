@@ -1,6 +1,7 @@
 // Avisos automáticos do Painel Beija-Flor (rodam a cada minuto).
 // Lê a Central para detectar novidades; grava só em gbf_*.
 const { query } = require('../db');
+const { queryCentral } = require('./fonte');
 const {
   STATUS_CENTRAL, escopoTickets, notificar, usuariosAtivos,
 } = require('./common');
@@ -12,17 +13,24 @@ let timer = null;
 const fmt = (d) => new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 async function verificarDemandas() {
+  // A Central pode estar em outro banco (ORCIM_DB_URL): lê o "já visto" aqui e os chamados lá
+  const vistos = new Map((await query('SELECT ticket_id, last_status, sla_notified FROM gbf_ticket_watch')).rows
+    .map((w) => [String(w.ticket_id), w]));
   const params = [];
   const escopo = await escopoTickets(params);
-  const { rows } = await query(
-    `SELECT t.id, t.number, t.title, t.status, t.due_at, t.created_at, e.name AS entity_name,
-            w.ticket_id AS visto, w.last_status, w.sla_notified
+  params.push([...vistos.keys()]);
+  const { rows: chamados } = await queryCentral(
+    `SELECT t.id, t.number, t.title, t.status, t.due_at, t.created_at, e.name AS entity_name
      FROM tickets t
      JOIN entities e ON e.id = t.entity_id
-     LEFT JOIN gbf_ticket_watch w ON w.ticket_id = t.id
      WHERE ${escopo}
-       AND (t.status NOT IN (6,7) OR t.updated_at > now() - interval '2 days' OR w.ticket_id IS NULL)`,
+       AND (t.status NOT IN (6,7) OR t.updated_at > now() - interval '2 days'
+            OR NOT (t.id = ANY($${params.length}::bigint[])))`,
     params);
+  const rows = chamados.map((t) => {
+    const w = vistos.get(String(t.id));
+    return { ...t, visto: w ? t.id : null, last_status: w?.last_status ?? null, sla_notified: w?.sla_notified ?? false };
+  });
   if (!rows.length) return;
 
   // Primeira execução: só registra o estado atual, sem disparar avisos em massa

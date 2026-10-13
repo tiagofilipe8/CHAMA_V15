@@ -807,6 +807,12 @@
     if (seq !== renderSeq) return;
     const marcadas = new Set(c.entidades.map(String));
     view().innerHTML = `
+      ${c.fonte?.externa ? `<div class="card-x mb-3" style="max-width:760px">
+        <h3><i class="bi bi-database"></i>Dados da Orcim</h3>
+        ${c.fonte.ok
+    ? `<div class="text-success fw-semibold"><i class="bi bi-check-circle"></i> Conectado ao banco da Orcim (somente leitura) · ${c.fonte.chamados} chamado(s) na Central.</div>`
+    : `<div class="text-danger fw-semibold"><i class="bi bi-x-circle"></i> Não foi possível ler o banco da Orcim.</div><div class="small-muted mt-1">${esc(c.fonte.erro)}</div>`}
+      </div>` : ''}
       <form class="card-x" id="form-cfg" style="max-width:760px">
         <div class="mb-3"><label class="form-label">Nome do painel</label><input class="form-control" name="nome_painel" value="${esc(c.nome_painel)}"></div>
         <label class="form-label">Empresas acompanhadas</label>

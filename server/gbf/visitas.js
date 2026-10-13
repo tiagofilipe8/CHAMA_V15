@@ -7,6 +7,7 @@ const multer = require('multer');
 const config = require('../config');
 const { query, pool } = require('../db');
 const { ah, STATUS_CENTRAL, notificar, usuariosAtivos } = require('./common');
+const { queryCentral } = require('./fonte');
 
 const router = express.Router();
 const HOJE = `(now() AT TIME ZONE 'America/Sao_Paulo')::date`;
@@ -35,13 +36,18 @@ async function carregar(id) {
   if (!/^\d+$/.test(String(id))) return null;
   const { rows } = await query(
     `SELECT v.*, v.scheduled_for::text AS scheduled_for, l.name AS location_name, l.address AS location_address, l.entity_id,
-            u.name AS user_name, e.name AS entity_name
+            u.name AS user_name
      FROM gbf_visits v
      JOIN gbf_locations l ON l.id = v.location_id
      LEFT JOIN gbf_users u ON u.id = v.user_id
-     LEFT JOIN entities e ON e.id = l.entity_id
      WHERE v.id = $1`, [id]);
-  return rows[0] || null;
+  const v = rows[0];
+  if (!v) return null;
+  // Nome da empresa vem da Central (que pode estar em outro banco)
+  v.entity_name = v.entity_id
+    ? (await queryCentral('SELECT name FROM entities WHERE id = $1', [v.entity_id])).rows[0]?.name || null
+    : null;
+  return v;
 }
 
 const podeEditar = (u, v) => v.status === 'em_andamento' && (u.role === 'gestor' || String(v.user_id) === String(u.id));
@@ -117,7 +123,7 @@ router.get('/:id', ah(async (req, res) => {
     query('SELECT id, file_name, created_at FROM gbf_visit_photos WHERE visit_id = $1 ORDER BY created_at', [v.id]),
     query(`SELECT id, title, status, due_at FROM gbf_tasks WHERE visit_id = $1 ORDER BY created_at`, [v.id]),
     v.entity_id
-      ? query(`SELECT id, number, title, status, due_at FROM tickets
+      ? queryCentral(`SELECT id, number, title, status, due_at FROM tickets
                WHERE entity_id = $1 AND status NOT IN (5,6,7) ORDER BY created_at ASC LIMIT 20`, [v.entity_id])
       : { rows: [] },
   ]);

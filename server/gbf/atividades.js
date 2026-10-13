@@ -1,6 +1,7 @@
 // Atividades do nosso técnico (tabelas gbf_* — nada na Central é alterado).
 const express = require('express');
 const { query } = require('../db');
+const { queryCentral } = require('./fonte');
 const {
   ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets,
 } = require('./common');
@@ -9,13 +10,23 @@ const router = express.Router();
 
 const TASK_SELECT = `
   SELECT t.*, ua.name AS assignee_name, uc.name AS created_by_name,
-         tk.number AS ticket_number, tk.title AS ticket_title, tk.status AS ticket_status,
          gl.name AS location_name
   FROM gbf_tasks t
   LEFT JOIN gbf_users ua ON ua.id = t.assignee_id
   LEFT JOIN gbf_users uc ON uc.id = t.created_by
-  LEFT JOIN tickets tk ON tk.id = t.ticket_id
   LEFT JOIN gbf_locations gl ON gl.id = t.location_id`;
+
+// Número, título e status da demanda ligada vêm da Central (que pode estar em outro banco)
+async function comDemandas(lista) {
+  const ids = [...new Set(lista.map((t) => t.ticket_id).filter(Boolean).map(String))];
+  if (!ids.length) return lista;
+  const { rows } = await queryCentral('SELECT id, number, title, status FROM tickets WHERE id = ANY($1::bigint[])', [ids]);
+  const mapa = new Map(rows.map((r) => [String(r.id), r]));
+  return lista.map((t) => {
+    const d = t.ticket_id ? mapa.get(String(t.ticket_id)) : null;
+    return { ...t, ticket_number: d?.number ?? null, ticket_title: d?.title ?? null, ticket_status: d?.status ?? null };
+  });
+}
 
 const FECHADA = ['concluida', 'cancelada'];
 
@@ -44,7 +55,7 @@ const podeVer = (u, t) => u.role === 'gestor' || t.assignee_id === u.id || t.cre
 async function carregar(id) {
   if (!/^\d+$/.test(String(id))) return null;
   const { rows } = await query(`${TASK_SELECT} WHERE t.id = $1`, [id]);
-  return rows[0] || null;
+  return rows[0] ? (await comDemandas(rows))[0] : null;
 }
 
 async function evento(taskId, userId, content, kind = 'system') {
@@ -57,7 +68,7 @@ async function validarTicket(ticketId) {
   if (!/^\d+$/.test(String(ticketId))) return { erro: 'Demanda inválida.' };
   const params = [ticketId];
   const escopo = await escopoTickets(params);
-  const { rows } = await query(`SELECT t.id FROM tickets t WHERE t.id = $1 AND ${escopo}`, params);
+  const { rows } = await queryCentral(`SELECT t.id FROM tickets t WHERE t.id = $1 AND ${escopo}`, params);
   return rows.length ? { id: rows[0].id } : { erro: 'Demanda da Orcim não encontrada.' };
 }
 
@@ -90,7 +101,7 @@ router.get('/', ah(async (req, res) => {
      ORDER BY (t.status IN ('concluida','cancelada')), t.due_at NULLS LAST, t.priority DESC, t.created_at DESC
      LIMIT 500`, params);
   const agora = new Date();
-  res.json(rows.map((r) => enriquecer(r, agora)));
+  res.json((await comDemandas(rows)).map((r) => enriquecer(r, agora)));
 }));
 
 // Resumo de produtividade (por responsável)

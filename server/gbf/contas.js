@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { query } = require('../db');
 const { signToken, publicUser, requireGbf, requireGestor } = require('./auth');
 const { ah, getSetting, setSetting } = require('./common');
+const { queryCentral, statusCentral } = require('./fonte');
 
 const publico = express.Router();
 const privado = express.Router();
@@ -168,12 +169,14 @@ privado.patch('/usuarios/:id', requireGestor, ah(async (req, res) => {
 privado.get('/config', requireGestor, ah(async (req, res) => {
   const [entidades, todas] = await Promise.all([
     getSetting('entidades', []),
-    query('SELECT id, name, active FROM entities ORDER BY name'),
+    // Se o banco da Orcim estiver fora do ar, a tela abre mesmo assim e mostra o motivo
+    queryCentral('SELECT id, name, active FROM entities ORDER BY name').catch(() => ({ rows: [] })),
   ]);
   res.json({
     nome_painel: (await getSetting('nome_painel', null)) || 'Painel Beija-Flor',
     entidades: Array.isArray(entidades) ? entidades : [],
     empresas_central: todas.rows,
+    fonte: await statusCentral(),
   });
 }));
 

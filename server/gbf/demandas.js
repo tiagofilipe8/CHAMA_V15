@@ -5,11 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../config');
 const { query } = require('../db');
+const { queryCentral, centralExterna } = require('./fonte');
 const {
-  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, escopoTickets, tabelaExiste,
+  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, escopoTickets,
 } = require('./common');
 
 const router = express.Router();
+
+const existeNaCentral = async (nome) => !!(await queryCentral('SELECT to_regclass($1) AS t', [`public.${nome}`])).rows[0].t;
 
 // resolvido_em = primeira entrada em Resolvido/Fechado depois da última reabertura
 const DEMANDA_SELECT = `
@@ -91,7 +94,7 @@ router.get('/resumo', ah(async (req, res) => {
   const params = [];
   const escopo = await escopoTickets(params);
   params.push(dias);
-  const { rows } = await query(
+  const { rows } = await queryCentral(
     `${DEMANDA_SELECT}
      WHERE ${escopo} AND (${ABERTO} OR t.updated_at >= now() - ($${params.length}::int * interval '1 day'))`,
     params);
@@ -197,7 +200,7 @@ router.get('/', ah(async (req, res) => {
     add('(t.title ILIKE ? OR t.number ILIKE ? OR e.name ILIKE ?)', like, like, like);
   }
   const lim = Math.min(parseInt(req.query.limite, 10) || 300, 1000);
-  const { rows } = await query(
+  const { rows } = await queryCentral(
     `${DEMANDA_SELECT} WHERE ${conds.join(' AND ')}
      ORDER BY (t.status IN (5,6,7)), t.due_at NULLS LAST, t.created_at DESC LIMIT ${lim}`, params);
 
@@ -222,9 +225,9 @@ router.get('/filtros', ah(async (req, res) => {
   const params = [];
   const escopo = await escopoTickets(params);
   const [empresas, tecnicos] = await Promise.all([
-    query(`SELECT DISTINCT e.id, e.name FROM tickets t JOIN entities e ON e.id = t.entity_id
+    queryCentral(`SELECT DISTINCT e.id, e.name FROM tickets t JOIN entities e ON e.id = t.entity_id
            WHERE ${escopo} ORDER BY e.name`, params),
-    query(`SELECT id, name FROM users WHERE role IN ('admin','technician') AND active = TRUE ORDER BY name`),
+    queryCentral(`SELECT id, name FROM users WHERE role IN ('admin','technician') AND active = TRUE ORDER BY name`),
   ]);
   res.json({ empresas: empresas.rows, tecnicos: tecnicos.rows });
 }));
@@ -233,10 +236,10 @@ router.get('/filtros', ah(async (req, res) => {
 // Manutenções programadas dos equipamentos (inventário da Central)
 // ---------------------------------------------------------------------
 router.get('/manutencoes', ah(async (req, res) => {
-  if (!(await tabelaExiste('assets'))) return res.json({ disponivel: false, programadas: [], realizadas: [] });
+  if (!(await existeNaCentral('assets'))) return res.json({ disponivel: false, programadas: [], realizadas: [] });
   const params = [];
   const escopo = (await escopoTickets(params)).replace(/t\.entity_id/g, 'a.entity_id');
-  const programadas = await query(
+  const programadas = await queryCentral(
     `SELECT a.id, a.name, a.asset_tag, a.type, a.location, a.department, a.status,
             a.next_maintenance_date, a.next_maintenance_notes, e.name AS entity_name,
             (a.next_maintenance_date - CURRENT_DATE)::int AS dias
@@ -246,8 +249,8 @@ router.get('/manutencoes', ah(async (req, res) => {
        AND a.next_maintenance_date <= CURRENT_DATE + 60
      ORDER BY a.next_maintenance_date ASC LIMIT 200`, params);
   let realizadas = { rows: [] };
-  if (await tabelaExiste('asset_maintenances')) {
-    realizadas = await query(
+  if (await existeNaCentral('asset_maintenances')) {
+    realizadas = await queryCentral(
       `SELECT m.id, m.performed_at, m.description, a.name AS asset_name, a.asset_tag,
               e.name AS entity_name, u.name AS created_by_name
        FROM asset_maintenances m
@@ -266,7 +269,7 @@ router.get('/manutencoes', ah(async (req, res) => {
 async function carregarDemanda(id) {
   const params = [id];
   const escopo = await escopoTickets(params);
-  const { rows } = await query(`${DEMANDA_SELECT} WHERE t.id = $1 AND ${escopo}`, params);
+  const { rows } = await queryCentral(`${DEMANDA_SELECT} WHERE t.id = $1 AND ${escopo}`, params);
   return rows[0] || null;
 }
 
@@ -276,13 +279,13 @@ router.get('/:id', ah(async (req, res) => {
   if (!d) return res.status(404).json({ error: 'Demanda não encontrada.' });
 
   const [hist, msgs, anexos, tarefas] = await Promise.all([
-    query(`SELECT h.old_status, h.new_status, h.created_at, u.name AS user_name
+    queryCentral(`SELECT h.old_status, h.new_status, h.created_at, u.name AS user_name
            FROM ticket_status_history h LEFT JOIN users u ON u.id = h.user_id
            WHERE h.ticket_id = $1 ORDER BY h.created_at ASC, h.id ASC`, [d.id]),
-    query(`SELECT m.kind, m.content, m.new_status, m.created_at, u.name AS author_name, u.role AS author_role
+    queryCentral(`SELECT m.kind, m.content, m.new_status, m.created_at, u.name AS author_name, u.role AS author_role
            FROM ticket_messages m JOIN users u ON u.id = m.user_id
            WHERE m.ticket_id = $1 ORDER BY m.created_at ASC, m.id ASC`, [d.id]),
-    query(`SELECT id, file_name, mime_type, file_size, created_at FROM ticket_attachments
+    queryCentral(`SELECT id, file_name, mime_type, file_size, created_at FROM ticket_attachments
            WHERE ticket_id = $1 ORDER BY created_at ASC`, [d.id]),
     query(`SELECT t.id, t.title, t.status, t.due_at, u.name AS assignee_name
            FROM gbf_tasks t LEFT JOIN gbf_users u ON u.id = t.assignee_id
@@ -319,11 +322,15 @@ router.get('/:id/anexos/:anexoId', ah(async (req, res) => {
   }
   const d = await carregarDemanda(req.params.id);
   if (!d) return res.status(404).json({ error: 'Demanda não encontrada.' });
-  const { rows } = await query(
+  const { rows } = await queryCentral(
     'SELECT * FROM ticket_attachments WHERE id = $1 AND ticket_id = $2', [req.params.anexoId, d.id]);
   if (!rows.length) return res.status(404).json({ error: 'Anexo não encontrado.' });
   const file = path.join(config.uploadsDir, 'tickets', String(d.id), path.basename(rows[0].storage_path));
-  if (!fs.existsSync(file)) return res.status(404).json({ error: 'Arquivo não está no servidor.' });
+  if (!fs.existsSync(file)) {
+    return res.status(404).json({ error: centralExterna
+      ? 'Este anexo fica guardado no servidor da Orcim. Abra pela Central deles.'
+      : 'Arquivo não está no servidor.' });
+  }
   res.type(rows[0].mime_type || 'application/octet-stream');
   const inline = req.query.inline === '1' && /^image\//.test(rows[0].mime_type || '');
   res.setHeader('Content-Disposition',

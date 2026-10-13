@@ -156,3 +156,41 @@ variável de ambiente** — sem as variáveis, a Central funciona exatamente com
 | `GBF_HOME=1` | o endereço raiz (`/`) redireciona para `/gbf/` (`server/index.js`) |
 | `WHATSAPP_DISABLED=1` | não inicia o cliente do WhatsApp, que precisa de navegador (`server/services/whatsapp.js`) |
 | comando `node server/gbf/instalar-banco.js` | prepara um banco **novo** na ordem certa e **sem** os usuários de demonstração (`admin/admin123`), que não podem ir para a internet |
+
+## Ler os dados da Central da Orcim a partir do servidor do grupo (somente leitura)
+
+No `ti.sgogeral.com` o painel tem banco próprio. Para mostrar as demandas reais, ele lê o
+banco da Central da Orcim por uma **conexão separada e somente leitura**, configurada na
+variável `ORCIM_DB_URL`. Sem essa variável, o painel lê o próprio banco (modo de sempre).
+
+- **Lê** da Orcim: `tickets`, `ticket_status_history`, `ticket_messages`,
+  `ticket_attachments`, `entities`, `categories`, `users`, `assets`, `asset_maintenances`.
+- **Grava** só no banco do grupo, em tabelas `gbf_*`. Toda sessão da conexão da Orcim abre com
+  `default_transaction_read_only = on`, além do usuário já ser somente leitura.
+- Anexos de chamados ficam no disco do servidor da Orcim: o painel lista os anexos, mas o
+  download é feito pela Central deles.
+
+### O que a Orcim precisa fazer (uma vez)
+
+1. Criar um usuário **somente leitura** no PostgreSQL da Central (troque a senha):
+
+   ```sql
+   CREATE ROLE painel_gbf LOGIN PASSWORD '<senha-forte>';
+   GRANT CONNECT ON DATABASE os_service TO painel_gbf;
+   GRANT USAGE ON SCHEMA public TO painel_gbf;
+   GRANT SELECT ON tickets, ticket_status_history, ticket_messages, ticket_attachments,
+                   entities, categories, users, assets, asset_maintenances TO painel_gbf;
+   ```
+
+2. Deixar o PostgreSQL acessível pela internet **só para os IPs de saída do Render** (o grupo
+   informa a lista): liberar a porta no firewall/roteador e no `pg_hba.conf`
+   (`hostssl os_service painel_gbf <ip>/32 scram-sha-256`), com SSL ligado no Postgres.
+3. Mandar ao grupo, **por canal separado**: endereço público (IP ou domínio), porta, nome do
+   banco e a senha do `painel_gbf`.
+
+### O que o grupo faz em seguida
+
+No serviço `ti-painel` do Render, criar a variável
+`ORCIM_DB_URL=postgres://painel_gbf:<senha>@<endereço>:<porta>/os_service` e, se o banco
+exigir SSL, `ORCIM_DB_SSL=1`. Depois do deploy, **Configurações** mostra
+"Conectado ao banco da Orcim · N chamados" ou o motivo do erro.

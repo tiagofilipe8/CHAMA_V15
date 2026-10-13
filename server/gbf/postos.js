@@ -2,6 +2,7 @@
 const express = require('express');
 const { query, pool } = require('../db');
 const { ah, STATUS_CENTRAL } = require('./common');
+const { queryCentral } = require('./fonte');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const FREQ_LABEL = { semanal: 'Semanal', quinzenal: 'Quinzenal', mensal: 'Mensal
 
 const POSTO_SELECT = `
   SELECT l.*, l.next_visit_date::text AS next_visit_date, to_char(l.next_visit_time, 'HH24:MI') AS next_visit_time,
-         c.name AS checklist_name, e.name AS entity_name,
+         c.name AS checklist_name,
          (l.next_visit_date < ${HOJE}) AS visita_atrasada,
          (l.next_visit_date = ${HOJE}) AS visita_hoje,
          (SELECT count(*)::int FROM gbf_tasks t WHERE t.location_id = l.id
@@ -19,13 +20,24 @@ const POSTO_SELECT = `
          (SELECT count(*)::int FROM gbf_requests r WHERE r.location_id = l.id
             AND r.status IN ('a_fazer','em_andamento')) AS solicitacoes_abertas,
          (SELECT v.id FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento'
-            ORDER BY v.started_at DESC LIMIT 1) AS visita_em_andamento_id,
-         CASE WHEN l.entity_id IS NULL THEN NULL ELSE
-           (SELECT count(*)::int FROM tickets tk WHERE tk.entity_id = l.entity_id AND tk.status NOT IN (5,6,7))
-         END AS demandas_orcim_abertas
+            ORDER BY v.started_at DESC LIMIT 1) AS visita_em_andamento_id
   FROM gbf_locations l
-  LEFT JOIN gbf_checklists c ON c.id = l.checklist_id
-  LEFT JOIN entities e ON e.id = l.entity_id`;
+  LEFT JOIN gbf_checklists c ON c.id = l.checklist_id`;
+
+// Nome da empresa e demandas abertas vêm da Central (que pode estar em outro banco)
+async function comCentral(lista) {
+  const ids = [...new Set(lista.map((p) => p.entity_id).filter(Boolean).map(String))];
+  if (!ids.length) return lista.map((p) => ({ ...p, entity_name: null, demandas_orcim_abertas: null }));
+  const { rows } = await queryCentral(
+    `SELECT e.id, e.name,
+            (SELECT count(*)::int FROM tickets tk WHERE tk.entity_id = e.id AND tk.status NOT IN (5,6,7)) AS abertas
+     FROM entities e WHERE e.id = ANY($1::bigint[])`, [ids]);
+  const mapa = new Map(rows.map((r) => [String(r.id), r]));
+  return lista.map((p) => {
+    const e = p.entity_id ? mapa.get(String(p.entity_id)) : null;
+    return { ...p, entity_name: e?.name ?? null, demandas_orcim_abertas: p.entity_id ? (e?.abertas ?? 0) : null };
+  });
+}
 
 const fmtPosto = (p) => ({ ...p, frequency_label: p.frequency === 'dias' && p.frequency_days
   ? `A cada ${p.frequency_days} dias` : FREQ_LABEL[p.frequency] });
@@ -69,14 +81,14 @@ router.get('/postos', ah(async (req, res) => {
   const { rows } = await query(
     `${POSTO_SELECT} ${todos ? '' : 'WHERE l.active'}
      ORDER BY l.active DESC, l.next_visit_date NULLS LAST, l.name`);
-  res.json(rows.map(fmtPosto));
+  res.json((await comCentral(rows)).map(fmtPosto));
 }));
 
 router.get('/postos/:id', ah(async (req, res) => {
   if (!/^\d+$/.test(req.params.id)) return res.status(404).json({ error: 'Posto não encontrado.' });
   const { rows } = await query(`${POSTO_SELECT} WHERE l.id = $1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Posto não encontrado.' });
-  const p = rows[0];
+  const p = (await comCentral(rows))[0];
   const [visitas, tarefas, solic, demandas] = await Promise.all([
     query(`SELECT v.id, v.status, v.started_at, v.finished_at, v.checklist_name, u.name AS user_name,
                   (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id AND a.answer = 'nao_ok') AS nao_ok
@@ -89,7 +101,7 @@ router.get('/postos/:id', ah(async (req, res) => {
     query(`SELECT id, title, status, priority, desired_date FROM gbf_requests
            WHERE location_id = $1 AND status IN ('a_fazer','em_andamento') ORDER BY created_at DESC`, [p.id]),
     p.entity_id
-      ? query(`SELECT id, number, title, status, due_at, created_at FROM tickets
+      ? queryCentral(`SELECT id, number, title, status, due_at, created_at FROM tickets
                WHERE entity_id = $1 AND status NOT IN (5,6,7) ORDER BY created_at ASC LIMIT 30`, [p.entity_id])
       : { rows: [] },
   ]);
@@ -128,7 +140,7 @@ router.patch('/postos/:id', ah(async (req, res) => {
 
 // Empresas da Central para vincular ao posto
 router.get('/postos-empresas', ah(async (req, res) => {
-  const { rows } = await query('SELECT id, name FROM entities WHERE active ORDER BY name');
+  const { rows } = await queryCentral('SELECT id, name FROM entities WHERE active ORDER BY name');
   res.json(rows);
 }));
 
