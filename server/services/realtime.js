@@ -1,5 +1,13 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const { currentContext } = require('../db');
+
+// Na Visualizacao de cargos os avisos em tempo real ficam isolados: so os
+// navegadores conectados com o token daquela previa recebem (salas com prefixo).
+function room(name) {
+  const ctx = currentContext();
+  return ctx && ctx.preview ? `${ctx.schema}:${name}` : name;
+}
 
 let io = null;
 
@@ -20,6 +28,7 @@ function initSocket(server) {
         entity_id: payload.entity_id,
         client_level: payload.client_level,
         name: payload.name,
+        preview: payload.preview || null,
       };
       next();
     } catch {
@@ -29,11 +38,12 @@ function initSocket(server) {
 
   io.on('connection', (socket) => {
     if (socket.user) {
-      socket.join(`user:${socket.user.id}`);
-      if (socket.user.entity_id) socket.join(`entity:${socket.user.entity_id}`);
-      socket.join(`role:${socket.user.role}`);
+      const px = socket.user.preview ? `${socket.user.preview}:` : '';
+      socket.join(`${px}user:${socket.user.id}`);
+      if (socket.user.entity_id) socket.join(`${px}entity:${socket.user.entity_id}`);
+      socket.join(`${px}role:${socket.user.role}`);
       if (socket.user.role === 'client' && socket.user.client_level >= 2) {
-        socket.join(`managers:${socket.user.entity_id}`);
+        socket.join(`${px}managers:${socket.user.entity_id}`);
       }
     }
   });
@@ -48,27 +58,27 @@ function getIO() {
 function emitToUsers(userIds, event, payload) {
   if (!io) return;
   for (const id of new Set(userIds)) {
-    io.to(`user:${id}`).emit(event, payload);
+    io.to(room(`user:${id}`)).emit(event, payload);
   }
 }
 
 function emitToEntities(entityIds, event, payload) {
   if (!io) return;
   for (const id of new Set(entityIds)) {
-    io.to(`entity:${id}`).emit(event, payload);
+    io.to(room(`entity:${id}`)).emit(event, payload);
   }
 }
 
 function emitToManagers(entityIds, event, payload) {
   if (!io) return;
   for (const id of new Set(entityIds)) {
-    io.to(`managers:${id}`).emit(event, payload);
+    io.to(room(`managers:${id}`)).emit(event, payload);
   }
 }
 
 function emitBroadcastRoles(roles, event, payload) {
   if (!io) return;
-  for (const r of roles) io.to(`role:${r}`).emit(event, payload);
+  for (const r of roles) io.to(room(`role:${r}`)).emit(event, payload);
 }
 
 module.exports = {
@@ -78,4 +88,4 @@ module.exports = {
   emitToEntities,
   emitToManagers,
   emitBroadcastRoles,
-};
+};

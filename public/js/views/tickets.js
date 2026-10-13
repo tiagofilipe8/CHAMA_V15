@@ -1,14 +1,46 @@
 // ---------------------------------------------------------------
-// Views.tickets — Lista de chamados com filtros (portal + equipe)
-//   opts.team = true  → "Chamados da Equipe" (gestor: todos da entidade)
-//   (default)         → "Meus Chamados" (cliente: apenas abertos por ele)
+// Views.tickets — Chamados em Quadro (Kanban) ou Lista
+//   opts.team = true     → "Chamados da Equipe" (gestor: todos das suas empresas)
+//   opts.watching = true → "Chamados a observar"
+//   (padrao)             → equipe: todos; cliente: os proprios
+//
+// Quadro: colunas por Status, Urgencia ou Localidade. Arrastar um cartao
+// para outra coluna muda o status / a urgencia / a localidade do chamado.
+// A cor de cada cartao vem da urgencia.
 // ---------------------------------------------------------------
+
+// Cor por prioridade interna da urgencia (4 = operacao parada ... 1 = requisicao)
+const URGENCY_TONE = { 4: 'u-stop', 3: 'u-soon', 2: 'u-slow', 1: 'u-req' };
+
+const BOARD_STATUS = [
+  { id: 1, label: 'Novo' },
+  { id: 2, label: 'Atribuído' },
+  { id: 3, label: 'Em andamento' },
+  { id: 4, label: 'Pendente' },
+  { id: 5, label: 'Resolvido' },
+  { id: 6, label: 'Fechado', closed: true },
+  { id: 7, label: 'Cancelado', closed: true },
+];
+
+const SORTS = {
+  urgency: { label: 'Mais urgente primeiro', fn: (a, b) => (b.priority - a.priority) || (new Date(a.created_at) - new Date(b.created_at)) },
+  oldest: { label: 'Mais antigo primeiro', fn: (a, b) => new Date(a.created_at) - new Date(b.created_at) },
+  newest: { label: 'Mais recente primeiro', fn: (a, b) => new Date(b.created_at) - new Date(a.created_at) },
+  needed: { label: 'Precisa até (data)', fn: (a, b) => (a.needed_by ? new Date(a.needed_by) : Infinity) - (b.needed_by ? new Date(b.needed_by) : Infinity) },
+  updated: { label: 'Atualizado por último', fn: (a, b) => new Date(b.updated_at) - new Date(a.updated_at) },
+};
+
+function loadBoardPrefs(key) {
+  try { return JSON.parse(localStorage.getItem('board_prefs_' + key)) || {}; } catch { return {}; }
+}
+function saveBoardPrefs(key, prefs) {
+  try { localStorage.setItem('board_prefs_' + key, JSON.stringify(prefs)); } catch {}
+}
 
 Views.tickets = async function tickets(el, opts = {}) {
   const user = API.user || {};
-  const params = new URLSearchParams();
-  const isClient = user.role === 'client';
-  const isManager = isClient && (user.client_level || 1) === 2;
+  const isClient = Roles.isClient(user);
+  const isManager = Roles.isManager(user);
 
   if (opts.team && !isManager) {
     location.hash = '#/tickets';
@@ -16,154 +48,473 @@ Views.tickets = async function tickets(el, opts = {}) {
     return;
   }
 
-  function renderToolbar() {
-    const entFilter = user.role === 'admin'
-      ? `<select class="form-select form-select-sm" id="f-entity"></select>` : '';
-    const asgFilter = user.role !== 'client'
-      ? `<select class="form-select form-select-sm" id="f-assigned">
-           <option value="">Todos os técnicos</option>
-           <option value="me">Meus chamados</option>
-           <option value="none">Não atribuídos</option>
-         </select>` : '';
-    return `
-      <div class="card panel-card mb-3">
-        <div class="card-body py-3">
-          <div class="row g-2 align-items-center">
-            <div class="col-md-4 col-lg-3">
-              <input class="form-control form-control-sm" id="f-q" placeholder="Buscar por título, número...">
-            </div>
-            <div class="col-6 col-md-2 col-lg-2">
-              <select class="form-select form-select-sm" id="f-status">
-                <option value="open">Em aberto</option>
-                <option value="1">Novo</option>
-                <option value="2">Atribuído</option>
-                <option value="3">Em andamento</option>
-                <option value="4">Pendente</option>
-                <option value="5">Resolvido</option>
-                <option value="closed">Fechados/Cancelados</option>
-                <option value="all">Todos</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-2 col-lg-2">
-              <select class="form-select form-select-sm" id="f-priority">
-                <option value="">Prioridade</option>
-                <option value="1">Baixa</option>
-                <option value="2">Média</option>
-                <option value="3">Alta</option>
-                <option value="4">Urgente</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-2 col-lg-2">${asgFilter}</div>
-            <div class="col-6 col-md-2 col-lg-2">${entFilter}</div>
-            <div class="col-auto ms-auto">
-              <button class="btn btn-primary btn-sm" onclick="location.hash='#/new'"><i class="bi bi-plus-lg"></i> Novo</button>
-            </div>
-          </div>
-        </div>
-      </div>`;
-  }
+  const prefKey = opts.watching ? 'watching' : opts.team ? 'team' : 'main';
+  const prefs = Object.assign({
+    view: 'board', group: 'status', sort: 'urgency', q: '',
+    locations: [], impacts: [], assigned: '', entity: '', showClosed: false,
+  }, loadBoardPrefs(prefKey));
+  const save = () => saveBoardPrefs(prefKey, prefs);
 
-  async function loadEntities(selectEl) {
-    if (!selectEl) return;
-    try {
-      const ents = await API.get('/entities');
-      selectEl.innerHTML = `<option value="">Todas as entidades</option>` +
-        ents.filter((e) => e.active).map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
-    } catch {}
-  }
-
-  function buildParams() {
-    const p = new URLSearchParams();
-    const q = document.getElementById('f-q')?.value?.trim();
-    const st = document.getElementById('f-status')?.value;
-    const pr = document.getElementById('f-priority')?.value;
-    const asg = document.getElementById('f-assigned')?.value;
-    const ent = document.getElementById('f-entity')?.value;
-    if (q) p.set('q', q);
-    if (st) p.set('status', st);
-    if (pr) p.set('priority', pr);
-    if (asg) p.set('assigned', asg);
-    if (ent) p.set('entity_id', ent);
-    if (isClient && !opts.team) p.set('requester', 'me');
-    return p;
-  }
+  let all = [];
+  let levels = [];
+  let locs = [];
 
   el.innerHTML = `
-    ${isClient
-      ? `<div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-           <div class="alert alert-info d-flex align-items-center gap-2 py-2 small mb-0 flex-grow-1">
-             <i class="bi bi-info-circle"></i>
-             ${opts.team
-               ? 'Você é <b>gestor</b>: visualiza todos os chamados da sua entidade.'
-               : 'Você visualiza os chamados abertos por você.'}
-           </div>
-           ${isManager ? `
-             <a class="btn btn-sm btn-outline-primary text-nowrap" href="${opts.team ? '#/tickets' : '#/team-tickets'}">
-               <i class="bi ${opts.team ? 'bi-person-lines-fill' : 'bi-people'}"></i>
-               ${opts.team ? 'Meus Chamados' : 'Chamados da Equipe'}
-             </a>` : ''}
-         </div>`
-      : ''}
-    ${renderToolbar()}
+    ${opts.watching ? `<p class="page-hint"><i class="bi bi-eye"></i> Chamados em que você foi adicionado(a) como observador(a).</p>`
+      : isClient ? `<div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
+          <p class="page-hint mb-0"><i class="bi bi-info-circle"></i> ${opts.team
+            ? 'Todos os chamados das empresas que você acompanha.' : 'Os chamados que você abriu.'}</p>
+          ${isManager ? `<a class="btn btn-sm btn-outline-primary" href="${opts.team ? '#/tickets' : '#/team-tickets'}">
+              <i class="bi ${opts.team ? 'bi-person-lines-fill' : 'bi-people'}"></i> ${opts.team ? 'Meus chamados' : 'Chamados da equipe'}</a>` : ''}
+        </div>` : ''}
+
+    <div class="board-toolbar">
+      <div class="tb-row">
+        <div class="seg" role="group" aria-label="Modo de exibição">
+          <button type="button" data-view="board" title="Quadro"><i class="bi bi-kanban"></i><span> Quadro</span></button>
+          <button type="button" data-view="list" title="Lista"><i class="bi bi-list-ul"></i><span> Lista</span></button>
+        </div>
+        <div class="tb-search">
+          <i class="bi bi-search"></i>
+          <input class="form-control form-control-sm" id="f-q" placeholder="Buscar por título ou número" value="${esc(prefs.q)}">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary tb-toggle" id="tb-toggle"><i class="bi bi-sliders"></i> Filtros</button>
+        <select class="form-select form-select-sm tb-select tb-adv" id="f-group" title="Organizar colunas por">
+          <option value="status">Colunas: status</option>
+          <option value="impact">Colunas: urgência</option>
+          <option value="location">Colunas: localidade</option>
+        </select>
+        <select class="form-select form-select-sm tb-select tb-adv" id="f-sort" title="Ordenar">
+          ${Object.entries(SORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}
+        </select>
+        ${!isClient ? `
+        <select class="form-select form-select-sm tb-select tb-adv" id="f-assigned" title="Técnico">
+          <option value="">Todos os técnicos</option>
+          <option value="me">Atribuídos a mim</option>
+          <option value="none">Sem técnico</option>
+        </select>` : ''}
+        <select class="form-select form-select-sm tb-select tb-adv" id="f-entity" title="Empresa" style="display:none"></select>
+        <label class="tb-check tb-adv"><input type="checkbox" id="f-closed"> Mostrar encerrados</label>
+        <a class="btn btn-primary btn-sm ms-auto" href="#/new"><i class="bi bi-plus-lg"></i> Novo chamado</a>
+      </div>
+      <div class="tb-row tb-chips tb-adv">
+        <span class="tb-label">Urgência</span>
+        <div id="f-impacts" class="chip-row"></div>
+      </div>
+      <div class="tb-row tb-chips tb-adv" id="f-locations-row">
+        <span class="tb-label">Localidade</span>
+        <div id="f-locations" class="chip-row"></div>
+      </div>
+    </div>
+
     <div id="tickets-body">${spinner()}</div>`;
 
-  loadEntities(document.getElementById('f-entity'));
+  // ---------------- controles ----------------
+  const $ = (sel) => el.querySelector(sel);
+  $('#f-group').value = prefs.group;
+  $('#f-sort').value = prefs.sort;
+  if ($('#f-assigned')) $('#f-assigned').value = prefs.assigned;
+  $('#f-closed').checked = !!prefs.showClosed;
 
-  const filters = ['f-q', 'f-status', 'f-priority', 'f-assigned', 'f-entity'];
-  const apply = async () => {
-    const body = document.getElementById('tickets-body');
-    if (!body) return;
-    try {
-      const tk = await API.get('/tickets?' + buildParams().toString());
-      renderList(tk, body);
-    } catch (e) {
-      body.innerHTML = emptyState('Erro ao carregar', e.message, 'bi-exclamation-triangle');
-    }
-  };
-  filters.forEach((id) => {
-    const elId = document.getElementById(id);
-    if (elId) elId.addEventListener('change', apply);
+  $('#tb-toggle').addEventListener('click', () => el.querySelector('.board-toolbar').classList.toggle('show-adv'));
+  const paintView = () => el.querySelectorAll('.seg button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === prefs.view));
+  paintView();
+  el.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    prefs.view = b.dataset.view; save(); paintView(); render();
+  }));
+  $('#f-group').addEventListener('change', (e) => { prefs.group = e.target.value; save(); render(); });
+  $('#f-sort').addEventListener('change', (e) => { prefs.sort = e.target.value; save(); render(); });
+  $('#f-assigned')?.addEventListener('change', (e) => { prefs.assigned = e.target.value; save(); load(); });
+  $('#f-closed').addEventListener('change', (e) => { prefs.showClosed = e.target.checked; save(); load(); });
+  $('#f-entity').addEventListener('change', (e) => { prefs.entity = e.target.value; save(); load(); });
+  let qTimer;
+  $('#f-q').addEventListener('input', (e) => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => { prefs.q = e.target.value.trim(); save(); render(); }, 200);
   });
-  const q = document.getElementById('f-q');
-  if (q) {
-    let timer;
-    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(apply, 350); });
-    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
+
+  // empresas (equipe, ou gestor com mais de uma)
+  const mine = new Set([user.entity_id, ...(user.extra_entity_ids || [])].filter(Boolean).map(String));
+  if (Roles.isStaff(user) || (isManager && mine.size > 1)) {
+    API.get('/entities').then((ents) => {
+      const sel = $('#f-entity');
+      if (!sel) return;
+      const list = ents.filter((e) => e.active && (Roles.isStaff(user) || mine.has(String(e.id))));
+      if (list.length < 2) return;
+      sel.innerHTML = '<option value="">Todas as empresas</option>' +
+        list.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+      sel.value = prefs.entity;
+      sel.style.display = '';
+    }).catch(() => {});
   }
 
-  await apply();
+  function chip(active, label, attrs, tone) {
+    return `<button type="button" class="f-chip ${tone || ''} ${active ? 'on' : ''}" ${attrs}>${label}</button>`;
+  }
+
+  function paintChips() {
+    const counts = (key) => all.reduce((m, t) => { m[t[key]] = (m[t[key]] || 0) + 1; return m; }, {});
+    const byImpact = counts('impact_id');
+    $('#f-impacts').innerHTML = levels.filter((l) => l.active || byImpact[l.id]).slice().sort((a, b) => b.priority - a.priority || b.sort_order - a.sort_order).map((l) =>
+      chip(prefs.impacts.includes(String(l.id)),
+        `<span class="dot"></span>${esc(l.name)} <b>${byImpact[l.id] || 0}</b>`,
+        `data-impact="${l.id}"`, URGENCY_TONE[l.priority])).join('');
+    const byLoc = counts('location_id');
+    const usedLocs = locs.filter((l) => byLoc[l.id] || prefs.locations.includes(String(l.id)));
+    $('#f-locations-row').style.display = usedLocs.length ? '' : 'none';
+    const multiEnt = new Set(usedLocs.map((l) => l.entity_id)).size > 1;
+    $('#f-locations').innerHTML = usedLocs.map((l) =>
+      chip(prefs.locations.includes(String(l.id)),
+        `<i class="bi bi-geo-alt"></i>${esc(l.name)}${multiEnt ? ` <small>${esc(l.entity_name)}</small>` : ''} <b>${byLoc[l.id] || 0}</b>`,
+        `data-loc="${l.id}"`)).join('') +
+      (byLoc.null || byLoc.undefined ? chip(prefs.locations.includes('none'), `Sem localidade <b>${(byLoc.null || 0) + (byLoc.undefined || 0)}</b>`, 'data-loc="none"') : '');
+    el.querySelectorAll('[data-impact]').forEach((b) => b.addEventListener('click', () => {
+      toggle(prefs.impacts, b.dataset.impact); save(); paintChips(); render();
+    }));
+    el.querySelectorAll('[data-loc]').forEach((b) => b.addEventListener('click', () => {
+      toggle(prefs.locations, b.dataset.loc); save(); paintChips(); render();
+    }));
+  }
+  const toggle = (arr, v) => { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); };
+
+  // ---------------- dados ----------------
+  async function load() {
+    const p = new URLSearchParams();
+    p.set('status', prefs.showClosed ? 'all' : 'open');
+    p.set('limit', '500');
+    if (opts.watching) p.set('watching', 'me');
+    else if (isClient && !opts.team) p.set('requester', 'me');
+    if (prefs.assigned) p.set('assigned', prefs.assigned);
+    if (prefs.entity) p.set('entity_id', prefs.entity);
+    try {
+      all = await API.get('/tickets?' + p.toString());
+      paintChips();
+      render();
+    } catch (e) {
+      $('#tickets-body').innerHTML = emptyState('Não foi possível carregar os chamados', e.message, 'bi-exclamation-triangle');
+    }
+  }
+
+  function filtered() {
+    const q = prefs.q.toLowerCase();
+    return all.filter((t) =>
+      (!q || `${t.number} ${t.title} ${t.requester_name || ''}`.toLowerCase().includes(q))
+      && (!prefs.impacts.length || prefs.impacts.includes(String(t.impact_id)))
+      && (!prefs.locations.length || prefs.locations.includes(t.location_id ? String(t.location_id) : 'none')))
+      .sort(SORTS[prefs.sort]?.fn || SORTS.urgency.fn);
+  }
+
+  // ---------------- colunas ----------------
+  function columns(list) {
+    if (prefs.group === 'impact') {
+      const cols = levels.filter((l) => l.active || list.some((t) => String(t.impact_id) === String(l.id))).slice().sort((a, b) => b.priority - a.priority || b.sort_order - a.sort_order).map((l) => ({
+        key: String(l.id), label: l.name, tone: URGENCY_TONE[l.priority], drop: { impact_id: l.id },
+      }));
+      if (list.some((t) => !t.impact_id)) cols.push({ key: 'none', label: 'Sem urgência', drop: null });
+      return cols.map((c) => ({ ...c, items: list.filter((t) => String(t.impact_id || 'none') === c.key) }));
+    }
+    if (prefs.group === 'location') {
+      const used = new Map();
+      list.forEach((t) => used.set(String(t.location_id || 'none'), t));
+      const cols = locs.filter((l) => used.has(String(l.id)))
+        .map((l) => ({ key: String(l.id), label: l.name, sub: l.entity_name, entity_id: l.entity_id, drop: { location_id: l.id } }));
+      if (used.has('none')) cols.push({ key: 'none', label: 'Sem localidade', drop: null });
+      return cols.map((c) => ({ ...c, items: list.filter((t) => String(t.location_id || 'none') === c.key) }));
+    }
+    return BOARD_STATUS.filter((s) => !s.closed || prefs.showClosed).map((s) => ({
+      key: String(s.id), label: s.label, status: s.id, drop: { status: s.id },
+      items: list.filter((t) => t.status === s.id),
+    }));
+  }
+
+  function card(t) {
+    const tone = URGENCY_TONE[t.priority] || 'u-req';
+    const late = t.due_at && ![5, 6, 7].includes(t.status) && new Date(t.due_at) < new Date();
+    const needSoon = t.needed_by && ![5, 6, 7].includes(t.status)
+      && new Date(String(t.needed_by).slice(0, 10) + 'T23:59:59') - new Date() < 86400000 * 2;
+    const initials = (n) => String(n || '').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+    const shortNum = `#${t.id}`;
+    const cat = t.display_category ? String(t.display_category).split(' > ').pop() : '';
+    return `
+      <article class="kcard ${tone}" data-id="${t.id}" tabindex="0" aria-label="Chamado ${esc(t.number)}: ${esc(t.title)}">
+        <header>
+          <span class="kurg"><i></i>${esc(t.impact_name || LABELS.priority[t.priority] || '')}</span>
+          <span class="knum" title="Chamado ${esc(t.number)} · aberto em ${fmt.dateTime(t.created_at)}">${esc(shortNum)} · ${fmt.timeAgo(t.created_at)}</span>
+        </header>
+        <h4>${esc(t.title)}</h4>
+        ${(t.location_name || cat || prefs.group !== 'status') ? `
+        <div class="kmeta">
+          ${t.location_name ? `<span class="kloc"><i class="bi bi-geo-alt-fill"></i>${esc(t.location_name)}</span>` : ''}
+          ${cat ? `<span class="kcat" title="${esc(t.display_category)}">${esc(cat)}</span>` : ''}
+          ${prefs.group !== 'status' ? `<span class="kstatus">${esc(LABELS.status[t.status])}</span>` : ''}
+        </div>` : ''}
+        <footer>
+          <span class="kreq" title="Solicitante: ${esc(t.requester_name || '')}"><i class="bi bi-person"></i>${esc(t.requester_name || '')}</span>
+          ${late ? `<span class="kflag late" title="Prazo (SLA) vencido"><i class="bi bi-alarm-fill"></i></span>` : ''}
+          ${needSoon ? `<span class="kflag need" title="Precisa até ${fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00')}"><i class="bi bi-calendar-event-fill"></i></span>` : ''}
+          ${t.approval_status === 'pending' ? `<span class="kflag appr" title="Aguardando aprovação"><i class="bi bi-hourglass-split"></i></span>` : ''}
+          ${t.assigned_name
+            ? `<span class="kavatar" title="Técnico: ${esc(t.assigned_name)}">${esc(initials(t.assigned_name))}</span>`
+            : `<span class="kavatar empty" title="Sem técnico"><i class="bi bi-person-plus"></i></span>`}
+        </footer>
+      </article>`;
+  }
+
+  function render() {
+    const body = $('#tickets-body');
+    if (!body) return;
+    const list = filtered();
+    if (prefs.view === 'list') return renderList(list, body);
+    const cols = columns(list);
+    if (!all.length) {
+      body.innerHTML = emptyState('Nenhum chamado por aqui', opts.watching ? 'Quando alguém adicionar você como observador(a), o chamado aparece aqui.' : 'Abra um chamado em "Novo chamado".', 'bi-kanban');
+      return;
+    }
+    body.innerHTML = `
+      <div class="board ${canDragAny() ? '' : 'readonly'}" id="board">
+        ${cols.map((c) => `
+          <section class="kcol ${c.tone || ''} ${c.items.length ? '' : 'is-empty'}" data-key="${esc(c.key)}">
+            <header class="kcol-head">
+              <span class="kcol-title">${c.tone ? '<span class="dot"></span>' : ''}${esc(c.label)}</span>
+              ${c.sub ? `<small>${esc(c.sub)}</small>` : ''}
+              <span class="kcount">${c.items.length}</span>
+            </header>
+            <div class="kcol-body">
+              ${c.items.map(card).join('') || '<div class="kempty">Nenhum chamado</div>'}
+            </div>
+          </section>`).join('')}
+      </div>
+      ${canDragAny() ? '<p class="board-tip"><i class="bi bi-arrows-move"></i> Arraste um cartão para outra coluna para mudar o chamado. No celular, segure o cartão por um instante antes de arrastar.</p>' : ''}`;
+    body.querySelectorAll('.kcard').forEach((c) => {
+      c.addEventListener('click', () => { if (!Board.justDragged) location.hash = `#/tickets/${c.dataset.id}`; });
+      c.addEventListener('keydown', (e) => { if (e.key === 'Enter') location.hash = `#/tickets/${c.dataset.id}`; });
+    });
+    if (canDragAny()) {
+      Board.enable(body.querySelector('#board'), {
+        canDrag: (id) => canDrag(all.find((t) => String(t.id) === String(id))),
+        onDrop: (id, key) => onDrop(all.find((t) => String(t.id) === String(id)), cols.find((c) => c.key === key)),
+      });
+    }
+  }
+
+  // ---------------- arrastar e soltar ----------------
+  // Quem pode arrastar depende das permissoes do perfil
+  const myEnts = new Set([user.entity_id, ...(user.extra_entity_ids || [])].filter(Boolean).map(String));
+  const P = (perm) => Roles.can(user, perm);
+  const canDragAny = () => prefs.group !== 'none'
+    && (P('ticket.status_any') || P('ticket.triage') || P('ticket.work') || P('ticket.take'));
+  function inMyScope(t) { return P('ticket.view_all') || myEnts.has(String(t.entity_id)); }
+  function canDrag(t) {
+    if (!t) return false;
+    if (Roles.isMaster(user)) return true;
+    if ((P('ticket.status_any') || P('ticket.triage')) && inMyScope(t)) return true;
+    if (P('ticket.work') && String(t.assigned_user_id) === String(user.id)) return true;
+    if (P('ticket.take') && !t.assigned_user_id && prefs.group === 'status') return true;
+    return false;
+  }
+
+  async function onDrop(t, col) {
+    if (!t || !col || !col.drop) return;
+    try {
+      if (col.drop.status !== undefined) {
+        const to = col.drop.status;
+        if (to === t.status) return;
+        if (to === 5) { TicketModals.resolve(t, { onDone: load, onCancel: render }); return; }
+        if (to === 2 && !t.assigned_user_id) {
+          if (P('ticket.take') && !P('ticket.assign')) { await API.post(`/tickets/${t.id}/assign`, {}); toast(`${t.number} assumido por você.`, 'success'); return load(); }
+          TicketModals.assign(t, { onDone: load, onCancel: render }); return;
+        }
+        await API.post(`/tickets/${t.id}/status`, { status: to });
+        toast(`${t.number} → ${LABELS.status[to]}`, 'success');
+      } else if (col.drop.impact_id !== undefined) {
+        if (String(col.drop.impact_id) === String(t.impact_id)) return;
+        await API.patch(`/tickets/${t.id}`, { impact_id: col.drop.impact_id });
+        toast(`${t.number}: urgência alterada para ${col.label}`, 'success');
+      } else if (col.drop.location_id !== undefined) {
+        if (String(col.drop.location_id) === String(t.location_id)) return;
+        if (col.entity_id && String(col.entity_id) !== String(t.entity_id)) {
+          toast('Essa localidade é de outra empresa.', 'warning'); return render();
+        }
+        await API.patch(`/tickets/${t.id}`, { location_id: col.drop.location_id });
+        toast(`${t.number} movido para ${col.label}`, 'success');
+      }
+    } catch (e) {
+      if (e.data?.request_approval) { TicketModals.resolve(t, { onDone: load, onCancel: render }); return; }
+      showError(e);
+    }
+    load();
+  }
+
+  // ---------------- lista ----------------
+  function renderList(list, body) {
+    if (!list.length) {
+      body.innerHTML = emptyState('Nenhum chamado encontrado', 'Mude os filtros ou abra um novo chamado.', 'bi-search');
+      return;
+    }
+    body.innerHTML = `
+      <div class="card panel-card"><div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 ticket-table">
+          <thead><tr>
+            <th>Chamado</th><th>Status</th><th>Urgência</th><th>Localidade</th><th>Técnico</th><th>Solicitante</th><th>Aberto</th>
+          </tr></thead>
+          <tbody>
+            ${list.map((t) => `
+              <tr class="ticket-row ${URGENCY_TONE[t.priority] || ''}" data-id="${t.id}">
+                <td><span class="fw-semibold text-primary">${esc(t.number)}</span><br>${esc(t.title)}
+                  <br><small class="text-muted">${esc(t.display_category || '')}</small></td>
+                <td>${badgeStatus(t.status)}</td>
+                <td>${badgeImpact(t)}</td>
+                <td>${esc(t.location_name || '—')}<br><small class="text-muted">${esc(t.entity_name || '')}</small></td>
+                <td>${t.assigned_name ? esc(t.assigned_name) : '<span class="text-muted">—</span>'}</td>
+                <td>${esc(t.requester_name || '—')}</td>
+                <td class="text-muted small" title="${fmt.dateTime(t.created_at)}">${fmt.timeAgo(t.created_at)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div></div>`;
+    body.querySelectorAll('.ticket-row').forEach((row) => {
+      row.addEventListener('click', () => { location.hash = `#/tickets/${row.dataset.id}`; });
+    });
+  }
+
+  // atualizacao em tempo real (chamada pelo socket em app.js)
+  Views.tickets.refresh = () => { if (!Board.dragging && document.body.contains(el.querySelector('#tickets-body'))) load(); };
+
+  try {
+    [levels, locs] = await Promise.all([
+      API.get('/impact-levels?all=true').catch(() => []),
+      API.get('/locations').catch(() => []),
+    ]);
+  } catch {}
+  await load();
 };
 
-function renderList(tk, body) {
-  if (!tk || !tk.length) {
-    body.innerHTML = emptyState('Nenhum chamado encontrado', 'Ajuste os filtros ou abra um novo chamado.', 'bi-search');
-    return;
-  }
-  body.innerHTML = `
-    <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
-        <thead>
-          <tr>
-            <th>ID</th><th>Status</th><th>Título</th><th>Técnico</th>
-            <th>Requerente</th><th>Prioridade</th><th>Abertura</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tk.map((t) => `
-            <tr class="ticket-row" data-id="${t.id}">
-              <td class="fw-bold text-primary">${esc(t.number)}</td>
-              <td>${badgeStatus(t.status)}</td>
-              <td>${esc(t.title)}<br><small class="text-muted">${esc(t.entity_name || '')} · ${esc(t.category_name || '')}</small></td>
-              <td>${t.assigned_name ? `<span class="tech-chip"><i class="bi bi-person-badge"></i> ${esc(t.assigned_name)}</span>` : '—'}</td>
-              <td>${esc(t.requester_name || '—')}</td>
-              <td>${badgePriority(t.priority)}</td>
-              <td class="text-muted small">${fmt.date(t.created_at)}</td>
-              <td><a class="btn btn-sm btn-outline-primary" href="#/tickets/${t.id}"><i class="bi bi-eye"></i></a></td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
-  body.querySelectorAll('.ticket-row').forEach((row) => {
-    row.addEventListener('click', () => { location.hash = `#/tickets/${row.dataset.id}`; });
-  });
-}
+// ---------------------------------------------------------------
+// Board — arrastar e soltar com mouse e toque (sem bibliotecas)
+//   Mouse: arrasta ao mover com o botao pressionado.
+//   Toque: segure o cartao ~0,3s e arraste (assim a rolagem continua normal).
+// ---------------------------------------------------------------
+const Board = {
+  dragging: false,
+  justDragged: false,
+  ctx: null,   // { board, canDrag, onDrop } do quadro atual
+  st: null,    // estado do arraste em andamento
+  installed: false,
+
+  enable(board, { canDrag, onDrop }) {
+    if (!board) return;
+    Board.ctx = { board, canDrag, onDrop };
+    Board.install();
+    // mouse
+    board.addEventListener('mousedown', (e) => {
+      const c = e.target.closest('.kcard');
+      if (!c || e.button !== 0 || !canDrag(c.dataset.id)) return;
+      Board.st = { sx: e.clientX, sy: e.clientY, pending: c };
+      e.preventDefault();
+    });
+    // toque: segurar ~0,3s para arrastar (assim a rolagem continua normal)
+    board.addEventListener('touchstart', (e) => {
+      const c = e.target.closest('.kcard');
+      if (!c || !canDrag(c.dataset.id)) return;
+      const t = e.touches[0];
+      const st = { sx: t.clientX, sy: t.clientY, pending: c };
+      st.timer = setTimeout(() => {
+        if (Board.st !== st) return;
+        if (navigator.vibrate) navigator.vibrate(15);
+        Board.start(c, st.sx, st.sy);
+      }, 280);
+      Board.st = st;
+    }, { passive: true });
+    board.addEventListener('touchmove', (e) => {
+      const st = Board.st;
+      if (!st) return;
+      const t = e.touches[0];
+      if (!st.ghost) {
+        if (Math.hypot(t.clientX - st.sx, t.clientY - st.sy) > 8) { clearTimeout(st.timer); Board.st = null; }
+        return;
+      }
+      e.preventDefault();
+      Board.move(t.clientX, t.clientY);
+    }, { passive: false });
+    board.addEventListener('touchend', (e) => {
+      const st = Board.st;
+      if (!st) return;
+      const t = e.changedTouches[0];
+      if (st.ghost) e.preventDefault();
+      Board.finish(t.clientX, t.clientY, false);
+    });
+    board.addEventListener('touchcancel', () => Board.finish(0, 0, true));
+  },
+
+  // ouvintes globais do mouse: instalados uma unica vez
+  install() {
+    if (Board.installed) return;
+    Board.installed = true;
+    window.addEventListener('mousemove', (e) => {
+      const st = Board.st;
+      if (!st) return;
+      if (!st.ghost && Math.hypot(e.clientX - st.sx, e.clientY - st.sy) > 6) Board.start(st.pending, e.clientX, e.clientY);
+      else Board.move(e.clientX, e.clientY);
+    });
+    window.addEventListener('mouseup', (e) => { if (Board.st) Board.finish(e.clientX, e.clientY, false); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && Board.st) Board.finish(0, 0, true); });
+  },
+
+  colAt(x, y) {
+    const elAt = document.elementFromPoint(x, y);
+    return elAt ? elAt.closest('.kcol') : null;
+  },
+
+  start(cardEl, x, y) {
+    const st = Board.st;
+    if (!st || !document.body.contains(cardEl)) { Board.st = null; return; }
+    const r = cardEl.getBoundingClientRect();
+    const ghost = cardEl.cloneNode(true);
+    ghost.classList.add('kghost');
+    ghost.style.width = r.width + 'px';
+    document.body.appendChild(ghost);
+    cardEl.classList.add('kplaceholder');
+    Object.assign(st, { cardEl, ghost, dx: x - r.left, dy: y - r.top, over: null });
+    Board.dragging = true;
+    document.body.classList.add('is-dragging');
+    Board.move(x, y);
+  },
+
+  move(x, y) {
+    const st = Board.st;
+    if (!st || !st.ghost) return;
+    st.ghost.style.transform = `translate(${x - st.dx}px, ${y - st.dy}px) rotate(1.5deg)`;
+    const col = Board.colAt(x, y);
+    if (col !== st.over) {
+      st.over?.classList.remove('kover');
+      col?.classList.add('kover');
+      st.over = col;
+    }
+    // rola o quadro perto das bordas
+    const board = Board.ctx?.board;
+    if (board) {
+      const br = board.getBoundingClientRect();
+      if (x > br.right - 60) board.scrollLeft += 18;
+      else if (x < br.left + 60) board.scrollLeft -= 18;
+    }
+  },
+
+  finish(x, y, cancel) {
+    const st = Board.st;
+    Board.st = null;
+    if (!st) return;
+    clearTimeout(st.timer);
+    if (!st.ghost) return;
+    const col = cancel ? null : Board.colAt(x, y);
+    st.ghost.remove();
+    st.cardEl.classList.remove('kplaceholder');
+    st.over?.classList.remove('kover');
+    document.body.classList.remove('is-dragging');
+    Board.dragging = false;
+    Board.justDragged = true;
+    setTimeout(() => { Board.justDragged = false; }, 50);
+    const fromCol = st.cardEl.closest('.kcol');
+    if (col && col !== fromCol && Board.ctx) Board.ctx.onDrop(st.cardEl.dataset.id, col.dataset.key);
+  },
+};

@@ -2,32 +2,32 @@
 // app.js — bootstrap, roteamento, socket e shell da aplicacao
 // ---------------------------------------------------------------
 
-const NAV = {
-  admin: [
-    { href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' },
-    { href: '#/tickets', icon: 'bi-journal-text', label: 'Chamados' },
-    { href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' },
-    { href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' },
-    { sep: true },
-    { href: '#/admin/users', icon: 'bi-people', label: 'Usuários' },
-    { href: '#/admin/entities', icon: 'bi-buildings', label: 'Entidades' },
-    { href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias' },
-    { href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' },
-  ],
-  technician: [
-    { href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' },
-    { href: '#/tickets', icon: 'bi-journal-text', label: 'Chamados' },
-    { href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' },
-    { href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' },
-  ],
-  client: [
-    { href: '#/tickets', icon: 'bi-journal-text', label: 'Meus Chamados' },
-    { href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe', manager: true },
-    { href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário', manager: true },
-    { href: '#/admin/users', icon: 'bi-people', label: 'Usuários', manager: true },
-    { href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' },
-  ],
-};
+// Menu lateral montado a partir das permissoes do perfil
+function buildNav(u) {
+  const can = (perm) => Roles.can(u, perm);
+  const master = Roles.isMaster(u);
+  const client = Roles.isClient(u);
+  const items = [];
+  if (can('dashboard.view')) items.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
+  const ticketsLabel = can('ticket.view_all') ? 'Chamados'
+    : (can('ticket.view_company') && !client) ? 'Chamados da empresa' : 'Meus Chamados';
+  items.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
+  if (client && can('ticket.view_company')) items.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe' });
+  items.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
+  if (can('inventory.view')) items.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
+  if (can('ticket.create')) items.push({ href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' });
+  const admin = [];
+  if (can('users.manage')) admin.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
+  if (master) admin.push({ href: '#/admin/entities', icon: 'bi-buildings', label: 'Empresas' });
+  if (can('locations.manage')) admin.push({ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' });
+  if (master) {
+    admin.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
+    admin.push({ href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' });
+    admin.push({ href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' });
+  }
+  if (admin.length) items.push({ sep: true }, ...admin);
+  return items;
+}
 
 let socket = null;
 
@@ -41,13 +41,16 @@ function pageTitleFromPath() {
     '/dashboard': 'Painel de Chamados',
     '/tickets': 'Chamados',
     '/team-tickets': 'Chamados da Equipe',
+    '/watching': 'Chamados a observar',
+    '/admin/locations': 'Localizações',
     '/inventory': 'Inventário',
     '/inventory/agents': 'Agentes',
     '/new': 'Abrir Chamado',
     '/admin/users': 'Usuários',
-    '/admin/entities': 'Entidades',
-    '/admin/categories': 'Categorias',
+    '/admin/entities': 'Empresas',
+    '/admin/categories': 'Categorias e opções',
     '/admin/settings': 'Configurações',
+    '/admin/roles': 'Perfis e permissões',
     '/perfil': 'Meu Perfil',
   };
   if (path.startsWith('/tickets/')) return 'Chamado';
@@ -58,8 +61,7 @@ function pageTitleFromPath() {
 function renderNav() {
   const user = currentUser();
   const nav = document.getElementById('side-nav');
-  const items = (NAV[user.role] || []).filter((it) =>
-    it.sep || !it.manager || (user.client_level || 1) === 2);
+  const items = buildNav(user);
   nav.innerHTML = items.map((it) =>
     it.sep ? '<hr class="nav-sep">' :
     `<a class="nav-item" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`
@@ -69,14 +71,13 @@ function renderNav() {
   const name = user.name || user.username;
   document.getElementById('side-user-name').textContent = name;
   document.getElementById('side-user-role').textContent =
-    user.role === 'client' ? `${LABELS.role[user.role]} · ${LABELS.clientLevel[user.client_level] || ''}`.trim()
-    : LABELS.role[user.role];
+    Roles.label(user) + (user.location_name ? ` · ${user.location_name}` : '');
   const avatar = document.getElementById('side-avatar');
   avatar.textContent = name ? name.trim().charAt(0).toUpperCase() : '?';
   document.getElementById('page-title').textContent = pageTitleFromPath();
 
   // identidade da entidade no menu lateral
-  if (user.role === 'admin' || user.role === 'technician') {
+  if (Roles.isStaff(user)) {
     document.getElementById('side-title').textContent = 'Central de Serviços';
     if (user.entity_logo) {
       const logoBox = document.getElementById('side-logo');
@@ -101,8 +102,8 @@ function renderNav() {
 
 function activeNav() {
   const path = location.hash.replace(/^#/, '');
-  document.querySelectorAll('.nav-item').forEach((a) => {
-    const href = a.getAttribute('href');
+  document.querySelectorAll('#side-nav .nav-item').forEach((a) => {
+    const href = a.getAttribute('href') || '';
     const target = href.replace(/^#/, '');
     a.classList.toggle('active',
       target === '/dashboard' ? path === '/dashboard' : path === target || path.startsWith(target + '/'));
@@ -114,7 +115,9 @@ const routes = [
   { re: /^#\/dashboard$/, view: () => Views.dashboard },
   { re: /^#\/tickets$/, view: () => Views.tickets },
   { re: /^#\/team-tickets$/, view: () => (el) => Views.tickets(el, { team: true }) },
-  { re: /^#\/tickets\/(\d+)$/, view: (m) => Views.ticketDetail(m[1]) },
+  { re: /^#\/watching$/, view: () => (el) => Views.tickets(el, { watching: true }) },
+  { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
+  { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },
   { re: /^#\/inventory$/, view: () => Views.inventory },
   { re: /^#\/inventory\/agents$/, view: () => Views.agents },
@@ -123,6 +126,7 @@ const routes = [
   { re: /^#\/admin\/entities$/, view: () => Views.adminEntities },
   { re: /^#\/admin\/categories$/, view: () => Views.adminCategories },
   { re: /^#\/admin\/settings$/, view: () => Views.adminSettings },
+  { re: /^#\/admin\/roles$/, view: () => Views.adminRoles },
   { re: /^#\/perfil$/, view: () => Views.profile },
 ];
 
@@ -178,6 +182,8 @@ function connectSocket() {
       Views.dashboard(document.getElementById('view'), { silent: true });
     } else if (location.hash === `#/tickets/${tk.id}`) {
       Views.ticketDetail(tk.id)(document.getElementById('view'), { silent: true });
+    } else if (/^#\/(tickets|team-tickets|watching)$/.test(location.hash) && Views.tickets.refresh) {
+      Views.tickets.refresh();
     }
   });
 
@@ -242,13 +248,26 @@ async function boot() {
     }
   } catch {}
 
+  renderPreviewBar();
   renderNav();
   connectSocket();
   loadBell();
 
   // eventos do shell
   document.getElementById('btn-logout').onclick = logout;
-  document.getElementById('btn-side-toggle').onclick = () => document.body.classList.toggle('sidebar-open');
+  document.getElementById('btn-side-toggle').onclick = (ev) => {
+    ev.stopPropagation();
+    document.body.classList.toggle('sidebar-open');
+  };
+  // tablet/celular: fecha o menu ao escolher uma opcao ou ao tocar fora dele
+  const closeSidebar = () => document.body.classList.remove('sidebar-open');
+  document.getElementById('side-nav').addEventListener('click', (ev) => {
+    if (ev.target.closest('a')) closeSidebar();
+  });
+  document.querySelector('.app-main').addEventListener('click', () => {
+    if (document.body.classList.contains('sidebar-open')) closeSidebar();
+  });
+  window.addEventListener('hashchange', closeSidebar);
   document.getElementById('btn-voice').onclick = () => {
     Voice.enabled = !Voice.enabled;
     const el = document.getElementById('btn-voice');
@@ -276,9 +295,32 @@ async function boot() {
   router();
 }
 
+async function exitPreview() {
+  await API.endPreview();
+  location.href = '/app.html#/admin/roles';
+  location.reload();
+}
+
+// Faixa fixa no topo enquanto o admin ve o sistema como outro perfil
+function renderPreviewBar() {
+  const u = currentUser();
+  document.body.classList.toggle('in-preview', !!u.preview);
+  if (!u.preview) return;
+  const bar = document.createElement('div');
+  bar.className = 'preview-bar';
+  bar.innerHTML = `
+    <i class="bi bi-eye-fill"></i>
+    <div class="pv-text">Você está vendo o sistema como <b>${esc(u.preview.role_label || Roles.label(u))}</b>${u.entity_name ? ` em ${esc(u.entity_name)}` : ''}.
+      <span class="pv-sub">É uma cópia provisória: nada do que fizer aqui muda os dados reais nem envia avisos.</span></div>
+    <button class="btn btn-sm btn-light" id="btn-exit-preview"><i class="bi bi-box-arrow-left"></i> Sair da prévia</button>`;
+  document.querySelector('.app-main').prepend(bar);
+  bar.querySelector('#btn-exit-preview').onclick = exitPreview;
+}
+
 function logout() {
+  if (API.inPreview) { exitPreview(); return; }
   API.logout();
   location.href = '/';
 }
 
-document.addEventListener('DOMContentLoaded', boot);
+document.addEventListener('DOMContentLoaded', boot);

@@ -4,7 +4,7 @@
 
 Views.dashboard = async function dashboard(el, opts = {}) {
   const user = API.user || {};
-  if (user.role === 'client') { location.hash = '#/tickets'; toast('Painel disponível apenas para Administradores e Técnicos.', 'warning'); return; }
+  if (!Roles.canSeeDashboard(user)) { location.replace('#/tickets'); return; }
   let data, noc;
   try {
     [data, noc] = await Promise.all([
@@ -17,7 +17,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
   }
 
   const c = data.counts || {};
-  const isClient = user.role === 'client';
+  const isClient = !Roles.isStaff(user); // gestor / admin local: painel das próprias empresas
   const v = noc?.volume || {};
   const sla = noc?.sla || {};
   const dist = noc?.distribution || {};
@@ -44,7 +44,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     <div class="stats-row">
       ${statCard('Abertos', v.open_total ?? c.open_total ?? 0, 'bi-journal-text', 'tone-primary', `${v.open_today ?? c.open_today ?? 0} hoje · ${v.closed_today ?? 0} fechados hoje`)}
       ${statCard('Backlog', v.backlog_total ?? c.open_total ?? 0, 'bi-stack', 'tone-amber', backlogByPrio)}
-      ${statCard(isClient ? 'Meus chamados' : 'Meus em aberto', data.my_open ?? 0, 'bi-person-check', 'tone-green', isClient ? '' : 'Atribuídos a mim')}
+      ${statCard(isClient ? 'Chamados abertos' : 'Meus em aberto', data.my_open ?? 0, 'bi-person-check', 'tone-green', isClient ? '' : 'Atribuídos a mim')}
       ${statCard('Fechados', v.closed_total ?? 0, 'bi-check-circle', 'tone-success', `${v.closed_today ?? 0} hoje`)}
     </div>`;
 
@@ -215,7 +215,22 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </div>
     </div>` : '';
 
-  el.innerHTML = header + volumeCards + maintAlert + slaCards + radarCard + distRow + teamRow + table;
+  const calCard = `
+    <div class="card panel-card mt-3">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="bi bi-calendar3 me-1"></i> <strong>Calendário de necessidade</strong>
+          <span class="text-muted small ms-1">o dia em que cada solicitante precisa do chamado resolvido</span></span>
+      </div>
+      <div class="card-body"><div id="dash-cal"></div></div>
+    </div>`;
+
+  el.innerHTML = header + volumeCards + calCard + maintAlert + slaCards + radarCard + distRow + teamRow + table;
+
+  dashboard._calState = dashboard._calState || {};
+  CalendarUI.month(document.getElementById('dash-cal'), {
+    state: dashboard._calState,
+    loadTickets: (from, to) => API.get(`/tickets/calendar?from=${from}&to=${to}`),
+  });
 
   const clock = document.getElementById('dash-clock');
   if (clock) {

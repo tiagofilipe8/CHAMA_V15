@@ -21,6 +21,10 @@ const notificationRoutes = require('./routes/notifications');
 const backupRoutes = require('./routes/backup');
 const whatsappRoutes = require('./routes/whatsapp');
 const inventoryRoutes = require('./routes/inventory');
+const locationRoutes = require('./routes/locations');
+const impactLevelRoutes = require('./routes/impactLevels');
+const resolutionCauseRoutes = require('./routes/resolutionCauses');
+const permissionRoutes = require('./routes/permissions');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
 
@@ -60,6 +64,10 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/impact-levels', impactLevelRoutes);
+app.use('/api/resolution-causes', resolutionCauseRoutes);
+app.use('/api/permissions', permissionRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -75,7 +83,8 @@ function wrapRouter(r) {
   });
 }
 [authRoutes, userRoutes, entityRoutes, categoryRoutes, ticketRoutes,
- dashboardRoutes, settingRoutes, notificationRoutes, backupRoutes, whatsappRoutes, inventoryRoutes].forEach(wrapRouter);
+ dashboardRoutes, settingRoutes, notificationRoutes, backupRoutes, whatsappRoutes, inventoryRoutes,
+ locationRoutes, impactLevelRoutes, resolutionCauseRoutes, permissionRoutes].forEach(wrapRouter);
 
 process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err?.message || err);
@@ -118,4 +127,4 @@ server.listen(config.port, () => {
   console.log(` Central de Serviços - rodando em ${config.publicUrl}`);
   console.log(` Modo: ${config.env}  |  Banco: ${config.db.name}@${config.db.host}`);
   console.log('==============================================================');
-});
+});

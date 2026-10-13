@@ -11,3 +11,6 @@ server/.wwebjs/
 backups/
 _backup_db.sql
 *.zip
+
+# configuracoes de editor de cada um
+.vscode/
