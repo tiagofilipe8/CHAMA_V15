@@ -85,6 +85,9 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err?.message || err);
 });
 
+// GBF_HOME=1: o endereço raiz abre o Painel Beija-Flor (ex.: ti.sgogeral.com). Sem a variável, nada muda.
+if (process.env.GBF_HOME === '1') app.get('/', (req, res) => res.redirect('/gbf/'));
+
 // Arquivos estaticos
 app.use('/uploads', express.static(config.uploadsDir, { fallthrough: true, index: false }));
 app.use('/vendor', express.static(path.join(config.publicDir, 'vendor'), { index: false }));

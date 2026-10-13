@@ -144,3 +144,15 @@ O ambiente de teste foi montado nesta ordem:
 3. o `npm run init`.
 
 Bancos que já estão em uso não são afetados.
+
+## Publicação própria do grupo (ti.sgogeral.com)
+
+O Grupo Beija-Flor publica esta Central + painel num serviço próprio do Render
+(`render.yaml`), com banco próprio. Para isso existem três ajustes, **todos ligados só por
+variável de ambiente** — sem as variáveis, a Central funciona exatamente como antes:
+
+| Variável | Efeito |
+| --- | --- |
+| `GBF_HOME=1` | o endereço raiz (`/`) redireciona para `/gbf/` (`server/index.js`) |
+| `WHATSAPP_DISABLED=1` | não inicia o cliente do WhatsApp, que precisa de navegador (`server/services/whatsapp.js`) |
+| comando `node server/gbf/instalar-banco.js` | prepara um banco **novo** na ordem certa e **sem** os usuários de demonstração (`admin/admin123`), que não podem ir para a internet |
