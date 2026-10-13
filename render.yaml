@@ -7,7 +7,8 @@ services:
     runtime: node
     plan: starter
     region: virginia
-    buildCommand: npm ci --omit=dev
+    # npm install (não npm ci): o package-lock.json da Central está fora de sincronia com o package.json
+    buildCommand: npm install --omit=dev --no-audit --no-fund
     startCommand: node server/gbf/instalar-banco.js && node server/index.js
     healthCheckPath: /healthz
     disk:
