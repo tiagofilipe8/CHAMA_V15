@@ -194,3 +194,35 @@ No serviço `ti-painel` do Render, criar a variável
 `ORCIM_DB_URL=postgres://painel_gbf:<senha>@<endereço>:<porta>/os_service` e, se o banco
 exigir SSL, `ORCIM_DB_SSL=1`. Depois do deploy, **Configurações** mostra
 "Conectado ao banco da Orcim · N chamados" ou o motivo do erro.
+
+## Envio automático para o painel do grupo (caminho escolhido)
+
+A Central continua sendo **a fonte de tudo**. O próprio servidor da Central **envia** ao
+painel do grupo (`ti.sgogeral.com`) o que mudou, a cada minuto (`server/gbf/sync.js`).
+
+- **Só conexão de saída:** funciona com a Central num computador local, sem abrir porta e sem
+  expor o banco.
+- **Não altera nada na Central:** só lê e envia.
+- **O que vai:**
+  - empresas, categorias, chamados, histórico, mensagens, anexos (inclusive os arquivos, até
+    8 MB), equipamentos e manutenções;
+  - usuários **sem** senha, e-mail e telefone.
+- **Exclusões:** a cada 6 horas há uma conferência completa, para o painel refletir também o
+  que foi apagado.
+- **Desligado por padrão:** sem as variáveis abaixo, nada é enviado.
+
+### O que a Orcim faz (uma vez)
+
+1. Juntar o branch `modulo-beijaflor` no sistema.
+2. No `.env` da Central, acrescentar (o grupo envia a chave por canal separado):
+
+   ```
+   GBF_SYNC_URL=https://ti.sgogeral.com/api/gbf/sync
+   GBF_SYNC_TOKEN=<chave enviada pelo grupo>
+   ```
+
+3. Reiniciar a Central. No log aparece
+   `[gbf-sync] enviando dados da Central para https://ti.sgogeral.com/api/gbf/sync a cada 60s`.
+   Em até 1 minuto, o painel mostra em **Configurações** "Último envio recebido: …".
+
+Opcionais: `GBF_SYNC_INTERVALO_S` (padrão 60) e `GBF_SYNC_COMPLETO_H` (padrão 6).

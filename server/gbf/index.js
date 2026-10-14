@@ -16,6 +16,7 @@ const bcrypt = require('bcryptjs');
 const { query } = require('../db');
 const contas = require('./contas');
 const alertas = require('./alertas');
+const sync = require('./sync');
 
 const router = express.Router();
 
@@ -37,6 +38,7 @@ async function preparar() {
     console.log('==============================================================');
   }
   alertas.iniciar();
+  sync.iniciarEnvio(); // só liga na Central da Orcim (GBF_SYNC_URL + GBF_SYNC_TOKEN)
 }
 
 let pronto = null;
@@ -57,6 +59,8 @@ router.use((req, res, next) => {
 });
 
 router.use(contas.publico);
+// Recebimento dos dados da Central da Orcim (autenticado pelo token de sincronização, não pelo login)
+router.use(sync.receptor);
 router.use(contas.privado); // daqui para baixo exige login do painel
 router.use('/demandas', require('./demandas'));
 router.use('/atividades', require('./atividades'));

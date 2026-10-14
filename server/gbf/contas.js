@@ -177,6 +177,7 @@ privado.get('/config', requireGestor, ah(async (req, res) => {
     entidades: Array.isArray(entidades) ? entidades : [],
     empresas_central: todas.rows,
     fonte: await statusCentral(),
+    sync: await require('./sync').statusSync(),
   });
 }));
 

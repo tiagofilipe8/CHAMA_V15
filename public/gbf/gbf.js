@@ -807,6 +807,13 @@
     if (seq !== renderSeq) return;
     const marcadas = new Set(c.entidades.map(String));
     view().innerHTML = `
+      ${c.sync ? `<div class="card-x mb-3" style="max-width:760px">
+        <h3><i class="bi bi-arrow-repeat"></i>Dados da Orcim (envio automático)</h3>
+        ${c.sync.ultimo_em
+    ? `<div class="${Date.now() - new Date(c.sync.ultimo_em) < 10 * 60e3 ? 'text-success' : 'text-warning'} fw-semibold"><i class="bi bi-check-circle"></i> Último envio recebido: ${fmtData(c.sync.ultimo_em)}</div>
+       <div class="small-muted mt-1">A Central da Orcim manda o que mudou a cada minuto. Conferência completa: ${c.sync.completo_em ? fmtData(c.sync.completo_em) : 'ainda não'}.</div>`
+    : '<div class="text-warning fw-semibold"><i class="bi bi-hourglass-split"></i> Aguardando o primeiro envio da Central da Orcim.</div><div class="small-muted mt-1">Depois que a Orcim ligar o envio no servidor deles, os dados aparecem aqui em até 1 minuto.</div>'}
+      </div>` : ''}
       ${c.fonte?.externa ? `<div class="card-x mb-3" style="max-width:760px">
         <h3><i class="bi bi-database"></i>Dados da Orcim</h3>
         ${c.fonte.ok
