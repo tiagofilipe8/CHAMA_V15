@@ -1,13 +1,13 @@
-// Sincronização Central da Orcim -> Painel Beija-Flor (ti.sgogeral.com).
+// Recebimento dos dados da Central da Orcim no Painel Beija-Flor (ti.sgogeral.com).
 //
-// ENVIO (roda na Central da Orcim): a cada minuto manda para o painel o que mudou nas tabelas
-//   da Central. Só faz conexões de SAÍDA, então funciona até com a Central num computador
-//   local, sem abrir porta. Ligado por GBF_SYNC_URL + GBF_SYNC_TOKEN. Não altera nada na Orcim.
-// RECEBIMENTO (roda no servidor do painel): grava uma CÓPIA das tabelas da Central no banco
-//   do painel, que o painel já sabe ler. Ligado por GBF_SYNC_TOKEN (o mesmo segredo).
+// O ENVIO roda na Central da Orcim: server/integracao-beijaflor (pasta independente, entregue à
+// Orcim). Ele descobre sozinho todas as tabelas do banco deles e manda o que mudou a cada minuto.
 //
-// Usuários vão SEM senha, e-mail e telefone. A cada GBF_SYNC_COMPLETO_H horas (padrão 6) o
-// envio manda a lista completa de ids, e o recebimento apaga da cópia o que sumiu da Orcim.
+// Aqui cada linha recebida é guardada de dois jeitos:
+//  - gbf_espelho (tabela, chave, dados jsonb): TODAS as tabelas, para a tela "Tudo da Orcim";
+//  - nas tabelas de mesmo nome da Central (tickets, assets...), só para as que o painel já
+//    sabe ler (TIPADAS). Usuários entram sem senha, e-mail e telefone (nem são enviados).
+// Ligado por GBF_SYNC_TOKEN (o mesmo segredo configurado na Orcim).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -16,27 +16,14 @@ const config = require('../config');
 const { query, pool } = require('../db');
 const { ah, getSetting, setSetting } = require('./common');
 
-// Ordem importa: pais antes dos filhos (chaves estrangeiras)
-const TABELAS = [
-  { nome: 'entities', cursor: 'ts', colunas: ['id', 'name', 'description', 'email', 'phone', 'address', 'logo', 'sla_days', 'sla_hours', 'active', 'created_at', 'updated_at'] },
-  { nome: 'categories', cursor: 'todos', colunas: ['id', 'name', 'parent_id', 'active', 'created_at'] },
-  // users: sem password_hash, email e phone
-  { nome: 'users', cursor: 'ts', colunas: ['id', 'username', 'name', 'role', 'client_level', 'entity_id', 'active', 'created_at', 'updated_at'] },
-  { nome: 'assets', cursor: 'ts', colunas: ['id', 'entity_id', 'asset_tag', 'name', 'type', 'status', 'manufacturer', 'model', 'serial_number', 'description', 'location', 'department', 'responsible_user_id', 'purchase_date', 'warranty_expiration', 'notes', 'last_seen_at', 'created_by', 'created_at', 'updated_at', 'next_maintenance_date', 'toner', 'cilindro', 'maintenance_alert_notified_date', 'next_maintenance_notes'] },
-  { nome: 'tickets', cursor: 'ts', colunas: ['id', 'number', 'title', 'description', 'status', 'priority', 'category_id', 'entity_id', 'requester_id', 'assigned_user_id', 'approval_status', 'approval_requested_by_id', 'approval_responded_by_id', 'approval_comment', 'approval_requested_at', 'approval_responded_at', 'due_at', 'closed_at', 'created_at', 'updated_at', 'asset_id'] },
-  { nome: 'ticket_status_history', cursor: 'id', colunas: ['id', 'ticket_id', 'old_status', 'new_status', 'user_id', 'created_at'] },
-  { nome: 'ticket_messages', cursor: 'id', colunas: ['id', 'ticket_id', 'user_id', 'kind', 'content', 'new_status', 'created_at'] },
-  { nome: 'ticket_attachments', cursor: 'id', colunas: ['id', 'ticket_id', 'file_name', 'storage_path', 'mime_type', 'file_size', 'uploaded_by', 'created_at'] },
-  { nome: 'asset_maintenances', cursor: 'ts', colunas: ['id', 'asset_id', 'performed_at', 'description', 'created_by', 'created_at', 'updated_at'] },
-];
-const POR_NOME = Object.fromEntries(TABELAS.map((t) => [t.nome, t]));
-const LOTE = 300;
+// Tabelas que o painel lê no formato da Central. Ordem: pais antes dos filhos.
+const TIPADAS = ['entities', 'categories', 'users', 'assets', 'tickets', 'ticket_status_history',
+  'ticket_messages', 'ticket_attachments', 'asset_maintenances'];
 const TIPO = 'application/x-gbf-sync+json'; // fora do express.json global (limite de 1 MB da Central)
-const MAX_ANEXO = 8 * 1024 * 1024;
+const NOME_VALIDO = /^[a-z_][a-z0-9_]{0,62}$/;
 
-// Colunas que existem de verdade no banco local (o schema pode mudar de versão para versão)
 const cacheColunas = new Map();
-async function colunasExistentes(tabela) {
+async function colunasLocais(tabela) {
   if (!cacheColunas.has(tabela)) {
     const { rows } = await query(
       `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`, [tabela]);
@@ -44,12 +31,7 @@ async function colunasExistentes(tabela) {
   }
   return cacheColunas.get(tabela);
 }
-async function colunasDe(t) {
-  const existem = await colunasExistentes(t.nome);
-  return t.colunas.filter((c) => existem.has(c));
-}
 
-// ============================================================ RECEBIMENTO
 const receptor = express.Router();
 const tokenRecebimento = process.env.GBF_SYNC_TOKEN || '';
 
@@ -73,12 +55,45 @@ receptor.get('/sync/estado', ah(async (req, res) => {
   });
 }));
 
-receptor.post('/sync/lote', ah(async (req, res) => {
-  const { tabela, linhas } = req.body || {};
-  const t = POR_NOME[tabela];
-  if (!t || !Array.isArray(linhas)) return res.status(422).json({ error: 'Lote inválido.' });
-  if (!linhas.length) return res.json({ ok: true, gravadas: 0 });
-  const colunas = await colunasDe(t);
+// Lista de tabelas e colunas da Central (a tela "Tudo da Orcim" usa)
+receptor.post('/sync/esquema', ah(async (req, res) => {
+  const tabelas = Array.isArray(req.body?.tabelas) ? req.body.tabelas : null;
+  if (!tabelas || tabelas.some((t) => !NOME_VALIDO.test(String(t.nome)))) return res.status(422).json({ error: 'Esquema inválido.' });
+  await setSetting('sync_esquema', {
+    versao: Number(req.body.versao) || 0,
+    recebido_em: new Date().toISOString(),
+    tabelas: tabelas.map((t) => ({
+      nome: t.nome, modo: String(t.modo || ''), pk: (t.pk || []).map(String),
+      colunas: (t.colunas || []).map((c) => ({ nome: String(c.nome), tipo: String(c.tipo || '') })),
+    })),
+  });
+  res.json({ ok: true });
+}));
+
+// Colunas que apontam (chave estrangeira) para tabelas fora de TIPADAS: ficam de fora da cópia
+// tipada, senão a gravação falharia (ex.: assets.primary_photo_id -> asset_photos)
+let cacheForaDoTipado = null;
+async function colunasForaDoTipado(tabela) {
+  if (!cacheForaDoTipado) {
+    const { rows } = await query(
+      `SELECT c.conrelid::regclass::text AS tabela, a.attname AS coluna, c.confrelid::regclass::text AS alvo
+       FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+       WHERE c.contype = 'f'`);
+    cacheForaDoTipado = new Map();
+    for (const r of rows) {
+      if (TIPADAS.includes(r.alvo)) continue;
+      if (!cacheForaDoTipado.has(r.tabela)) cacheForaDoTipado.set(r.tabela, new Set());
+      cacheForaDoTipado.get(r.tabela).add(r.coluna);
+    }
+  }
+  return cacheForaDoTipado.get(tabela) || new Set();
+}
+
+async function gravarTipada(tabela, linhas) {
+  const existem = await colunasLocais(tabela);
+  if (!existem.has('id')) return;
+  const fora = await colunasForaDoTipado(tabela);
+  const colunas = [...existem].filter((c) => linhas.some((l) => c in l) && c !== 'password_hash' && !fora.has(c));
   const dados = linhas.map((l) => {
     const o = {};
     for (const c of colunas) if (c in l) o[c] = l[c];
@@ -86,49 +101,85 @@ receptor.post('/sync/lote', ah(async (req, res) => {
     return o;
   });
   const lista = tabela === 'users' ? [...colunas, 'password_hash'] : colunas;
-  const atualiza = colunas.filter((c) => c !== 'id').map((c) => `${c} = EXCLUDED.${c}`).join(', ');
+  const atualiza = colunas.filter((c) => c !== 'id').map((c) => `"${c}" = EXCLUDED."${c}"`).join(', ');
+  const cols = lista.map((c) => `"${c}"`).join(', ');
   await query(
-    `INSERT INTO ${tabela} (${lista.join(', ')})
-     SELECT ${lista.join(', ')} FROM jsonb_populate_recordset(NULL::${tabela}, $1::jsonb)
-     ON CONFLICT (id) DO UPDATE SET ${atualiza}`, [JSON.stringify(dados)]);
+    `INSERT INTO ${tabela} (${cols})
+     SELECT ${cols} FROM jsonb_populate_recordset(NULL::${tabela}, $1::jsonb)
+     ON CONFLICT (id) DO ${atualiza ? `UPDATE SET ${atualiza}` : 'NOTHING'}`, [JSON.stringify(dados)]);
+}
+
+receptor.post('/sync/lote', ah(async (req, res) => {
+  const { tabela, linhas } = req.body || {};
+  if (!NOME_VALIDO.test(String(tabela)) || !Array.isArray(linhas)) return res.status(422).json({ error: 'Lote inválido.' });
+  if (!linhas.length) return res.json({ ok: true, gravadas: 0 });
+  // envio antigo (v1) não manda pk: era sempre "id"
+  const pk = Array.isArray(req.body.pk) && req.body.pk.length ? req.body.pk.map(String) : ['id'];
+  const chave = (l) => pk.map((c) => (l[c] === null || l[c] === undefined ? '' : String(l[c]))).join('|');
+
+  const limpas = linhas.map((l) => { const o = { ...l }; delete o._cursor; return o; });
+  await query(
+    `INSERT INTO gbf_espelho (tabela, chave, dados, recebido_em)
+     SELECT $1, x.chave, x.dados, now() FROM jsonb_to_recordset($2::jsonb) AS x(chave text, dados jsonb)
+     ON CONFLICT (tabela, chave) DO UPDATE SET dados = EXCLUDED.dados, recebido_em = now()`,
+    [tabela, JSON.stringify(limpas.map((l) => ({ chave: chave(l), dados: l })))]);
+  if (TIPADAS.includes(tabela)) await gravarTipada(tabela, limpas);
 
   // Avança o cursor desta tabela
   const cursores = (await getSetting('sync_cursores', {})) || {};
-  if (t.cursor === 'ts') {
+  if (linhas.some((l) => l._cursor)) {
     // _cursor vem do envio com microssegundos e formato fixo (comparação de texto é segura)
-    const max = linhas.reduce((m, l) => (l._cursor && l._cursor > m ? l._cursor : m), cursores[tabela]?.ts || '');
-    cursores[tabela] = { ts: max };
-  } else if (t.cursor === 'id') {
-    const max = linhas.reduce((m, l) => Math.max(m, Number(l.id)), Number(cursores[tabela]?.id || 0));
-    cursores[tabela] = { id: max };
+    cursores[tabela] = { ts: linhas.reduce((m, l) => (l._cursor && l._cursor > m ? l._cursor : m), cursores[tabela]?.ts || '') };
+  } else if (pk.length === 1 && linhas.every((l) => /^\d+$/.test(String(l[pk[0]])))) {
+    cursores[tabela] = { id: linhas.reduce((m, l) => Math.max(m, Number(l[pk[0]])), Number(cursores[tabela]?.id || 0)) };
   }
   await setSetting('sync_cursores', cursores);
   await setSetting('sync_ultimo_em', new Date().toISOString());
-  res.json({ ok: true, gravadas: dados.length });
+  res.json({ ok: true, gravadas: linhas.length });
 }));
 
-// Arquivo de anexo (vai para o disco do painel, no mesmo caminho que a Central usa)
+// Arquivo (anexo de chamado, foto de equipamento): vai para o disco do painel no mesmo caminho da Central
+function gravarArquivo(relativo, base64) {
+  const partes = String(relativo || '').split('/');
+  if (!['tickets', 'assets'].includes(partes[0]) || partes.length !== 3 || !/^\d+$/.test(partes[1])
+    || !partes[2] || partes[2].startsWith('.') || partes[2] !== path.basename(partes[2]) || !base64) return false;
+  const dir = path.join(config.uploadsDir, partes[0], partes[1]);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, partes[2]), Buffer.from(String(base64), 'base64'));
+  return true;
+}
+receptor.post('/sync/arquivo', ah(async (req, res) => {
+  if (!gravarArquivo(req.body?.caminho, req.body?.base64)) return res.status(422).json({ error: 'Arquivo inválido.' });
+  res.json({ ok: true });
+}));
+// envio antigo (v1)
 receptor.post('/sync/anexo', ah(async (req, res) => {
   const { ticket_id: ticketId, storage_path: arquivo, base64 } = req.body || {};
-  if (!/^\d+$/.test(String(ticketId)) || !arquivo || !base64) return res.status(422).json({ error: 'Anexo inválido.' });
-  const dir = path.join(config.uploadsDir, 'tickets', String(ticketId));
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, path.basename(String(arquivo))), Buffer.from(base64, 'base64'));
+  if (!gravarArquivo(`tickets/${ticketId}/${path.basename(String(arquivo || ''))}`, base64)) return res.status(422).json({ error: 'Anexo inválido.' });
   res.json({ ok: true });
 }));
 
 // Conferência completa: apaga da cópia o que não existe mais na Orcim
 receptor.post('/sync/completo', ah(async (req, res) => {
-  const ids = req.body?.ids || {};
+  // v2 manda { chaves: { tabela: ['1', '2|x', ...] } }; v1 mandava { ids: { tabela: [1, 2] } }
+  const entrada = req.body?.chaves || req.body?.ids || {};
+  const chaves = {};
+  for (const [t, lista] of Object.entries(entrada)) if (NOME_VALIDO.test(t) && Array.isArray(lista)) chaves[t] = lista.map(String);
   const client = await pool.connect();
   const apagados = {};
   try {
     await client.query('BEGIN');
-    for (const t of [...TABELAS].reverse()) { // filhos antes dos pais
-      if (!Array.isArray(ids[t.nome])) continue;
-      const r = await client.query(`DELETE FROM ${t.nome} WHERE NOT (id = ANY($1::bigint[]))`, [ids[t.nome]]);
-      if (r.rowCount) apagados[t.nome] = r.rowCount;
+    for (const t of [...TIPADAS].reverse()) { // filhos antes dos pais
+      if (!chaves[t] || !(await colunasLocais(t)).has('id')) continue;
+      const r = await client.query(`DELETE FROM ${t} WHERE NOT (id::text = ANY($1::text[]))`, [chaves[t]]);
+      if (r.rowCount) apagados[t] = r.rowCount;
     }
+    for (const [t, lista] of Object.entries(chaves)) {
+      const r = await client.query('DELETE FROM gbf_espelho WHERE tabela = $1 AND NOT (chave = ANY($2::text[]))', [t, lista]);
+      if (r.rowCount && !apagados[t]) apagados[t] = r.rowCount;
+    }
+    // Tabela que deixou de existir (ou passou a ser excluída) na Orcim
+    if (req.body?.chaves) await client.query('DELETE FROM gbf_espelho WHERE NOT (tabela = ANY($1::text[]))', [Object.keys(chaves)]);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -142,109 +193,13 @@ receptor.post('/sync/completo', ah(async (req, res) => {
 
 async function statusSync() {
   if (!tokenRecebimento) return null;
+  const esquema = await getSetting('sync_esquema', null);
   return {
     ultimo_em: await getSetting('sync_ultimo_em', null),
     completo_em: await getSetting('sync_completo_em', null),
+    versao_envio: esquema?.versao || null,
+    tabelas: esquema?.tabelas?.length || null,
   };
 }
 
-// ================================================================ ENVIO
-const URL_DESTINO = (process.env.GBF_SYNC_URL || '').replace(/\/$/, '');
-const TOKEN_ENVIO = process.env.GBF_SYNC_TOKEN || '';
-const INTERVALO_MS = Math.max(15, Number(process.env.GBF_SYNC_INTERVALO_S) || 60) * 1000;
-const COMPLETO_MS = Math.max(0.01, Number(process.env.GBF_SYNC_COMPLETO_H) || 6) * 3600e3;
-let enviando = false;
-
-async function chamar(metodo, rota, corpo) {
-  const r = await fetch(`${URL_DESTINO}${rota}`, {
-    method: metodo,
-    headers: { Authorization: `Bearer ${TOKEN_ENVIO}`, ...(corpo ? { 'Content-Type': TIPO } : {}) },
-    body: corpo ? JSON.stringify(corpo) : undefined,
-    signal: AbortSignal.timeout(60000),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`${rota}: HTTP ${r.status} ${j.error || ''}`);
-  return j;
-}
-
-async function enviarTabela(t, cursor) {
-  if (!(await colunasExistentes(t.nome)).size) return 0;
-  const colunas = await colunasDe(t);
-  const sel = colunas.join(', ');
-  let total = 0;
-  let c = cursor || {};
-  for (let volta = 0; volta < 200; volta += 1) {
-    let rows;
-    if (t.cursor === 'ts') {
-      // _cursor: updated_at com MICROssegundos (o Date do JS corta em ms e o último registro
-      // seria reenviado a cada ciclo para sempre)
-      ({ rows } = await query(
-        `SELECT ${sel}, to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS _cursor
-         FROM ${t.nome} WHERE ($1::timestamptz IS NULL OR updated_at > $1::timestamptz)
-         ORDER BY updated_at, id LIMIT ${LOTE} OFFSET $2`, [c.ts || null, volta * LOTE]));
-    } else if (t.cursor === 'id') {
-      ({ rows } = await query(`SELECT ${sel} FROM ${t.nome} WHERE id > $1 ORDER BY id LIMIT ${LOTE}`, [Number(c.id || 0)]));
-    } else {
-      ({ rows } = await query(`SELECT ${sel} FROM ${t.nome} ORDER BY id LIMIT ${LOTE} OFFSET $1`, [volta * LOTE]));
-    }
-    if (!rows.length) break;
-    // datas como ISO (comparação de cursor no recebimento)
-    const linhas = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v instanceof Date ? v.toISOString() : v])));
-    await chamar('POST', '/lote', { tabela: t.nome, linhas });
-    if (t.nome === 'ticket_attachments') await enviarArquivos(linhas);
-    if (t.cursor !== 'todos') total += linhas.length;
-    if (t.cursor === 'id') c = { id: linhas[linhas.length - 1].id };
-    if (rows.length < LOTE) break;
-  }
-  return total;
-}
-
-async function enviarArquivos(linhas) {
-  for (const a of linhas) {
-    const arq = path.join(config.uploadsDir, 'tickets', String(a.ticket_id), path.basename(String(a.storage_path || '')));
-    try {
-      const st = fs.statSync(arq);
-      if (st.size > MAX_ANEXO) continue;
-      await chamar('POST', '/anexo', { ticket_id: a.ticket_id, storage_path: a.storage_path, base64: fs.readFileSync(arq).toString('base64') });
-    } catch { /* arquivo ausente no disco: segue */ }
-  }
-}
-
-async function enviarCompleto() {
-  const ids = {};
-  for (const t of TABELAS) {
-    if (!(await colunasExistentes(t.nome)).size) continue;
-    ids[t.nome] = (await query(`SELECT id FROM ${t.nome}`)).rows.map((r) => r.id);
-  }
-  return chamar('POST', '/completo', { ids });
-}
-
-async function cicloEnvio() {
-  if (enviando) return;
-  enviando = true;
-  try {
-    const estado = await chamar('GET', '/estado');
-    let total = 0;
-    for (const t of TABELAS) total += await enviarTabela(t, estado.cursores?.[t.nome]);
-    const ultimoCompleto = estado.completo_em ? new Date(estado.completo_em).getTime() : 0;
-    if (Date.now() - ultimoCompleto > COMPLETO_MS) {
-      const r = await enviarCompleto();
-      if (Object.keys(r.apagados || {}).length) console.log('[gbf-sync] removidos na cópia:', JSON.stringify(r.apagados));
-    }
-    if (total) console.log(`[gbf-sync] ${total} registro(s) enviados ao painel.`);
-  } catch (e) {
-    console.error('[gbf-sync] envio falhou:', e.message);
-  } finally {
-    enviando = false;
-  }
-}
-
-function iniciarEnvio() {
-  if (!URL_DESTINO || !TOKEN_ENVIO) return;
-  console.log(`[gbf-sync] enviando dados da Central para ${URL_DESTINO} a cada ${INTERVALO_MS / 1000}s`);
-  setTimeout(cicloEnvio, 8000);
-  const t = setInterval(cicloEnvio, INTERVALO_MS);
-  if (t.unref) t.unref();
-}
-
-module.exports = { receptor, iniciarEnvio, statusSync, cicloEnvio };
+module.exports = { receptor, statusSync, TIPADAS };

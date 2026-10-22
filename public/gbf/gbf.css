@@ -336,3 +336,6 @@ a.mini.mais { text-decoration: none; }
   .cal-cel .cal-add { opacity: 1; width: 20px; height: 20px; }
   .cal-cel .mini[data-href] { min-width: 12px; min-height: 12px; }
 }
+
+/* Tudo da Orcim: uma linha por registro */
+.cel-espelho { white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }

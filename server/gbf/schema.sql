@@ -201,3 +201,13 @@ CREATE INDEX IF NOT EXISTS idx_gbf_requests_status ON gbf_requests(status, creat
 -- Atividades podem pertencer a um posto
 ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS location_id BIGINT REFERENCES gbf_locations(id) ON DELETE SET NULL;
 ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS visit_id BIGINT REFERENCES gbf_visits(id) ON DELETE SET NULL;
+
+-- Cópia de TODAS as tabelas da Central da Orcim (integração global, server/integracao-beijaflor)
+CREATE TABLE IF NOT EXISTS gbf_espelho (
+    tabela        TEXT        NOT NULL,
+    chave         TEXT        NOT NULL,
+    dados         JSONB       NOT NULL,
+    recebido_em   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tabela, chave)
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_espelho_recebido ON gbf_espelho(tabela, recebido_em DESC);

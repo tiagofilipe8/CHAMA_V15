@@ -174,6 +174,7 @@
       ['#/orcim', 'speedometer2', 'Visão Orcim'],
       ['#/demandas', 'inboxes', 'Demandas'],
       ['#/manutencoes', 'tools', 'Manutenções'],
+      ...(ehGestor() ? [['#/tudo', 'database', 'Tudo da Orcim']] : []),
     ];
     if (ehGestor()) {
       itens.push(['grp', 'Administração'], ['#/hoje', 'sun', 'Dia do técnico'], ['#/usuarios', 'people', 'Usuários'], ['#/config', 'sliders', 'Configurações']);
@@ -234,6 +235,9 @@
       else if (a === 'solicitacoes') { marcarMenu('#/solicitacoes'); await vSolicitacoes(qs, seq); }
       else if (a === 'demandas' && b) { marcarMenu('#/demandas'); await vDemanda(b, seq); }
       else if (a === 'demandas') { marcarMenu('#/demandas'); await vDemandas(qs, seq); }
+      else if (a === 'tudo' && ehGestor() && b && partes[2] !== undefined) { marcarMenu('#/tudo'); await vEspelhoRegistro(decodeURIComponent(b), decodeURIComponent(partes.slice(2).join('/')), seq); }
+      else if (a === 'tudo' && ehGestor() && b) { marcarMenu('#/tudo'); await vEspelhoTabela(decodeURIComponent(b), qs, seq); }
+      else if (a === 'tudo' && ehGestor()) { marcarMenu('#/tudo'); await vEspelho(seq); }
       else if (a === 'manutencoes') { marcarMenu('#/manutencoes'); await vManutencoes(seq); }
       else if (a === 'atividades' && b === 'nova') { marcarMenu('#/atividades'); await vFormAtividade(null, qs, seq); }
       else if (a === 'atividades' && b && partes[2] === 'editar') { marcarMenu('#/atividades'); await vFormAtividade(b, qs, seq); }
@@ -799,6 +803,115 @@
   }
 
   // ------------------------------------------------------------------
+  // Tudo da Orcim (gestor): cópia de todas as tabelas da Central
+  // ------------------------------------------------------------------
+  const NOMES_TABELA = {
+    tickets: 'Chamados', ticket_messages: 'Mensagens dos chamados', ticket_status_history: 'Histórico de status',
+    ticket_attachments: 'Anexos dos chamados', entities: 'Empresas', categories: 'Categorias', users: 'Usuários da Central',
+    assets: 'Equipamentos', asset_maintenances: 'Manutenções de equipamentos', asset_photos: 'Fotos de equipamentos',
+    asset_history: 'Histórico de equipamentos', agents: 'Agentes de inventário', settings: 'Configurações da Central',
+    notification_log: 'Notificações enviadas', inapp_notifications: 'Avisos no sistema',
+    asset_customer_history: 'Troca de empresa dos equipamentos', computer_details: 'Computadores (detalhes)',
+    computer_gpu: 'Placas de vídeo', computer_memory: 'Memórias', computer_network_interfaces: 'Placas de rede',
+    computer_software: 'Programas instalados', computer_storage: 'Discos', inventory_snapshots: 'Coletas de inventário',
+    inventory_changes: 'Mudanças de inventário',
+  };
+  const nomeTabela = (t) => NOMES_TABELA[t] || t.replace(/_/g, ' ');
+  const ehDataHora = (v) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(v));
+  const valorCelula = (v, inteiro = false) => {
+    if (v === null || v === undefined || v === '') return '<span class="muted">—</span>';
+    if (typeof v === 'boolean') return v ? 'sim' : 'não';
+    if (typeof v === 'object') return inteiro ? `<code>${esc(JSON.stringify(v, null, 2))}</code>` : `<code class="small">${esc(JSON.stringify(v).slice(0, 80))}</code>`;
+    const txt = String(v);
+    if (ehDataHora(txt)) return `<span class="text-nowrap">${fmtData(txt)}</span>`;
+    return esc(!inteiro && txt.length > 90 ? `${txt.slice(0, 90)}…` : txt);
+  };
+
+  async function vEspelho(seq) {
+    titulo('Tudo da Orcim');
+    const r = await API.get('/espelho');
+    if (seq !== renderSeq) return;
+    const total = r.tabelas.reduce((n, t) => n + t.registros, 0);
+    view().innerHTML = `
+      <div class="small-muted mb-2">Cópia de todas as tabelas da Central da Orcim, atualizada a cada minuto pela integração instalada lá.
+        Senhas, chaves, e-mails e telefones de usuários não são enviados.${r.recebido_em ? ` Estrutura recebida em ${fmtData(r.recebido_em)}.` : ''}</div>
+      ${r.tabelas.length ? `
+      <input class="form-control form-control-sm mb-2" id="filtro-tab" placeholder="Filtrar tabelas" style="max-width:320px">
+      <div class="card-x p-0"><div class="table-wrap"><table class="table-x">
+        <thead><tr><th>Tabela</th><th class="text-end">Registros</th><th>Último recebido</th></tr></thead>
+        <tbody>${r.tabelas.map((t) => `<tr class="click" data-href="#/tudo/${encodeURIComponent(t.nome)}" data-nome="${esc(`${t.nome} ${nomeTabela(t.nome)}`.toLowerCase())}">
+          <td><div class="fw-semibold">${esc(nomeTabela(t.nome))}</div><div class="small-muted">${esc(t.nome)}${t.colunas ? ` · ${t.colunas} colunas` : ''}</div></td>
+          <td class="text-end num">${t.registros.toLocaleString('pt-BR')}</td>
+          <td class="text-nowrap">${t.ultimo ? fmtData(t.ultimo) : '<span class="muted">—</span>'}</td>
+        </tr>`).join('')}</tbody></table></div></div>
+      <div class="small-muted mt-2">${r.tabelas.length} tabela(s) · ${total.toLocaleString('pt-BR')} registro(s)</div>`
+    : `<div class="card-x">${vazio('Nada recebido ainda. Os dados aparecem aqui assim que a Orcim ligar a integração na Central deles.', 'hourglass-split')}</div>`}`;
+    const filtro = $('#filtro-tab');
+    if (filtro) {
+      filtro.addEventListener('input', () => {
+        const q = filtro.value.trim().toLowerCase();
+        $$('tr[data-nome]').forEach((tr) => { tr.style.display = !q || tr.dataset.nome.includes(q) ? '' : 'none'; });
+      });
+    }
+    ligarCliques();
+  }
+
+  async function vEspelhoTabela(tabela, qs, seq) {
+    titulo(nomeTabela(tabela));
+    const f = Object.fromEntries(qs.entries());
+    const r = await API.get(`/espelho/${encodeURIComponent(tabela)}?${new URLSearchParams(f)}`);
+    if (seq !== renderSeq) return;
+    const paginas = Math.max(1, Math.ceil(r.total / r.por_pagina));
+    const link = (p) => `#/tudo/${encodeURIComponent(tabela)}?${new URLSearchParams({ ...f, pagina: p })}`;
+    view().innerHTML = `
+      <a href="#/tudo" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Todas as tabelas</a>
+      <div class="filters mt-2">
+        <input class="form-control form-control-sm grow" id="busca-reg" placeholder="Buscar em qualquer campo" value="${esc(f.busca || '')}">
+      </div>
+      <div class="small-muted mb-2">${r.total.toLocaleString('pt-BR')} registro(s) · tabela <code>${esc(tabela)}</code></div>
+      ${r.registros.length ? `
+      <div class="card-x p-0"><div class="table-wrap"><table class="table-x">
+        <thead><tr>${r.colunas.map((c) => `<th class="text-nowrap">${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${r.registros.map((l) => `<tr class="click" data-href="#/tudo/${encodeURIComponent(tabela)}/${encodeURIComponent(l.chave)}">
+          ${r.colunas.map((c) => `<td class="cel-espelho">${valorCelula(l.dados[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>
+      ${paginas > 1 ? `<div class="d-flex gap-2 align-items-center mt-2">
+        ${r.pagina > 1 ? `<a class="btn btn-sm btn-outline-secondary" href="${link(r.pagina - 1)}"><i class="bi bi-chevron-left"></i> Anterior</a>` : ''}
+        <span class="small-muted">Página ${r.pagina} de ${paginas}</span>
+        ${r.pagina < paginas ? `<a class="btn btn-sm btn-outline-secondary" href="${link(r.pagina + 1)}">Próxima <i class="bi bi-chevron-right"></i></a>` : ''}
+      </div>` : ''}`
+    : `<div class="card-x">${vazio(f.busca ? 'Nada encontrado com essa busca.' : 'Tabela vazia.')}</div>`}`;
+    const busca = $('#busca-reg');
+    let t;
+    busca.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const novo = { ...f, busca: busca.value.trim() };
+        delete novo.pagina;
+        if (!novo.busca) delete novo.busca;
+        location.hash = `#/tudo/${encodeURIComponent(tabela)}?${new URLSearchParams(novo)}`;
+      }, 500);
+    });
+    if (f.busca) { busca.focus(); busca.setSelectionRange(busca.value.length, busca.value.length); }
+    ligarCliques();
+  }
+
+  async function vEspelhoRegistro(tabela, chave, seq) {
+    titulo(nomeTabela(tabela));
+    const r = await API.get(`/espelho/${encodeURIComponent(tabela)}/${encodeURIComponent(chave)}`);
+    if (seq !== renderSeq) return;
+    view().innerHTML = `
+      <a href="#/tudo/${encodeURIComponent(tabela)}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> ${esc(nomeTabela(tabela))}</a>
+      <div class="card-x mt-2" style="max-width:860px">
+        <h3><i class="bi bi-card-text"></i>Registro ${esc(chave)}</h3>
+        <div class="table-wrap"><table class="table-x">
+          <tbody>${Object.entries(r.dados).map(([k, v]) => `<tr><th class="text-nowrap" style="width:1%">${esc(k)}</th>
+            <td style="white-space:pre-wrap;word-break:break-word">${valorCelula(v, true)}${ehDataHora(v) ? ` <span class="small-muted">(${esc(v)})</span>` : ''}</td></tr>`).join('')}</tbody>
+        </table></div>
+        <div class="small-muted mt-2">Recebido da Orcim em ${fmtData(r.recebido_em)}.</div>
+      </div>`;
+  }
+
+  // ------------------------------------------------------------------
   // Configurações (gestor)
   // ------------------------------------------------------------------
   async function vConfig(seq) {
@@ -811,7 +924,7 @@
         <h3><i class="bi bi-arrow-repeat"></i>Dados da Orcim (envio automático)</h3>
         ${c.sync.ultimo_em
     ? `<div class="${Date.now() - new Date(c.sync.ultimo_em) < 10 * 60e3 ? 'text-success' : 'text-warning'} fw-semibold"><i class="bi bi-check-circle"></i> Último envio recebido: ${fmtData(c.sync.ultimo_em)}</div>
-       <div class="small-muted mt-1">A Central da Orcim manda o que mudou a cada minuto. Conferência completa: ${c.sync.completo_em ? fmtData(c.sync.completo_em) : 'ainda não'}.</div>`
+       <div class="small-muted mt-1">A Central da Orcim manda o que mudou a cada minuto. Conferência completa: ${c.sync.completo_em ? fmtData(c.sync.completo_em) : 'ainda não'}.${c.sync.tabelas ? ` ${c.sync.tabelas} tabela(s) recebidas — <a href="#/tudo">ver tudo da Orcim</a>.` : ''}</div>`
     : '<div class="text-warning fw-semibold"><i class="bi bi-hourglass-split"></i> Aguardando o primeiro envio da Central da Orcim.</div><div class="small-muted mt-1">Depois que a Orcim ligar o envio no servidor deles, os dados aparecem aqui em até 1 minuto.</div>'}
       </div>` : ''}
       ${c.fonte?.externa ? `<div class="card-x mb-3" style="max-width:760px">

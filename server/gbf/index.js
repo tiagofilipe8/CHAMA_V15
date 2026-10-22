@@ -38,7 +38,6 @@ async function preparar() {
     console.log('==============================================================');
   }
   alertas.iniciar();
-  sync.iniciarEnvio(); // só liga na Central da Orcim (GBF_SYNC_URL + GBF_SYNC_TOKEN)
 }
 
 let pronto = null;
@@ -62,6 +61,7 @@ router.use(contas.publico);
 // Recebimento dos dados da Central da Orcim (autenticado pelo token de sincronização, não pelo login)
 router.use(sync.receptor);
 router.use(contas.privado); // daqui para baixo exige login do painel
+router.use('/espelho', require('./espelho'));
 router.use('/demandas', require('./demandas'));
 router.use('/atividades', require('./atividades'));
 // Rotina do técnico (Prompt do TI): postos, checklists, visitas, agenda, solicitações

@@ -116,6 +116,7 @@ app.get(/^\/(?!api|uploads|vendor|healthz).*/, (req, res) => {
 initSocket(server);
 backupService.startScheduler();
 maintenanceAlerts.startScheduler();
+require('./integracao-beijaflor').iniciar(); // envio ao Painel Beija-Flor (só liga com GBF_SYNC_URL + GBF_SYNC_TOKEN)
 
 server.listen(config.port, () => {
   console.log('==============================================================');

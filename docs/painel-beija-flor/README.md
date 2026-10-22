@@ -195,34 +195,33 @@ No serviço `ti-painel` do Render, criar a variável
 exigir SSL, `ORCIM_DB_SSL=1`. Depois do deploy, **Configurações** mostra
 "Conectado ao banco da Orcim · N chamados" ou o motivo do erro.
 
-## Envio automático para o painel do grupo (caminho escolhido)
+## Integração global: a Central envia tudo para o painel do grupo (caminho escolhido)
 
-A Central continua sendo **a fonte de tudo**. O próprio servidor da Central **envia** ao
-painel do grupo (`ti.sgogeral.com`) o que mudou, a cada minuto (`server/gbf/sync.js`).
+A Central continua sendo **a fonte de tudo**. Um módulo independente, `server/integracao-beijaflor`,
+envia ao painel do grupo (`ti.sgogeral.com`) o que mudou em **todas as tabelas** do banco, a
+cada minuto. É a única peça que a Orcim precisa instalar: a pasta + uma linha no
+`server/index.js` + duas variáveis no `.env`. Instruções completas para a Orcim em
+[`server/integracao-beijaflor/LEIA-ME.md`](../../server/integracao-beijaflor/LEIA-ME.md).
 
-- **Só conexão de saída:** funciona com a Central num computador local, sem abrir porta e sem
-  expor o banco.
-- **Não altera nada na Central:** só lê e envia.
-- **O que vai:**
-  - empresas, categorias, chamados, histórico, mensagens, anexos (inclusive os arquivos, até
-    8 MB), equipamentos e manutenções;
-  - usuários **sem** senha, e-mail e telefone.
+- **Só conexão de saída e só leitura:** funciona com a Central num computador local, sem abrir
+  porta e sem expor o banco; não altera nada na Central.
+- **Todas as tabelas, descobertas sozinhas** (inclusive as de versões futuras). Anexos de
+  chamados e fotos de equipamentos vão junto (até 8 MB cada).
+- **Fica de fora:** senhas, hashes, tokens, chaves, segredos, e-mail e telefone de usuários,
+  `agent_credentials` e configurações com nome de senha/token.
 - **Exclusões:** a cada 6 horas há uma conferência completa, para o painel refletir também o
   que foi apagado.
-- **Desligado por padrão:** sem as variáveis abaixo, nada é enviado.
+- **Desligado por padrão:** sem `GBF_SYNC_URL` + `GBF_SYNC_TOKEN`, nada é enviado.
 
-### O que a Orcim faz (uma vez)
+### No painel
 
-1. Juntar o branch `modulo-beijaflor` no sistema.
-2. No `.env` da Central, acrescentar (o grupo envia a chave por canal separado):
+- **Tudo da Orcim** (menu Orcim, só gestor): todas as tabelas recebidas, com contagem, busca em
+  qualquer campo e abertura de cada registro. Guardado em `gbf_espelho` (jsonb).
+- Visão Orcim, Demandas e Manutenções continuam lendo as tabelas no formato da Central
+  (tickets, assets...), alimentadas pelo mesmo envio (recebimento em `server/gbf/sync.js`).
+- **Configurações** mostra o último envio recebido e quantas tabelas chegaram.
 
-   ```
-   GBF_SYNC_URL=https://ti.sgogeral.com/api/gbf/sync
-   GBF_SYNC_TOKEN=<chave enviada pelo grupo>
-   ```
+Teste local de ponta a ponta: `orcim-dev/teste-integracao.js` (fora do repositório).
 
-3. Reiniciar a Central. No log aparece
-   `[gbf-sync] enviando dados da Central para https://ti.sgogeral.com/api/gbf/sync a cada 60s`.
-   Em até 1 minuto, o painel mostra em **Configurações** "Último envio recebido: …".
-
-Opcionais: `GBF_SYNC_INTERVALO_S` (padrão 60) e `GBF_SYNC_COMPLETO_H` (padrão 6).
+Opcionais: `GBF_SYNC_INTERVALO_S` (padrão 60), `GBF_SYNC_COMPLETO_H` (padrão 6) e
+`GBF_SYNC_EXCLUIR` (tabelas a mais para não enviar).
