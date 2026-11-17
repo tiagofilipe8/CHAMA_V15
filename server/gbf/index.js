@@ -63,6 +63,7 @@ router.use(sync.receptor);
 router.use(contas.privado); // daqui para baixo exige login do painel
 router.use('/espelho', require('./espelho'));
 router.use('/demandas', require('./demandas'));
+router.use('/painel-gestor', require('./painel')); // Painel do gestor (Orcim + TI do grupo)
 router.use('/atividades', require('./atividades'));
 // Rotina do técnico (Prompt do TI): postos, checklists, visitas, agenda, solicitações
 router.use('/', require('./postos'));

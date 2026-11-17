@@ -340,3 +340,4 @@ router.get('/:id/anexos/:anexoId', ah(async (req, res) => {
 
 module.exports = router;
 module.exports.DEMANDA_SELECT = DEMANDA_SELECT;
+module.exports.enriquecer = enriquecer;

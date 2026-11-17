@@ -163,6 +163,7 @@
   // ------------------------------------------------------------------
   function montarMenu() {
     const itens = [
+      ...(ehGestor() ? [['grp', 'Gestão'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
       ['grp', 'Dia a dia da TI'],
       ehGestor() ? ['#/', 'binoculars', 'Acompanhamento'] : ['#/', 'sun', 'Meu dia'],
       ['#/agenda', 'calendar3', 'Agenda'],
@@ -220,6 +221,7 @@
       carregando();
       if (!a) { marcarMenu('#/'); if (ehGestor()) await vAcompanhamento(qs, seq); else await vHoje(seq); }
       else if (a === 'hoje') { marcarMenu(ehGestor() ? '#/hoje' : '#/'); await vHoje(seq); }
+      else if (a === 'painel' && ehGestor()) { marcarMenu('#/painel'); await vPainelGestor(qs, seq); }
       else if (a === 'orcim') { marcarMenu('#/orcim'); await vVisao(seq); }
       else if (a === 'agenda') { marcarMenu('#/agenda'); await vAgenda(qs, seq); }
       else if (a === 'postos' && b === 'novo') { marcarMenu('#/postos'); await vFormPosto(null, seq); }
@@ -291,6 +293,384 @@
   }
 
   const vazio = (txt, icon = 'inbox') => `<div class="empty"><i class="bi bi-${icon}"></i>${esc(txt)}</div>`;
+
+  // ------------------------------------------------------------------
+  // Painel do gestor (Orcim + TI do grupo, com filtro de datas e PDF)
+  // ------------------------------------------------------------------
+  const hojeSP = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+  const isoSoma = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400e3).toISOString().slice(0, 10);
+  const fmtIso = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '—');
+  const pct = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+  const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+
+  function presetsPeriodo() {
+    const h = hojeSP();
+    const ini = `${h.slice(0, 7)}-01`;
+    const fimMesPassado = isoSoma(ini, -1);
+    return [
+      ['7d', 'Últimos 7 dias', isoSoma(h, -6), h],
+      ['30d', 'Últimos 30 dias', isoSoma(h, -29), h],
+      ['mes', 'Este mês', ini, h],
+      ['mes-ant', 'Mês passado', `${fimMesPassado.slice(0, 7)}-01`, fimMesPassado],
+      ['ano', 'Este ano', `${h.slice(0, 4)}-01-01`, h],
+    ];
+  }
+
+  function rotuloBalde(iso, escala) {
+    if (escala === 'mes') return `${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+    if (escala === 'semana') return `sem. ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+    return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  }
+
+  // Colunas por período (agrupadas ou empilhadas). Devolve SVG puro (serve na tela e no PDF).
+  function graficoColunas(serie, series, { escala = 'dia', empilhado = false, altura = 170 } = {}) {
+    if (!serie?.length) return '<div class="small-muted">Sem dados no período.</div>';
+    const W = 640; const H = altura; const base = H - 22; const topo = 14; const esq = 30;
+    const n = serie.length; const larg = (W - esq) / n;
+    const totais = serie.map((s) => (empilhado
+      ? series.reduce((a, c) => a + (s[c.campo] || 0), 0)
+      : Math.max(...series.map((c) => s[c.campo] || 0))));
+    const max = Math.max(1, ...totais);
+    const y = (v) => base - (v / max) * (base - topo);
+    const nGrupo = empilhado ? 1 : series.length;
+    const bw = Math.max(1, (larg * 0.72) / nGrupo);
+    let barras = '';
+    serie.forEach((s, i) => {
+      const x0 = esq + i * larg + larg * 0.14;
+      let acumulado = 0;
+      series.forEach((c, j) => {
+        const v = s[c.campo] || 0;
+        if (!v) return;
+        const dica = `${rotuloBalde(s.periodo, escala)}: ${v} ${c.nome.toLowerCase()}`;
+        if (empilhado) {
+          barras += `<rect x="${x0}" y="${y(acumulado + v)}" width="${bw}" height="${y(acumulado) - y(acumulado + v)}" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
+          acumulado += v;
+        } else {
+          barras += `<rect x="${x0 + j * bw}" y="${y(v)}" width="${Math.max(1, bw - 1)}" height="${base - y(v)}" rx="1.5" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
+        }
+      });
+    });
+    // rótulos do eixo X: no máximo ~8, sempre o primeiro e o último
+    const passo = Math.max(1, Math.ceil(n / 8));
+    const rotulos = serie.map((s, i) => (((i % passo === 0 && n - 1 - i >= passo / 2) || i === n - 1)
+      ? `<text x="${esq + i * larg + larg / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#64748b">${esc(rotuloBalde(s.periodo, escala))}</text>` : '')).join('');
+    const grade = [0, 0.5, 1].map((f) => {
+      const v = Math.round(max * f);
+      return `<line x1="${esq}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0"/>
+        <text x="${esq - 6}" y="${y(v) + 3}" text-anchor="end" font-size="10" fill="#64748b">${v}</text>`;
+    }).join('');
+    const legenda = series.map((c) => `<span><i style="background:${c.cor}"></i>${esc(c.nome)}</span>`).join('');
+    return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((c) => c.nome).join(' e '))} por período" style="width:100%;height:auto">
+      ${grade}${barras}${rotulos}</svg><div class="legend">${legenda}</div>`;
+  }
+
+  // Barras horizontais em SVG (para o PDF; na tela usamos barras())
+  function graficoBarrasSvg(lista, { max = 8, cor = '#0f766e' } = {}) {
+    if (!lista?.length) return '<p class="muted">Nada no período.</p>';
+    const top = lista.slice(0, max);
+    const maior = Math.max(...top.map((x) => x.total), 1);
+    const W = 640; const lh = 22; const H = top.length * lh + 4; const nomeW = 220;
+    const linhas = top.map((x, i) => {
+      const w = Math.max(3, ((x.total / maior) * (W - nomeW - 50)));
+      const nome = String(x.nome).length > 34 ? `${String(x.nome).slice(0, 33)}…` : String(x.nome);
+      return `<text x="0" y="${i * lh + 15}" font-size="11" fill="#0f172a">${esc(nome)}</text>
+        <rect x="${nomeW}" y="${i * lh + 5}" width="${w}" height="12" rx="3" fill="${cor}"/>
+        <text x="${nomeW + w + 6}" y="${i * lh + 15}" font-size="11" fill="#0f172a">${x.total}</text>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Ranking">${linhas}</svg>`;
+  }
+
+  // Medidor de % (anel)
+  function medidor(valor, rotulo) {
+    const r = 44; const c = 2 * Math.PI * r;
+    const v = valor === null || valor === undefined ? null : Math.max(0, Math.min(100, valor));
+    const cor = v === null ? '#cbd5e1' : v >= 85 ? '#0f766e' : v >= 60 ? '#d97706' : '#dc2626';
+    return `<svg viewBox="0 0 120 120" style="width:120px;height:120px" role="img" aria-label="${esc(rotulo)}: ${pct(v)}">
+      <circle cx="60" cy="60" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+      ${v === null ? '' : `<circle cx="60" cy="60" r="${r}" fill="none" stroke="${cor}" stroke-width="12" stroke-linecap="round"
+        stroke-dasharray="${(v / 100) * c} ${c}" transform="rotate(-90 60 60)"/>`}
+      <text x="60" y="66" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">${pct(v)}</text></svg>`;
+  }
+
+  const CORES_ORCIM = [
+    { campo: 'criadas', nome: 'Abertas', cor: '#94a3b8' },
+    { campo: 'resolvidas', nome: 'Resolvidas', cor: '#0f766e' },
+  ];
+  const CORES_TI = [
+    { campo: 'visitas', nome: 'Visitas', cor: '#0f766e' },
+    { campo: 'atividades', nome: 'Atividades', cor: '#6366f1' },
+    { campo: 'solicitacoes', nome: 'Solicitações', cor: '#f59e0b' },
+  ];
+
+  // Texto do relatório, escrito a partir dos números do período
+  function textoRelatorio(d) {
+    const o = d.orcim.kpis; const t = d.ti.kpis; const per = d.periodo;
+    const par = [];
+    par.push(`Período analisado: de ${fmtIso(per.de)} a ${fmtIso(per.ate)} (${plural(per.dias, 'dia', 'dias')}).`);
+
+    // Orcim
+    let s = `No período, a Orcim recebeu ${plural(o.criadas, 'chamado', 'chamados')} e resolveu ${o.resolvidas}.`;
+    if (o.prazo_base) {
+      s += ` Dos resolvidos com prazo definido (${o.prazo_base}), ${o.prazo_cumprido_pct}% foram resolvidos dentro do prazo`;
+      s += o.fora_do_prazo ? ` e ${plural(o.fora_do_prazo, 'ficou', 'ficaram')} fora do prazo.` : '.';
+    } else if (o.resolvidas) {
+      s += ' Nenhum dos resolvidos tinha prazo definido, então não há como medir o cumprimento de prazo.';
+    }
+    par.push(s);
+    if (o.tempo_medio_resolucao !== null) {
+      par.push(`O tempo médio até resolver foi de ${dur(o.tempo_medio_resolucao)} (mediana de ${dur(o.tempo_mediano_resolucao)})`
+        + `${o.tempo_medio_primeira_resposta !== null ? `, e a primeira resposta levou em média ${dur(o.tempo_medio_primeira_resposta)}` : ''}.`);
+    }
+    const emp = d.orcim.por_empresa[0]; const tec = d.orcim.por_tecnico[0];
+    if (emp) par.push(`A empresa com mais chamados abertos no período foi ${emp.nome} (${emp.total}).`);
+    if (tec && tec.nome !== 'Sem técnico') par.push(`Quem mais resolveu chamados pela Orcim foi ${tec.nome} (${tec.total}, média de ${dur(tec.tempo_medio)} por chamado).`);
+    par.push(`Na data deste relatório, há ${plural(o.abertas_agora, 'chamado', 'chamados')} em aberto`
+      + `${o.atrasadas_agora ? `, ${plural(o.atrasadas_agora, 'atrasado', 'atrasados')}` : ', nenhum atrasado'}`
+      + `${o.sem_tecnico_agora ? ` e ${plural(o.sem_tecnico_agora, 'sem técnico', 'sem técnico')} da Orcim` : ''}.`);
+
+    // TI do grupo
+    s = `A TI do grupo concluiu ${plural(t.visitas, 'visita', 'visitas')}, ${plural(t.atividades, 'atividade', 'atividades')}`
+      + `${t.atividades_com_atraso ? ` (${t.atividades_com_atraso} com atraso)` : ''}`
+      + ` e atendeu ${plural(t.solicitacoes, 'solicitação', 'solicitações')}`
+      + `${t.tempo_medio_solicitacao !== null ? `, com tempo médio de atendimento de ${dur(t.tempo_medio_solicitacao)}` : ''}.`;
+    par.push(s);
+    if (t.solicitacoes_recebidas) par.push(`Foram recebidas ${plural(t.solicitacoes_recebidas, 'solicitação', 'solicitações')} do gestor no período.`);
+    par.push(t.nao_ok
+      ? `Nas visitas do período, ${plural(t.nao_ok, 'item de checklist ficou', 'itens de checklist ficaram')} como NÃO OK.`
+      : (t.visitas ? 'Em todas as visitas do período, o checklist ficou sem itens NÃO OK.' : ''));
+    const pessoas = d.ti.por_pessoa;
+    if (pessoas.length) {
+      par.push(`Por pessoa: ${pessoas.map((p) => `${p.nome} — ${plural(p.visitas, 'visita', 'visitas')}, ${plural(p.atividades, 'atividade', 'atividades')}, ${plural(p.solicitacoes, 'solicitação', 'solicitações')}`).join('; ')}.`);
+    }
+    par.push(`Na data deste relatório, há ${plural(t.postos_atrasados_agora, 'posto com visita atrasada', 'postos com visita atrasada')}, `
+      + `${plural(t.atividades_atrasadas_agora, 'atividade atrasada', 'atividades atrasadas')} e `
+      + `${plural(t.solicitacoes_abertas_agora, 'solicitação em aberto', 'solicitações em aberto')}.`);
+    return par.filter(Boolean);
+  }
+
+  function listaAtencao(d, { paraPdf = false } = {}) {
+    const itens = [];
+    d.orcim.atrasadas.forEach((x) => itens.push({
+      tipo: 'Chamado atrasado', texto: `${x.number || '#' + x.id} — ${x.title}`,
+      detalhe: `${x.entity_name}${x.assigned_name ? ` · ${x.assigned_name}` : ' · sem técnico'} · prazo ${fmtData(x.due_at)}`,
+      link: `#/demandas/${x.id}`,
+    }));
+    d.ti.postos_atrasados.forEach((x) => itens.push({
+      tipo: 'Visita atrasada', texto: x.name, detalhe: `prevista para ${fmtDia(x.data)} · ${plural(x.dias_atraso, 'dia', 'dias')} de atraso`,
+      link: `#/postos/${x.id}`,
+    }));
+    d.ti.solicitacoes_paradas.forEach((x) => itens.push({
+      tipo: 'Solicitação parada', texto: x.title, detalhe: `${x.local ? `${x.local} · ` : ''}aberta em ${fmtData(x.created_at)}`,
+      link: `#/solicitacoes/${x.id}`,
+    }));
+    d.ti.nao_ok.slice(0, 15).forEach((x) => itens.push({
+      tipo: 'Item NÃO OK', texto: `${x.local}: ${x.item_label}`, detalhe: `${fmtData(x.finished_at)}${x.note ? ` · ${x.note}` : ''}`,
+      link: `#/visitas/${x.visit_id}`,
+    }));
+    if (!itens.length) return paraPdf ? '<p>Nada pendente.</p>' : vazio('Nada precisando de atenção. 👏', 'emoji-smile');
+    if (paraPdf) {
+      return `<table><thead><tr><th>Tipo</th><th>O quê</th><th>Detalhe</th></tr></thead><tbody>${itens.map((i) => `
+        <tr><td>${esc(i.tipo)}</td><td>${esc(i.texto)}</td><td>${esc(i.detalhe)}</td></tr>`).join('')}</tbody></table>`;
+    }
+    return `<div class="table-wrap"><table class="table-x"><tbody>${itens.map((i) => `
+      <tr class="click" data-href="${i.link}"><td class="text-nowrap">${tag(i.tipo === 'Item NÃO OK' || i.tipo === 'Solicitação parada' ? 'tag-amber' : 'tag-red', i.tipo)}</td>
+        <td><div class="fw-semibold">${esc(i.texto)}</div><div class="small-muted">${esc(i.detalhe)}</div></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  let ultimoPainel = null;
+
+  async function vPainelGestor(qs, seq) {
+    titulo('Painel do gestor');
+    const salvo = (store.get('gbf_painel_periodo') || '').split('|');
+    const pre = presetsPeriodo();
+    const de = qs.get('de') || salvo[0] || pre[1][2];
+    const ate = qs.get('ate') || salvo[1] || pre[1][3];
+    const d = await API.get(`/painel-gestor?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`);
+    if (seq !== renderSeq) return;
+    ultimoPainel = d;
+    store.set('gbf_painel_periodo', `${d.periodo.de}|${d.periodo.ate}`);
+    const o = d.orcim.kpis; const t = d.ti.kpis; const esc_ = d.periodo.escala;
+    const ativo = pre.find((p) => p[2] === d.periodo.de && p[3] === d.periodo.ate)?.[0];
+    const tituloEscala = esc_ === 'dia' ? 'por dia' : esc_ === 'semana' ? 'por semana' : 'por mês';
+
+    view().innerHTML = `
+      <div class="card-x mb-3">
+        <div class="filters mb-0">
+          <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(d.periodo.de)}"></label>
+          <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(d.periodo.ate)}"></label>
+          <button class="btn btn-sm btn-brand" id="pg-aplicar"><i class="bi bi-funnel"></i> Filtrar</button>
+          <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Períodos prontos">
+            ${pre.map(([k, nome]) => `<button class="btn ${k === ativo ? 'btn-dark' : 'btn-outline-secondary'}" data-preset="${k}">${nome}</button>`).join('')}
+          </div>
+          <button class="btn btn-sm btn-outline-brand ms-auto" id="pg-pdf"><i class="bi bi-file-earmark-pdf"></i> Exportar PDF</button>
+        </div>
+        <div class="small-muted mt-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · ${plural(d.periodo.dias, 'dia', 'dias')}.
+          Os números "agora" mostram a situação no momento, independentemente do filtro.</div>
+      </div>
+
+      <h4 class="secao-painel"><i class="bi bi-building"></i> Orcim — chamados</h4>
+      <div class="kpis">
+        ${kpi('Abertos no período', o.criadas, { icon: 'inbox' })}
+        ${kpi('Resolvidos no período', o.resolvidas, { cls: 'ok', icon: 'check2-circle' })}
+        ${kpi('Dentro do prazo', pct(o.prazo_cumprido_pct), {
+    cls: o.prazo_cumprido_pct === null ? '' : (o.prazo_cumprido_pct >= 85 ? 'ok' : o.prazo_cumprido_pct >= 60 ? 'warn' : 'bad'),
+    hint: o.prazo_base ? `${o.prazo_base} resolvidos com prazo` : 'nenhum resolvido com prazo', icon: 'calendar-check',
+  })}
+        ${kpi('Tempo médio p/ resolver', dur(o.tempo_medio_resolucao), { hint: o.tempo_mediano_resolucao !== null ? `mediana ${dur(o.tempo_mediano_resolucao)}` : '', icon: 'stopwatch' })}
+        ${kpi('Em aberto agora', o.abertas_agora, { href: '#/demandas?situacao=abertas', icon: 'hourglass-split' })}
+        ${kpi('Atrasados agora', o.atrasadas_agora, { cls: o.atrasadas_agora ? 'bad' : 'ok', href: '#/demandas?situacao=atrasadas', icon: 'alarm' })}
+      </div>
+      <div class="grid-2">
+        <div class="card-x"><h3><i class="bi bi-bar-chart"></i>Chamados abertos × resolvidos ${tituloEscala}</h3>
+          ${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_ })}</div>
+        <div class="card-x"><h3><i class="bi bi-buildings"></i>Chamados abertos por empresa</h3>
+          ${barras(d.orcim.por_empresa, { vazio: 'Nenhum chamado no período.' })}
+          <h3 class="mt-3"><i class="bi bi-person-gear"></i>Resolvidos por técnico da Orcim</h3>
+          ${barras(d.orcim.por_tecnico, { vazio: 'Nenhum resolvido no período.' })}</div>
+      </div>
+
+      <h4 class="secao-painel"><i class="bi bi-feather"></i> TI do grupo — dia a dia</h4>
+      <div class="kpis">
+        ${kpi('Visitas feitas', t.visitas, { cls: 'ok', icon: 'geo-alt' })}
+        ${kpi('Atividades concluídas', t.atividades, { hint: t.atividades_com_atraso ? `${t.atividades_com_atraso} com atraso` : '', icon: 'check2-square' })}
+        ${kpi('Solicitações atendidas', t.solicitacoes, { hint: t.tempo_medio_solicitacao !== null ? `média ${dur(t.tempo_medio_solicitacao)}` : '', icon: 'megaphone' })}
+        ${kpi('Itens NÃO OK', t.nao_ok, { cls: t.nao_ok ? 'warn' : 'ok', icon: 'exclamation-diamond' })}
+        ${kpi('Postos atrasados agora', t.postos_atrasados_agora, { cls: t.postos_atrasados_agora ? 'bad' : 'ok', href: '#/postos', icon: 'exclamation-triangle' })}
+        ${kpi('Solicitações em aberto agora', t.solicitacoes_abertas_agora, { cls: t.solicitacoes_abertas_agora ? 'warn' : '', href: '#/solicitacoes', icon: 'hourglass-split' })}
+      </div>
+      <div class="grid-2">
+        <div class="card-x"><h3><i class="bi bi-bar-chart-steps"></i>Entregas da TI ${tituloEscala}</h3>
+          ${graficoColunas(d.ti.serie, CORES_TI, { escala: esc_, empilhado: true })}</div>
+        <div class="card-x"><h3><i class="bi bi-geo"></i>Visitas por posto</h3>
+          ${barras(d.ti.por_posto, { vazio: 'Nenhuma visita no período.' })}
+          <h3 class="mt-3"><i class="bi bi-people"></i>Por pessoa</h3>
+          ${d.ti.por_pessoa.length ? d.ti.por_pessoa.map((p) => `<div class="d-flex justify-content-between gap-2 py-1 border-bottom">
+            <span class="fw-semibold">${esc(p.nome)}</span>
+            <span class="small-muted">${plural(p.visitas, 'visita', 'visitas')} · ${plural(p.atividades, 'atividade', 'atividades')} · ${plural(p.solicitacoes, 'solicitação', 'solicitações')}</span></div>`).join('')
+    : '<div class="small-muted">Nenhuma entrega no período.</div>'}</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card-x"><h3><i class="bi bi-calendar-check"></i>Prazo cumprido pela Orcim</h3>
+          <div class="d-flex align-items-center gap-3">${medidor(o.prazo_cumprido_pct, 'Dentro do prazo')}
+            <div class="small-muted">${o.prazo_base ? `${o.prazo_base - o.fora_do_prazo} de ${o.prazo_base} chamados resolvidos dentro do prazo no período.` : 'Nenhum chamado com prazo foi resolvido no período.'}</div></div></div>
+        <div class="card-x"><h3><i class="bi bi-flag"></i>Precisa de atenção</h3>${listaAtencao(d)}</div>
+      </div>
+
+      <div class="card-x"><h3><i class="bi bi-journal-text"></i>Resumo escrito do período</h3>
+        ${textoRelatorio(d).map((p) => `<p class="mb-2">${esc(p)}</p>`).join('')}</div>`;
+
+    const ir = (a, b) => { location.hash = `#/painel?de=${a}&ate=${b}`; };
+    $('#pg-aplicar').addEventListener('click', () => {
+      const a = $('#pg-de').value; const b = $('#pg-ate').value;
+      if (!a || !b) { toast('Escolha as duas datas.', true); return; }
+      ir(a, b);
+    });
+    $$('[data-preset]').forEach((btn) => btn.addEventListener('click', () => {
+      const p = pre.find((x) => x[0] === btn.dataset.preset);
+      ir(p[2], p[3]);
+    }));
+    $('#pg-pdf').addEventListener('click', () => exportarPdf(ultimoPainel));
+    ligarCliques();
+  }
+
+  // Relatório para imprimir / salvar em PDF (sem bibliotecas: o navegador gera o PDF)
+  function exportarPdf(d) {
+    if (!d) return;
+    const o = d.orcim.kpis; const t = d.ti.kpis; const per = d.periodo;
+    const esc_ = per.escala;
+    const tituloEscala = esc_ === 'dia' ? 'por dia' : esc_ === 'semana' ? 'por semana' : 'por mês';
+    const nomeArquivo = `Relatorio_Painel_Gestor_${per.de}_a_${per.ate}`;
+    const linha = (rot, val) => `<tr><td>${esc(rot)}</td><td class="num">${esc(val)}</td></tr>`;
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${esc(nomeArquivo)}</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; font-size: 11.5pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 18pt; margin: 0 0 2px; color: #0f766e; }
+  h2 { font-size: 13pt; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #0f766e; break-after: avoid; }
+  h3 { font-size: 11pt; margin: 12px 0 6px; break-after: avoid; }
+  .sub { color: #64748b; font-size: 10pt; margin-bottom: 12px; }
+  p { margin: 0 0 7px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 8px; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  th { background: #f1f5f9; }
+  td.num { text-align: right; font-weight: 600; white-space: nowrap; }
+  .duas { display: flex; gap: 16px; } .duas > div { flex: 1; min-width: 0; }
+  .grafico-box { break-inside: avoid; margin-bottom: 10px; }
+  .legend { display: flex; gap: 14px; font-size: 9pt; color: #64748b; margin-top: 4px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+  .muted { color: #64748b; }
+  .rodape { margin-top: 18px; font-size: 8.5pt; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 6px; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style></head><body>
+  <h1>Relatório do Painel do Gestor</h1>
+  <div class="sub">Grupo Beija-Flor · Orcim e TI do grupo · de ${fmtIso(per.de)} a ${fmtIso(per.ate)} (${plural(per.dias, 'dia', 'dias')}) · gerado em ${fmtData(per.gerado_em)}</div>
+
+  <h2>Resumo do período</h2>
+  ${textoRelatorio(d).map((p) => `<p>${esc(p)}</p>`).join('')}
+
+  <h2>Orcim — chamados</h2>
+  <div class="duas">
+    <div><table><tbody>
+      ${linha('Abertos no período', o.criadas)}
+      ${linha('Resolvidos no período', o.resolvidas)}
+      ${linha('Dentro do prazo', o.prazo_base ? `${pct(o.prazo_cumprido_pct)} (${o.prazo_base - o.fora_do_prazo} de ${o.prazo_base})` : '—')}
+      ${linha('Tempo médio até resolver', dur(o.tempo_medio_resolucao))}
+      ${linha('Tempo médio até 1ª resposta', dur(o.tempo_medio_primeira_resposta))}
+      ${linha('Em aberto agora', o.abertas_agora)}
+      ${linha('Atrasados agora', o.atrasadas_agora)}
+    </tbody></table></div>
+    <div style="flex:0 0 130px;text-align:center">${medidor(o.prazo_cumprido_pct, 'Dentro do prazo')}<div class="muted">dentro do prazo</div></div>
+  </div>
+  <div class="grafico-box"><h3>Chamados abertos × resolvidos ${tituloEscala}</h3>${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_, altura: 190 })}</div>
+  <div class="grafico-box"><h3>Chamados abertos por empresa</h3>${graficoBarrasSvg(d.orcim.por_empresa)}</div>
+  <div class="grafico-box"><h3>Resolvidos por técnico da Orcim</h3>${d.orcim.por_tecnico.length
+    ? `<table><thead><tr><th>Técnico</th><th class="num">Resolvidos</th><th class="num">Tempo médio</th></tr></thead><tbody>${d.orcim.por_tecnico.map((x) => `<tr><td>${esc(x.nome)}</td><td class="num">${x.total}</td><td class="num">${dur(x.tempo_medio)}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="muted">Nenhum chamado resolvido no período.</p>'}</div>
+
+  <h2>TI do grupo — dia a dia</h2>
+  <table><tbody>
+    ${linha('Visitas feitas', t.visitas)}
+    ${linha('Atividades concluídas', `${t.atividades}${t.atividades_com_atraso ? ` (${t.atividades_com_atraso} com atraso)` : ''}`)}
+    ${linha('Solicitações atendidas', t.solicitacoes)}
+    ${linha('Tempo médio de atendimento das solicitações', dur(t.tempo_medio_solicitacao))}
+    ${linha('Itens de checklist NÃO OK', t.nao_ok)}
+    ${linha('Postos com visita atrasada (agora)', t.postos_atrasados_agora)}
+    ${linha('Atividades atrasadas (agora)', t.atividades_atrasadas_agora)}
+    ${linha('Solicitações em aberto (agora)', t.solicitacoes_abertas_agora)}
+  </tbody></table>
+  <div class="grafico-box"><h3>Entregas da TI ${tituloEscala}</h3>${graficoColunas(d.ti.serie, CORES_TI, { escala: esc_, empilhado: true, altura: 190 })}</div>
+  <div class="grafico-box"><h3>Visitas por posto</h3>${graficoBarrasSvg(d.ti.por_posto)}</div>
+  ${d.ti.por_pessoa.length ? `<div class="grafico-box"><h3>Por pessoa</h3><table><thead><tr><th>Pessoa</th><th class="num">Visitas</th><th class="num">Atividades</th><th class="num">Solicitações</th></tr></thead><tbody>
+    ${d.ti.por_pessoa.map((p) => `<tr><td>${esc(p.nome)}</td><td class="num">${p.visitas}</td><td class="num">${p.atividades}</td><td class="num">${p.solicitacoes}</td></tr>`).join('')}</tbody></table></div>` : ''}
+
+  <h2>Precisa de atenção</h2>
+  ${listaAtencao(d, { paraPdf: true })}
+
+  <div class="rodape">Números "no período" consideram de ${fmtIso(per.de)} a ${fmtIso(per.ate)} (horário de Brasília). Números "agora" mostram a situação no momento em que o relatório foi gerado. Solicitação parada = em aberto há mais de ${d.ti.parada_dias} dias.</div>
+</body></html>`;
+
+    const antigo = $('#frame-pdf');
+    if (antigo) antigo.remove();
+    const frame = document.createElement('iframe');
+    frame.id = 'frame-pdf';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(frame);
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    const tituloAntes = document.title;
+    document.title = nomeArquivo; // alguns navegadores usam o título da página como nome do arquivo
+    setTimeout(() => {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      setTimeout(() => { document.title = tituloAntes; }, 1000);
+    }, 300);
+    toast('Na janela que abriu, escolha "Salvar como PDF".');
+  }
 
   // ------------------------------------------------------------------
   // Visão geral

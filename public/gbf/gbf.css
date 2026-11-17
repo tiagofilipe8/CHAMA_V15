@@ -339,3 +339,7 @@ a.mini.mais { text-decoration: none; }
 
 /* Tudo da Orcim: uma linha por registro */
 .cel-espelho { white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Painel do gestor */
+.secao-painel { font-size: 1rem; font-weight: 800; margin: 8px 0 12px; display: flex; align-items: center; gap: 8px; color: var(--brand-600); }
+.grafico { display: block; }
