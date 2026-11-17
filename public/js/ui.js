@@ -32,8 +32,30 @@ const fmt = {
 const LABELS = {
   status: { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' },
   priority: { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' },
-  role: { admin: 'Administrador', technician: 'Técnico', client: 'Cliente' },
-  clientLevel: { 1: 'Requisitante', 2: 'Gestor' },
+  role: {
+    admin: 'Administrador Mestre', admin_local: 'Administrador Local', moderator: 'Moderador',
+    technician: 'Técnico', client: 'Cliente',
+  },
+  clientLevel: { 1: 'Usuário', 2: 'Gestor' },
+  history: {
+    created: 'Chamado criado', status: 'Status alterado', reopened: 'Chamado reaberto',
+    technician: 'Técnico', moderator: 'Moderador', category: 'Categoria', impact: 'Urgência',
+    priority: 'Prioridade', location: 'Localização', needed_by: 'Data de necessidade',
+    estimated_at: 'Previsão de atendimento', due_at: 'Prazo (SLA)', asset: 'Equipamento',
+    title: 'Título', description: 'Descrição alterada', watcher_added: 'Observador adicionado',
+    watcher_removed: 'Observador removido', solution: 'Solução registrada',
+    approved: 'Solução aprovada', rejected: 'Solução reprovada', resolution: 'Encerramento',
+  },
+  equipmentAction: {
+    repaired: 'Reparado / consertado no local',
+    adjusted: 'Configurado / ajustado (sem troca de peça)',
+    part_replaced: 'Peça trocada',
+    replaced: 'Equipamento substituído por outro',
+    sent_external: 'Enviado para manutenção externa',
+    no_change: 'Nenhuma alteração no equipamento',
+    discarded: 'Equipamento descartado / sem conserto',
+    no_equipment: 'Não envolveu equipamento',
+  },
   approval: { none: '—', pending: 'Aprovação pendente', approved: 'Aprovado', rejected: 'Reprovado' },
 };
 
@@ -109,4 +131,64 @@ function confirmDialog({ title, body, confirmText = 'Confirmar', danger = false 
     m.addEventListener('hidden.bs.modal', () => { m.remove(); resolve(false); });
     modal.show();
   });
+}
+
+// ---------------- Perfis ----------------
+// admin = Administrador Mestre | admin_local = Administrador Local (1 empresa)
+// moderator = Moderador (triagem) | technician = Técnico
+// client: client_level 1 = Usuário, 2 = Gestor
+const Roles = {
+  isMaster: (u) => !!u && u.role === 'admin',
+  isLocalAdmin: (u) => !!u && u.role === 'admin_local',
+  isModerator: (u) => !!u && u.role === 'moderator',
+  isTechnician: (u) => !!u && u.role === 'technician',
+  isClient: (u) => !!u && u.role === 'client',
+  isManager: (u) => !!u && u.role === 'client' && Number(u.client_level) === 2,
+  // Permissoes (vindas do servidor; o Administrador Mestre tem todas)
+  can: (u, perm) => !!u && (u.role === 'admin' || (Array.isArray(u.permissions) && u.permissions.includes(perm))),
+  // ve chamados de todas as empresas
+  isStaff: (u) => Roles.can(u, 'ticket.view_all'),
+  // ve notas internas
+  isTeam: (u) => Roles.can(u, 'ticket.internal'),
+  canSeeDashboard: (u) => Roles.can(u, 'dashboard.view'),
+  canSeeInventory: (u) => Roles.can(u, 'inventory.view'),
+  canManageUsers: (u) => Roles.can(u, 'users.manage'),
+  canManageLocations: (u) => Roles.can(u, 'locations.manage'),
+  label(u) {
+    if (!u) return '';
+    if (u.role === 'client') return LABELS.clientLevel[u.client_level] || 'Usuário';
+    return LABELS.role[u.role] || u.role;
+  },
+};
+
+// Tempo entre duas datas em texto curto (ex.: "2 d 3 h", "45 min")
+function fmtDuration(fromIso, toIso) {
+  if (!fromIso) return '—';
+  const ms = (toIso ? new Date(toIso) : new Date()) - new Date(fromIso);
+  if (!(ms >= 0)) return '—';
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ${min % 60} min`;
+  return `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+
+// Urgencia do chamado (nome configuravel) com a cor da prioridade equivalente
+function badgeImpact(t) {
+  if (!t.impact_name) return badgePriority(t.priority);
+  return `<span class="badge ${PRIO_BADGE[t.priority] || 'prio-med'}" title="Prioridade ${esc(LABELS.priority[t.priority] || '')}"><i class="bi bi-flag-fill me-1"></i>${esc(t.impact_name)}</span>`;
+}
+
+// Valor legivel no historico do chamado (datas em formato brasileiro)
+function fmtHistValue(action, v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (action === 'estimated_at' || action === 'due_at') return fmt.dateTime(v);
+  if (action === 'needed_by') return fmt.date(String(v).slice(0, 10) + 'T12:00:00');
+  return String(v);
+}
+
+// Estrelas (0 a 5) somente leitura
+function starsHtml(n) {
+  const v = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+  return `<span class="stars" title="${v} de 5">${'<i class="bi bi-star-fill"></i>'.repeat(v)}${'<i class="bi bi-star"></i>'.repeat(5 - v)}</span>`;
 }
