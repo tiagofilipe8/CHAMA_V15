@@ -847,3 +847,20 @@ abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; curs
   .tcal-num { flex-direction: column; align-items: flex-start; gap: 2px; }
   .tcal-sem { font-size: .64rem; }
 }
+
+/* ---------- Abrir chamado: etapa 3 na cor de cada urgência ----------
+   vermelho = Operação parada · laranja = Parada iminente · amarelo = Operação prejudicada · azul = Requisição */
+.urg-card { position: relative; cursor: pointer; border: 1.5px solid color-mix(in srgb, var(--u) 35%, var(--border));
+  border-left: 6px solid var(--u); border-radius: 12px; padding: 10px 12px;
+  background: color-mix(in srgb, var(--u) 6%, var(--card)); transition: background .15s, box-shadow .15s, transform .1s; }
+.urg-card:hover { background: color-mix(in srgb, var(--u) 12%, var(--card)); }
+.urg-top { display: flex; align-items: center; gap: 7px; }
+.urg-ico { color: var(--u); font-size: 1.1rem; }
+.urg-nome { color: color-mix(in srgb, var(--u) 80%, var(--ink)); }
+.urg-desc { color: var(--muted); margin-top: 3px; }
+.urg-ok { margin-left: auto; color: var(--u); font-size: 1.15rem; opacity: 0; transition: opacity .15s; }
+.urg-card.sel { background: color-mix(in srgb, var(--u) 16%, var(--card)); border-color: var(--u);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--u) 25%, transparent); }
+.urg-card.sel .urg-ok { opacity: 1; }
+.urg-card:has(input:focus-visible) { outline: 2px solid var(--u); outline-offset: 2px; }
+[data-bs-theme="dark"] .urg-nome { color: color-mix(in srgb, var(--u) 55%, #fff); }

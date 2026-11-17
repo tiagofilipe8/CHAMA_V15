@@ -117,21 +117,23 @@ Views.newTicket = async function newTicket(el) {
     loadCounts: (from, to) => API.get(`/tickets/calendar/load?from=${from}&to=${to}`),
   });
 
-  // ---------- urgencia ----------
+  // ---------- urgencia (cada opção na cor da sua urgência) ----------
+  const URG_ICON = { 4: 'bi-sign-stop-fill', 3: 'bi-exclamation-triangle-fill', 2: 'bi-hourglass-split', 1: 'bi-clipboard-check' };
   try {
     const levels = await API.get('/impact-levels');
     const box = document.getElementById('nt-impact-box');
     box.innerHTML = levels.slice().sort((a, b) => b.sort_order - a.sort_order).map((l) => `
       <div class="col-6">
-        <label class="choice-card w-100 h-100 border rounded p-2 d-block" style="cursor:pointer" title="${esc(l.examples ? 'Ex.: ' + l.examples : '')}">
-          <input class="form-check-input me-1" type="radio" name="nt-impact" value="${l.id}">
-          <b>${esc(l.name)}</b>
-          <div class="small text-muted">${esc(l.description || '')}</div>
+        <label class="choice-card urg-card ${URGENCY_TONE[l.priority] || 'u-req'} w-100 h-100 d-block" title="${esc(l.examples ? 'Ex.: ' + l.examples : '')}">
+          <input class="visually-hidden" type="radio" name="nt-impact" value="${l.id}">
+          <span class="urg-top"><i class="bi ${URG_ICON[l.priority] || 'bi-clipboard-check'} urg-ico"></i>
+            <b class="urg-nome">${esc(l.name)}</b><i class="bi bi-check-circle-fill urg-ok"></i></span>
+          <div class="small urg-desc">${esc(l.description || '')}</div>
         </label>
       </div>`).join('');
     box.querySelectorAll('input[name="nt-impact"]').forEach((r) => r.addEventListener('change', () => {
       pickedImpact = r.value;
-      box.querySelectorAll('.choice-card').forEach((c) => c.classList.toggle('border-primary', c.contains(r) && r.checked));
+      box.querySelectorAll('.choice-card').forEach((c) => c.classList.toggle('sel', c.contains(r) && r.checked));
     }));
   } catch (e) { showError(e); }
 
