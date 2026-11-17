@@ -20,11 +20,11 @@ function buildNav(u) {
   orcim.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
   if (can('inventory.view')) orcim.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
   if (can('ticket.create')) orcim.push({ href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' });
-  items.push({ group: 'Orcim' }, ...orcim);
+  items.push({ group: 'Orcim', g: 'g-orcim' }, ...orcim.map((i) => ({ ...i, g: 'g-orcim' })));
 
   const tiGestor = can('ti.manage');
   if (tiGestor || can('ti.view')) {
-    items.push({ group: 'Dia a dia da TI' });
+    items.push({ group: 'Dia a dia da TI', g: 'g-ti' });
     if (tiGestor) {
       items.push({ href: '#/ti/painel', icon: 'bi-graph-up-arrow', label: 'Painel do gestor' });
       items.push({ href: '#/ti', icon: 'bi-binoculars', label: 'Acompanhamento' });
@@ -49,7 +49,9 @@ function buildNav(u) {
     admin.push({ href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' });
   }
   if (tiGestor) admin.push({ href: '#/ti/config', icon: 'bi-sliders', label: 'Config. do Dia a dia' });
-  if (admin.length) items.push({ group: 'Administração' }, ...admin);
+  if (admin.length) items.push({ group: 'Administração', g: 'g-admin' }, ...admin.map((i) => ({ ...i, g: 'g-admin' })));
+  // itens do Dia a dia da TI: marca o grupo (cor do módulo)
+  items.forEach((i) => { if (!i.g && i.href && i.href.startsWith('#/ti')) i.g = 'g-ti'; });
   return items;
 }
 
@@ -139,9 +141,9 @@ function renderNav() {
   const nav = document.getElementById('side-nav');
   const items = buildNav(user);
   nav.innerHTML = items.map((it) =>
-    it.group ? `<div class="nav-group">${esc(it.group)}</div>` :
+    it.group ? `<div class="nav-group ${it.g || ''}">${esc(it.group)}</div>` :
     it.sep ? '<hr class="nav-sep">' :
-    `<a class="nav-item" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`
+    `<a class="nav-item ${it.g || ''}" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`
   ).join('');
 
   // identities
@@ -177,7 +179,32 @@ function renderNav() {
   }
 }
 
+// Selo do módulo ao lado do título (mesma cor do grupo no menu)
+function moduloAtual() {
+  const p = location.hash.replace(/^#/, '') || '/dashboard';
+  if (p === '/ti' || p.startsWith('/ti/') || p.startsWith('/ti?')) return ['Dia a dia da TI', 'tg-teal', 'bi-feather'];
+  if (p.startsWith('/admin') || p === '/perfil') return ['Administração', 'tg-violet', 'bi-gear'];
+  return ['Orcim', 'tg-blue', 'bi-headset'];
+}
+function marcarModulo() {
+  const el = document.getElementById('page-modulo');
+  if (!el) return;
+  const [nome, cor, icone] = moduloAtual();
+  el.className = `tg page-modulo ${cor}`;
+  el.innerHTML = `<i class="bi ${icone}"></i>${nome}`;
+}
+
+// Modo escuro: guardado no navegador; o Dia a dia da TI (mesmo endereço) acompanha sozinho
+function aplicarTema(tema) {
+  document.documentElement.setAttribute('data-bs-theme', tema);
+  const b = document.getElementById('btn-tema');
+  if (b) b.innerHTML = tema === 'dark' ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars-fill"></i>';
+  const f = document.getElementById('ti-frame');
+  if (f && f.contentDocument) f.contentDocument.documentElement.setAttribute('data-bs-theme', tema);
+}
+
 function activeNav() {
+  marcarModulo();
   const path = location.hash.replace(/^#/, '');
   document.querySelectorAll('#side-nav .nav-item').forEach((a) => {
     const href = a.getAttribute('href') || '';
@@ -346,6 +373,12 @@ async function boot() {
 
   // eventos do shell
   document.getElementById('btn-logout').onclick = logout;
+  aplicarTema(document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light');
+  document.getElementById('btn-tema').onclick = () => {
+    const novo = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('tema', novo); } catch {}
+    aplicarTema(novo);
+  };
   document.getElementById('btn-side-toggle').onclick = (ev) => {
     ev.stopPropagation();
     document.body.classList.toggle('sidebar-open');

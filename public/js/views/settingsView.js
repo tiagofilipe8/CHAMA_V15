@@ -3,6 +3,16 @@
 // ---------------------------------------------------------------
 
 // ---------------- Usuarios ----------------
+// Perfil com a cor do módulo: gestão = violeta, equipe Orcim = azul, posto = verde-água, usuário = cinza
+function tagPerfil(u) {
+  const posto = u.role === 'client' && u.location_name && u.name === u.location_name;
+  const [cor, icone] = posto ? ['tg-teal', 'bi-shop']
+    : ({ admin: ['tg-violet', 'bi-shield-lock'], admin_local: ['tg-violet', 'bi-shield'], moderator: ['tg-blue', 'bi-funnel'],
+      technician: ['tg-blue', 'bi-tools'] }[u.role]
+      || (Number(u.client_level) === 2 ? ['tg-violet', 'bi-briefcase'] : ['tg-gray', 'bi-person']));
+  return `<span class="tg ${cor}"><i class="bi ${icone}"></i>${esc(posto ? 'Posto' : Roles.label(u))}</span>`;
+}
+
 Views.adminUsers = async function adminUsers(el) {
   const _u = currentUser();
   // admin local e gestor administram somente usuarios da propria empresa
@@ -56,11 +66,11 @@ Views.adminUsers = async function adminUsers(el) {
             return `
           <tr>
             <td><strong>${esc(u.name)}</strong><br><small class="text-muted">@${esc(u.username)}</small></td>
-            <td><span class="badge text-bg-${{ admin: 'danger', admin_local: 'warning', moderator: 'info', technician: 'primary' }[u.role] || 'success'}">${esc(Roles.label(u))}</span></td>
+            <td>${tagPerfil(u)}</td>
             <td class="multi-empresa">${esc(u.entity_name || '—')}${(u.extra_entity_ids || []).length ? `<br><small class="text-muted">+${u.extra_entity_ids.length} empresa(s)</small>` : ''}</td>
             <td>${esc(u.location_name || '—')}</td>
             <td>${esc(u.email || '')}<br><small class="text-muted">${esc(u.phone || '')}</small></td>
-            <td>${u.active ? '<span class="text-success"><i class="bi bi-check-circle"></i></span>' : '<span class="text-danger"><i class="bi bi-x-circle"></i></span>'}</td>
+            <td>${u.active ? '<span class="tg tg-green">Ativo</span>' : '<span class="tg tg-gray">Inativo</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary u-edit" data-id="${u.id}" title="Editar"><i class="bi bi-pencil"></i></button>
               ${u.active
@@ -506,7 +516,7 @@ Views.adminCategories = async function adminCategories(el) {
             <td><span class="fs-5 me-1">${esc(c.icon || '')}</span><strong>${esc(c.name)}</strong>
               ${c.examples ? `<br><small class="text-muted">Ex.: ${esc(c.examples)}</small>` : ''}</td>
             <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
-            <td>${c.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary cat-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
               <button class="btn btn-sm btn-outline-danger cat-del" data-id="${c.id}"><i class="bi bi-trash"></i></button>
@@ -541,7 +551,7 @@ Views.adminCategories = async function adminCategories(el) {
               ${depth ? `<br><small class="text-muted">${'&nbsp;&nbsp;&nbsp;'.repeat(depth)}${esc(c.path)}</small>` : ''}</td>
             <td class="small">${(simpleByTarget[c.id] || []).map((x) => `${esc(x.icon || '')} ${esc(x.name)}`).join('<br>') || '—'}</td>
             <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
-            <td>${c.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary cat-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
               <button class="btn btn-sm btn-outline-danger cat-del" data-id="${c.id}"><i class="bi bi-trash"></i></button>
@@ -645,7 +655,7 @@ Views.adminCategories = async function adminCategories(el) {
             <td class="text-muted">${l.sort_order}</td>
             <td><strong>${esc(l.name)}</strong><br><small class="text-muted">${esc(l.description || '')}</small></td>
             <td>${badgePriority(l.priority)}</td>
-            <td>${l.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
+            <td>${l.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary imp-edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
               ${l.active ? `<button class="btn btn-sm btn-outline-danger imp-del" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
@@ -678,7 +688,7 @@ Views.adminCategories = async function adminCategories(el) {
           <tr>
             <td class="text-muted">${c.sort_order}</td>
             <td><strong>${esc(c.name)}</strong><br><small class="text-muted">${esc(c.description || '')}</small></td>
-            <td>${c.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary cause-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
               ${c.active ? `<button class="btn btn-sm btn-outline-danger cause-del" data-id="${c.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
@@ -818,10 +828,10 @@ Views.adminLocations = async function adminLocations(el) {
             ${l.address ? `<br><small class="text-muted">${esc(l.address)}</small>` : ''}</td>
           <td class="multi-empresa">${esc(l.entity_name)}</td>
           <td>${esc([l.city, l.state].filter(Boolean).join('/') || '—')}</td>
-          <td>${l.posto_username ? `<i class="bi bi-person-badge text-success me-1"></i>@${esc(l.posto_username)}` : '<span class="text-muted small">sem acesso</span>'}</td>
+          <td>${l.posto_username ? `<span class="tg tg-teal"><i class="bi bi-shop"></i>@${esc(l.posto_username)}</span>` : '<span class="tg tg-gray">sem acesso</span>'}</td>
           <td><a href="#/admin/users">${l.users_count}</a></td>
           <td>${l.open_tickets}</td>
-          <td>${l.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
+          <td>${l.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
           <td class="text-end">
             <button class="btn btn-sm btn-outline-primary l-edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
             ${l.active ? `<button class="btn btn-sm btn-outline-danger l-off" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}

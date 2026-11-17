@@ -43,6 +43,11 @@
     set(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sem storage */ } },
   };
 
+  // Tema claro/escuro: o mesmo escolhido na Central (guardado no navegador)
+  const aplicarTema = () => document.documentElement.setAttribute('data-bs-theme', store.get('tema') === 'dark' ? 'dark' : 'light');
+  aplicarTema();
+  window.addEventListener('storage', (e) => { if (e.key === 'tema') aplicarTema(); });
+
   // Modo embutido: aberto dentro da Central (/app.html), com o login e o menu dela
   const EMBED = new URLSearchParams(location.search).get('embed') === '1' && window.parent !== window;
   if (EMBED) document.body.classList.add('embed');
