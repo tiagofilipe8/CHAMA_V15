@@ -6,11 +6,13 @@
 //
 // Ordem: parte do schema.sql anterior ao inventário -> _migrate_inventory.js -> schema.sql inteiro.
 // Idempotente: em banco que já tem a tabela "assets", só reaplica o schema.sql (CREATE/ALTER IF NOT EXISTS).
+// Depois grava as permissões padrão dos perfis que ainda não existem (nunca sobrescreve).
 // Uso: node server/gbf/instalar-banco.js && node server/index.js
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { pool } = require('../db');
+const { ROLE_KEYS, ALL_KEYS, DEFAULTS } = require('../permissions');
 
 const RAIZ = path.join(__dirname, '..', '..');
 
@@ -23,6 +25,27 @@ const RAIZ = path.join(__dirname, '..', '..');
     execFileSync(process.execPath, ['_migrate_inventory.js'], { cwd: RAIZ, stdio: 'inherit' });
   }
   await pool.query(sql);
+
+  // Permissões padrão de cada perfil (Perfis e permissões). Sem elas, só o administrador
+  // mestre consegue usar a Central. Só insere o que falta: o que já foi marcado ou
+  // desmarcado na tela nunca é sobrescrito (mesma regra do ensurePermissions do init.js).
+  const perfis = [];
+  const permissoes = [];
+  const liberado = [];
+  for (const r of ROLE_KEYS) {
+    for (const perm of ALL_KEYS) {
+      perfis.push(r.key);
+      permissoes.push(perm);
+      liberado.push((DEFAULTS[r.key] || []).includes(perm));
+    }
+  }
+  const novas = await pool.query(
+    `INSERT INTO role_permissions (role_key, permission, allowed)
+     SELECT * FROM unnest($1::text[], $2::text[], $3::boolean[])
+     ON CONFLICT (role_key, permission) DO NOTHING`,
+    [perfis, permissoes, liberado]);
+  if (novas.rowCount) console.log(`[instalar-banco] Permissões padrão gravadas: ${novas.rowCount}.`);
+
   console.log('[instalar-banco] Banco pronto (sem dados de demonstração).');
   await pool.end();
 })().catch((e) => {
