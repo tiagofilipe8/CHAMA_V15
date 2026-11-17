@@ -252,6 +252,8 @@
         demandas: b ? `#/tickets/${encodeURIComponent(b)}` : '#/tickets', orcim: '#/dashboard', tudo: '#/dashboard',
         manutencoes: '#/inventory', usuarios: '#/admin/users', conta: '#/perfil',
       }[a];
+      // cadastro de posto é único: Administração > Localizações (cria local + usuário do posto)
+      if (a === 'postos' && b === 'novo') { avisarCentral({ gbf: 'abrir', hash: '#/admin/locations' }); return; }
       if (naCentral) { avisarCentral({ gbf: 'abrir', hash: naCentral }); return; }
       avisarCentral({ gbf: 'rota', hash: location.hash || '#/' });
     }

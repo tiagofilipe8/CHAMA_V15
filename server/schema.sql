@@ -511,3 +511,10 @@ DROP TRIGGER IF EXISTS trg_locations_touch ON locations;
 CREATE TRIGGER trg_locations_touch
     BEFORE UPDATE ON locations
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- Grupo Beija-Flor: empresa única e só categorias simples
+-- ---------------------------------------------------------------------
+INSERT INTO entities (name, category_mode) SELECT 'Grupo Beija-Flor', 'simple'
+WHERE NOT EXISTS (SELECT 1 FROM entities);
+UPDATE entities SET category_mode = 'simple' WHERE category_mode <> 'simple';

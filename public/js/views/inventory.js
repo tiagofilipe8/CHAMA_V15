@@ -47,7 +47,7 @@ async function openAssetModal(asset, cb) {
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">Status</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${a?.status===k?'selected':''}>${v}</option>`).join('')}</select></div>
-        <div class="col-md-4 mb-2"><label class="form-label small">Entidade *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
+        <div class="col-md-4 mb-2 multi-empresa"><label class="form-label small">Entidade *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Localização</label><input class="form-control inv-upper" id="a-location" value="${esc(up(a?.location).toUpperCase())}"></div>
       </div>
       <div class="row">
@@ -177,7 +177,7 @@ Views.inventory = async function inventory(el) {
           <option value="">Todos status</option>
           ${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
         </select>
-        <select class="form-select form-select-sm" id="inv-entity" style="max-width:200px"><option value="">Todas entidades</option></select>
+        <select class="form-select form-select-sm multi-empresa" id="inv-entity" style="max-width:200px"><option value="">Todas entidades</option></select>
         <button class="btn btn-sm btn-outline-secondary" id="btn-inv-filter"><i class="bi bi-search"></i></button>
       </div>
     </div>

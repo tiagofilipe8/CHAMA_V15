@@ -35,10 +35,10 @@ router.get('/for-entity/:entityId', async (req, res) => {
   if (!canAccessEntity(req.user, entityId)) return res.status(403).json({ error: 'Acesso negado a esta empresa.' });
   const ent = await query('SELECT category_mode FROM entities WHERE id = $1', [entityId]);
   if (!ent.rows.length) return res.status(404).json({ error: 'Empresa não encontrada.' });
-  const mode = (isStaff(req.user) || has(req.user, 'ticket.triage')) ? 'complex' : ent.rows[0].category_mode;
+  // Só categorias simples, para todos (equipe e usuários)
+  const mode = 'simple';
   const { rows } = await query(
-    `${SELECT} WHERE c.active AND c.kind = $1 ${mode === 'simple' ? 'AND c.maps_to_id IS NOT NULL' : ''}
-     ORDER BY c.sort_order, c.name`, [mode]);
+    `${SELECT} WHERE c.active AND c.kind = 'simple' ORDER BY c.sort_order, c.name`);
   res.json({ mode, entity_mode: ent.rows[0].category_mode, categories: rows });
 });
 
@@ -61,11 +61,7 @@ async function validate(b, currentKind, selfId) {
   const kind = b.kind || currentKind || 'complex';
   if (kind === 'simple') {
     if (b.parent_id) return 'Categorias simples não têm categoria pai (são uma lista).';
-    if (b.maps_to_id !== undefined || !selfId) {
-      if (!b.maps_to_id) return 'Escolha em qual categoria complexa os chamados desta categoria simples serão registrados.';
-      const { rows } = await query('SELECT kind FROM categories WHERE id = $1', [b.maps_to_id]);
-      if (!rows.length || rows[0].kind !== 'complex') return 'A categoria de destino precisa ser uma categoria complexa.';
-    }
+    // categorias simples não apontam mais para complexas (o chamado grava direto nelas)
   } else {
     if (b.maps_to_id) return 'Somente categorias simples apontam para outra categoria.';
     if (b.parent_id) {
@@ -90,12 +86,12 @@ router.post('/', requireRoles('admin'), async (req, res) => {
   if (!b.name) return res.status(422).json({ error: 'Informe o nome da categoria.' });
   const err = await validate(b, null, null);
   if (err) return res.status(422).json({ error: err });
-  const kind = b.kind || 'complex';
+  const kind = b.kind || 'simple';
   const { rows } = await query(
     `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order)
      VALUES ($1, $2, COALESCE($3, TRUE), $4, $5, $6, $7, $8, COALESCE($9, 0)) RETURNING id`,
     [b.name, kind === 'complex' ? (b.parent_id || null) : null, b.active, kind,
-     kind === 'simple' ? b.maps_to_id : null, b.icon || null, b.description || null, b.examples || null, b.sort_order]);
+     null, b.icon || null, b.description || null, b.examples || null, b.sort_order]);
   const full = await query(`${SELECT} WHERE c.id = $1`, [rows[0].id]);
   res.status(201).json(full.rows[0]);
 });
@@ -111,7 +107,7 @@ router.patch('/:id', requireRoles('admin'), async (req, res) => {
   if (err) return res.status(422).json({ error: err });
   const fields = [];
   const params = [req.params.id];
-  for (const k of ['name', 'parent_id', 'active', 'maps_to_id', 'icon', 'description', 'examples', 'sort_order']) {
+  for (const k of ['name', 'parent_id', 'active', 'icon', 'description', 'examples', 'sort_order']) {
     if (b[k] !== undefined) { params.push(b[k]); fields.push(`${k} = $${params.length}`); }
   }
   if (b.name === null) return res.status(422).json({ error: 'O nome não pode ficar vazio.' });

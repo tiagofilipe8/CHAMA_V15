@@ -144,12 +144,8 @@ async function resolveCategory(categoryId, simpleCategoryId) {
   const { rows } = await query('SELECT id, kind, maps_to_id, active FROM categories WHERE id = $1', [id]);
   if (!rows.length || !rows[0].active) return { error: 'Categoria inválida.' };
   const c = rows[0];
-  if (c.kind === 'simple') {
-    if (!c.maps_to_id) {
-      return { error: 'Esta categoria simples ainda não está ligada a uma categoria complexa. Avise o administrador.' };
-    }
-    return { category_id: c.maps_to_id, simple_category_id: c.id };
-  }
+  // Só categorias simples: o chamado grava direto na simples escolhida
+  if (c.kind === 'simple') return { category_id: c.id, simple_category_id: c.id };
   return { category_id: c.id, simple_category_id: null };
 }
 

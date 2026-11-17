@@ -653,3 +653,6 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 /* Dia a dia da TI aberto dentro da Central */
 .main-content.ti-embed { padding: 0; display: flex; }
 .ti-frame { border: 0; width: 100%; flex: 1; min-height: calc(100vh - 67px); display: block; background: #f4f6f9; }
+
+/* Empresa única: some o que só serve para várias empresas */
+.empresa-unica .multi-empresa { display: none !important; }

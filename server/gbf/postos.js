@@ -1,7 +1,7 @@
 // Postos (unidades visitadas pela TI) e modelos de checklist.
 const express = require('express');
 const { query, pool } = require('../db');
-const { ah, STATUS_CENTRAL } = require('./common');
+const { ah, STATUS_CENTRAL, entidadesAcompanhadas } = require('./common');
 const { queryCentral } = require('./fonte');
 
 const router = express.Router();
@@ -76,7 +76,38 @@ function dadosPosto(b, novo) {
 }
 
 // ------------------------------- Postos -------------------------------
+// Os postos do Dia a dia são as localizações da Central (cadastro único em
+// Administração > Localizações). Aqui só se completam frequência, checklist e agenda.
+// Cria os que faltam e acompanha nome, endereço e ativo. Só lê a Central.
+async function sincronizarPostos() {
+  const empresas = await entidadesAcompanhadas(); // vazio = todas
+  let locs;
+  try {
+    ({ rows: locs } = await queryCentral(
+      `SELECT l.id, l.name, l.entity_id, l.active,
+              NULLIF(concat_ws(' - ', l.address, NULLIF(concat_ws('/', l.city, l.state), '')), '') AS endereco
+       FROM locations l ${empresas.length ? 'WHERE l.entity_id = ANY($1::bigint[])' : ''}`,
+      empresas.length ? [empresas] : []));
+  } catch { return; } // Central sem a tabela de localizações: segue sem sincronizar
+  for (const l of locs) {
+    const { rowCount } = await query(
+      `UPDATE gbf_locations SET name = $2, address = COALESCE($3, address), entity_id = $4, active = $5
+       WHERE central_location_id = $1`, [l.id, l.name, l.endereco, l.entity_id, l.active]);
+    if (rowCount) continue;
+    // posto antigo com o mesmo nome e ainda sem ligação: liga em vez de duplicar
+    const mesmo = await query(
+      `UPDATE gbf_locations SET central_location_id = $1, entity_id = $3, updated_at = now()
+       WHERE id = (SELECT id FROM gbf_locations WHERE central_location_id IS NULL AND lower(name) = lower($2) LIMIT 1)
+       RETURNING id`, [l.id, l.name, l.entity_id]);
+    if (mesmo.rows.length) continue;
+    await query(
+      `INSERT INTO gbf_locations (name, address, entity_id, active, central_location_id)
+       VALUES ($1, $2, $3, $4, $5)`, [l.name, l.endereco, l.entity_id, l.active, l.id]);
+  }
+}
+
 router.get('/postos', ah(async (req, res) => {
+  await sincronizarPostos();
   const todos = req.query.todos === '1';
   const { rows } = await query(
     `${POSTO_SELECT} ${todos ? '' : 'WHERE l.active'}
@@ -228,3 +259,4 @@ router.post('/checklists/:id/duplicar', ah(async (req, res) => {
 
 module.exports = router;
 module.exports.HOJE = HOJE;
+module.exports.sincronizarPostos = sincronizarPostos;

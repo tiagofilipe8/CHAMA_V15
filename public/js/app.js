@@ -41,7 +41,7 @@ function buildNav(u) {
 
   const admin = [];
   if (can('users.manage')) admin.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
-  if (master) admin.push({ href: '#/admin/entities', icon: 'bi-buildings', label: 'Empresas' });
+  if (master) admin.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
   if (can('locations.manage')) admin.push({ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' });
   if (master) {
     admin.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
@@ -122,7 +122,7 @@ function pageTitleFromPath() {
     '/inventory/agents': 'Agentes',
     '/new': 'Abrir Chamado',
     '/admin/users': 'Usuários',
-    '/admin/entities': 'Empresas',
+    '/admin/entities': 'Dados da empresa',
     '/admin/categories': 'Categorias e opções',
     '/admin/settings': 'Configurações',
     '/admin/roles': 'Perfis e permissões',
@@ -330,6 +330,13 @@ async function boot() {
       document.getElementById('btn-voice').classList.add('off');
       document.getElementById('voice-icon').className = 'bi bi-volume-mute-fill';
     }
+  } catch {}
+
+  // Empresa única (Grupo Beija-Flor): esconde o que só serve para várias empresas
+  try {
+    const ents = (await API.get('/entities')).filter((e) => e.active);
+    window.EMPRESA_UNICA = ents.length <= 1 ? (ents[0] || null) : null;
+    document.body.classList.toggle('empresa-unica', ents.length <= 1);
   } catch {}
 
   renderPreviewBar();

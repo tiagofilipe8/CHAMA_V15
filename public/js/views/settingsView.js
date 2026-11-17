@@ -24,7 +24,7 @@ Views.adminUsers = async function adminUsers(el) {
           <option value="technician">Técnico</option>
           <option value="client">Usuário / Gestor</option>
         </select>
-        <select class="form-select form-select-sm" id="u-entity" style="max-width:220px">
+        <select class="form-select form-select-sm multi-empresa" id="u-entity" style="max-width:220px">
           <option value="">Todas as empresas</option>
         </select>
         <button class="btn btn-primary btn-sm ms-auto" id="btn-new-user"><i class="bi bi-person-plus"></i> Novo usuário</button>
@@ -32,7 +32,7 @@ Views.adminUsers = async function adminUsers(el) {
     </div>
     <div class="card panel-card">
       <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Usuário</th><th>Perfil</th><th>Empresa</th><th>Localização</th><th>Contato</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
+        <thead><tr><th>Usuário</th><th>Perfil</th><th class="multi-empresa">Empresa</th><th>Localização</th><th>Contato</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
         <tbody id="u-body"><tr><td colspan="7" class="text-center py-3 text-muted">Carregando usuários...</td></tr></tbody>
       </table></div>
     </div>`;
@@ -57,7 +57,7 @@ Views.adminUsers = async function adminUsers(el) {
           <tr>
             <td><strong>${esc(u.name)}</strong><br><small class="text-muted">@${esc(u.username)}</small></td>
             <td><span class="badge text-bg-${{ admin: 'danger', admin_local: 'warning', moderator: 'info', technician: 'primary' }[u.role] || 'success'}">${esc(Roles.label(u))}</span></td>
-            <td>${esc(u.entity_name || '—')}${(u.extra_entity_ids || []).length ? `<br><small class="text-muted">+${u.extra_entity_ids.length} empresa(s)</small>` : ''}</td>
+            <td class="multi-empresa">${esc(u.entity_name || '—')}${(u.extra_entity_ids || []).length ? `<br><small class="text-muted">+${u.extra_entity_ids.length} empresa(s)</small>` : ''}</td>
             <td>${esc(u.location_name || '—')}</td>
             <td>${esc(u.email || '')}<br><small class="text-muted">${esc(u.phone || '')}</small></td>
             <td>${u.active ? '<span class="text-success"><i class="bi bi-check-circle"></i></span>' : '<span class="text-danger"><i class="bi bi-x-circle"></i></span>'}</td>
@@ -163,13 +163,13 @@ Views.adminUsers = async function adminUsers(el) {
               ${profileOptions.map((o) => `<option value="${o.value}" ${o.value === curProfile ? 'selected' : ''}>${o.label}</option>`).join('')}
             </select>
             <div class="form-text" id="f-profile-help"></div></div>
-          <div class="col-md-6 mb-2"><label class="form-label small">Empresa <span id="f-entity-req"></span></label>
+          <div class="col-md-6 mb-2 multi-empresa"><label class="form-label small">Empresa <span id="f-entity-req"></span></label>
             <select class="form-select" id="f-entity" ${isMgrModal ? 'disabled' : ''}></select></div>
         </div>
         <div class="row">
           <div class="col-md-6 mb-2"><label class="form-label small">Localização (posto)</label>
             <select class="form-select" id="f-location"><option value="">—</option></select></div>
-          <div class="col-md-6 mb-2" id="f-extra-box" style="display:none"><label class="form-label small">Outras empresas que o gestor acompanha</label>
+          <div class="col-md-6 mb-2 multi-empresa" id="f-extra-box" style="display:none"><label class="form-label small">Outras empresas que o gestor acompanha</label>
             <select class="form-select" id="f-extra" multiple size="4"></select>
             <div class="form-text">Segure Ctrl para escolher mais de uma.</div></div>
         </div>
@@ -209,6 +209,7 @@ Views.adminUsers = async function adminUsers(el) {
     } else {
       entSel.innerHTML = `<option value="">— sem empresa (equipe de suporte) —</option>` +
         ents.filter((e) => e.active).map((e) => `<option value="${e.id}" ${u && u.entity_id === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+      if (window.EMPRESA_UNICA && !entSel.value) entSel.value = String(window.EMPRESA_UNICA.id);
     }
     const profSel = m.querySelector('#f-profile');
     const locSel = m.querySelector('#f-location');
@@ -299,7 +300,7 @@ Views.adminEntities = async function adminEntities(el) {
   if (!(await guardRole('admin'))) return;
   el.innerHTML = `
     <div class="d-flex justify-content-end mb-3">
-      <button class="btn btn-primary" id="btn-new-entity"><i class="bi bi-building-add"></i> Nova empresa</button>
+      <button class="btn btn-primary multi-empresa" id="btn-new-entity"><i class="bi bi-building-add"></i> Nova empresa</button>
     </div>
     <div class="row g-3" id="ent-grid">${spinner()}</div>`;
 
@@ -326,7 +327,6 @@ Views.adminEntities = async function adminEntities(el) {
                 <div><i class="bi bi-envelope me-1"></i>${esc(e.email || '—')}</div>
                 <div><i class="bi bi-geo-alt me-1"></i>${esc(e.address || '—')}</div>
                 <div><i class="bi bi-stopwatch me-1"></i>SLA: ${e.sla_days || 0}d ${e.sla_hours || 0}h</div>
-                <div><i class="bi bi-diagram-3 me-1"></i>Categorias: <b>${e.category_mode === 'simple' ? 'Simples' : 'Complexas'}</b></div>
               </div>
               <div class="d-flex flex-wrap gap-3 mt-2 small">
                 <span><b>${e.open_tickets}</b> chamados abertos</span>
@@ -338,7 +338,7 @@ Views.adminEntities = async function adminEntities(el) {
               </div>
               <div class="text-end mt-3">
                 <button class="btn btn-sm btn-outline-primary ent-edit" data-id="${e.id}"><i class="bi bi-pencil"></i></button>
-                <button class="btn btn-sm btn-outline-danger ent-del" data-id="${e.id}"><i class="bi bi-trash"></i></button>
+                <button class="btn btn-sm btn-outline-danger ent-del multi-empresa" data-id="${e.id}"><i class="bi bi-trash"></i></button>
               </div>
             </div>
           </div>
@@ -392,13 +392,6 @@ Views.adminEntities = async function adminEntities(el) {
             <input class="form-control" id="e-sla-hours" type="number" min="0" max="23" value="${esc(String((e && e.sla_hours) ?? 0))}"></div>
         </div>
         <div class="form-text mb-2">Prazo padrão para chamados desta entidade. Ex.: 2 dias e 4 horas → vencimento automático.</div>
-        <div class="mb-2"><label class="form-label small">Categorias que os usuários desta empresa veem</label>
-          <select class="form-select" id="e-catmode">
-            <option value="simple" ${!e || e.category_mode === 'simple' ? 'selected' : ''}>Simples — lista fácil com ícones (ex.: 🌐 Internet ou rede)</option>
-            <option value="complex" ${e && e.category_mode === 'complex' ? 'selected' : ''}>Complexas — árvore detalhada (ex.: Rede › Problemas de conexão › DNS)</option>
-          </select>
-          <div class="form-text">Os dois modos gravam o chamado na mesma categoria complexa, então os relatórios ficam iguais.</div>
-        </div>
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="e-active" ${e ? (e.active ? 'checked' : '') : 'checked'}>
           <label class="form-check-label small">Ativa</label>
@@ -445,7 +438,7 @@ Views.adminEntities = async function adminEntities(el) {
         active: m.querySelector('#e-active').checked,
         sla_days: parseInt(m.querySelector('#e-sla-days').value, 10) || 0,
         sla_hours: parseInt(m.querySelector('#e-sla-hours').value, 10) || 0,
-        category_mode: m.querySelector('#e-catmode').value,
+        category_mode: 'simple',
       };
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
       try {
@@ -467,10 +460,10 @@ Views.adminEntities = async function adminEntities(el) {
 Views.adminCategories = async function adminCategories(el) {
   if (!(await guardRole('admin'))) return;
   let tab = sessionStorage.getItem('cat_tab') || 'simple';
+  if (tab === 'complex') tab = 'simple';
   el.innerHTML = `
     <ul class="nav nav-tabs mb-3" id="cat-tabs">
-      <li class="nav-item"><a class="nav-link" href="#" data-tab="simple">Categorias simples</a></li>
-      <li class="nav-item"><a class="nav-link" href="#" data-tab="complex">Categorias complexas</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="simple">Categorias</a></li>
       <li class="nav-item"><a class="nav-link" href="#" data-tab="impact">Urgência</a></li>
       <li class="nav-item"><a class="nav-link" href="#" data-tab="causes">Causas de encerramento</a></li>
     </ul>
@@ -491,8 +484,7 @@ Views.adminCategories = async function adminCategories(el) {
       if (tab === 'impact') return renderImpact(body);
       if (tab === 'causes') return renderCauses(body);
       const cats = await API.get('/categories');
-      if (tab === 'simple') renderSimple(body, cats);
-      else renderComplex(body, cats);
+      renderSimple(body, cats);
     } catch (e) { body.innerHTML = emptyState('Erro ao carregar', e.message, 'bi-exclamation-triangle'); }
   }
 
@@ -500,28 +492,26 @@ Views.adminCategories = async function adminCategories(el) {
     const simple = cats.filter((c) => c.kind === 'simple');
     body.innerHTML = `
       <div class="alert alert-info small">
-        <i class="bi bi-info-circle me-1"></i> É o que os usuários de empresas no modo <b>Simples</b> veem ao abrir chamado.
-        Cada categoria simples aponta para uma <b>complexa</b>, onde o chamado fica registrado.
-        Ex.: "🌐 Internet ou rede" → <i>Rede › Problemas de conexão</i>. O modo é escolhido em <a href="#/admin/entities">Empresas</a>.
+        <i class="bi bi-info-circle me-1"></i> É a lista que todos veem ao abrir chamado. O chamado fica registrado
+        na própria categoria escolhida (ex.: "🌐 Internet ou rede").
       </div>
       <div class="d-flex justify-content-end mb-2">
-        <button class="btn btn-primary btn-sm" id="btn-new-simple"><i class="bi bi-plus-lg"></i> Nova categoria simples</button>
+        <button class="btn btn-primary btn-sm" id="btn-new-simple"><i class="bi bi-plus-lg"></i> Nova categoria</button>
       </div>
       <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Ordem</th><th>Categoria simples</th><th>Registra em (complexa)</th><th>Abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <thead><tr><th>Ordem</th><th>Categoria</th><th>Abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
         <tbody>${simple.map((c) => `
           <tr>
             <td class="text-muted">${c.sort_order}</td>
             <td><span class="fs-5 me-1">${esc(c.icon || '')}</span><strong>${esc(c.name)}</strong>
               ${c.examples ? `<br><small class="text-muted">Ex.: ${esc(c.examples)}</small>` : ''}</td>
-            <td class="small">${c.maps_to_path ? esc(c.maps_to_path) : '<span class="text-danger">Não ligada — não aparece para os usuários</span>'}</td>
             <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
             <td>${c.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary cat-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
               <button class="btn btn-sm btn-outline-danger cat-del" data-id="${c.id}"><i class="bi bi-trash"></i></button>
             </td>
-          </tr>`).join('') || '<tr><td colspan="6" class="text-center py-4 text-muted">Nenhuma categoria simples.</td></tr>'}</tbody>
+          </tr>`).join('') || '<tr><td colspan="5" class="text-center py-4 text-muted">Nenhuma categoria.</td></tr>'}</tbody>
       </table></div></div>`;
     body.querySelector('#btn-new-simple').onclick = () => openCatModal(null, 'simple', cats);
     wireRows(body, cats);
@@ -580,7 +570,7 @@ Views.adminCategories = async function adminCategories(el) {
     const m = document.createElement('div');
     m.className = 'modal fade';
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
-      <div class="modal-header"><h6>${c ? 'Editar' : 'Nova'} categoria ${kind === 'simple' ? 'simples' : 'complexa'}</h6>
+      <div class="modal-header"><h6>${c ? 'Editar' : 'Nova'} categoria</h6>
         <button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div class="row">
@@ -590,11 +580,6 @@ Views.adminCategories = async function adminCategories(el) {
             <input class="form-control" id="c-name" value="${esc((c && c.name) || '')}"></div>
         </div>
         ${kind === 'simple' ? `
-          <div class="mb-2"><label class="form-label small">Registrar os chamados em (categoria complexa) *</label>
-            <select class="form-select" id="c-maps">
-              <option value="">— escolha —</option>
-              ${complex.map((x) => `<option value="${x.id}" ${c && c.maps_to_id === x.id ? 'selected' : ''}>${esc(x.path)}</option>`).join('')}
-            </select></div>
           <div class="mb-2"><label class="form-label small">Explicação para o usuário</label>
             <input class="form-control" id="c-desc" value="${esc((c && c.description) || '')}" placeholder="Ex.: Sem internet, internet lenta ou Wi-Fi."></div>
           <div class="mb-2"><label class="form-label small">Exemplos (separe com ;)</label>
@@ -625,11 +610,9 @@ Views.adminCategories = async function adminCategories(el) {
       const body = { name, active: m.querySelector('#c-active').checked };
       if (kind === 'simple') {
         body.icon = m.querySelector('#c-icon').value.trim();
-        body.maps_to_id = parseInt(m.querySelector('#c-maps').value, 10) || null;
         body.description = m.querySelector('#c-desc').value.trim();
         body.examples = m.querySelector('#c-examples').value.trim();
         body.sort_order = parseInt(m.querySelector('#c-order').value, 10) || 0;
-        if (!body.maps_to_id) { toast('Escolha a categoria complexa de destino.', 'warning'); return; }
       } else {
         body.parent_id = parseInt(m.querySelector('#c-parent').value, 10) || null;
       }
@@ -814,15 +797,15 @@ Views.adminLocations = async function adminLocations(el) {
 
   el.innerHTML = `
     <div class="card panel-card mb-3"><div class="card-body py-3 d-flex flex-wrap gap-2 align-items-center">
-      <select class="form-select form-select-sm" id="l-entity" style="max-width:280px" ${!Roles.isMaster(u) ? 'disabled' : ''}>
+      <select class="form-select form-select-sm multi-empresa" id="l-entity" style="max-width:280px" ${!Roles.isMaster(u) ? 'disabled' : ''}>
         ${Roles.isMaster(u) ? '<option value="">Todas as empresas</option>' : ''}
         ${ents.map((e) => `<option value="${e.id}" ${String(e.id) === entityFilter ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
       </select>
       <button class="btn btn-primary btn-sm ms-auto" id="btn-new-loc"><i class="bi bi-geo-alt"></i> Nova localização</button>
     </div></div>
     <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Localização</th><th>Empresa</th><th>Cidade/UF</th><th>Usuários</th><th>Chamados abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
-      <tbody id="l-body"><tr><td colspan="7">${spinner()}</td></tr></tbody>
+      <thead><tr><th>Localização</th><th class="multi-empresa">Empresa</th><th>Cidade/UF</th><th>Acesso do posto</th><th>Usuários</th><th>Chamados abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+      <tbody id="l-body"><tr><td colspan="8">${spinner()}</td></tr></tbody>
     </table></div></div>`;
 
   const load = async () => {
@@ -833,8 +816,9 @@ Views.adminLocations = async function adminLocations(el) {
         <tr>
           <td><strong>${esc(l.name)}</strong>${l.code ? ` <small class="text-muted">(${esc(l.code)})</small>` : ''}
             ${l.address ? `<br><small class="text-muted">${esc(l.address)}</small>` : ''}</td>
-          <td>${esc(l.entity_name)}</td>
+          <td class="multi-empresa">${esc(l.entity_name)}</td>
           <td>${esc([l.city, l.state].filter(Boolean).join('/') || '—')}</td>
+          <td>${l.posto_username ? `<i class="bi bi-person-badge text-success me-1"></i>@${esc(l.posto_username)}` : '<span class="text-muted small">sem acesso</span>'}</td>
           <td><a href="#/admin/users">${l.users_count}</a></td>
           <td>${l.open_tickets}</td>
           <td>${l.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
@@ -842,7 +826,7 @@ Views.adminLocations = async function adminLocations(el) {
             <button class="btn btn-sm btn-outline-primary l-edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
             ${l.active ? `<button class="btn btn-sm btn-outline-danger l-off" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
           </td>
-        </tr>`).join('') || '<tr><td colspan="7" class="text-center py-4 text-muted">Nenhuma localização cadastrada.</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="8" class="text-center py-4 text-muted">Nenhuma localização cadastrada.</td></tr>';
       document.querySelectorAll('.l-edit').forEach((b) => b.addEventListener('click', () => openModal(locs.find((x) => String(x.id) === b.dataset.id))));
       document.querySelectorAll('.l-off').forEach((b) => b.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Desativar localização', body: 'Ela deixa de aparecer para novos chamados. O histórico é mantido.', confirmText: 'Desativar', danger: true });
@@ -863,7 +847,7 @@ Views.adminLocations = async function adminLocations(el) {
       <div class="modal-header"><h6>${l ? 'Editar localização' : 'Nova localização'}</h6>
         <button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <div class="mb-2"><label class="form-label small">Empresa *</label>
+        <div class="mb-2 multi-empresa"><label class="form-label small">Empresa *</label>
           <select class="form-select" id="lm-entity" ${l || !Roles.isMaster(u) ? 'disabled' : ''}>
             ${ents.map((e) => `<option value="${e.id}" ${String(e.id) === String(defaultEnt) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
           </select></div>
@@ -885,7 +869,22 @@ Views.adminLocations = async function adminLocations(el) {
           <input class="form-check-input" type="checkbox" id="lm-active" ${!l || l.active ? 'checked' : ''}>
           <label class="form-check-label small">Ativa</label>
         </div>
-        <div class="form-text">Para ligar pessoas a esta localização, edite o usuário em <a href="#/admin/users">Usuários</a>.</div>
+        <hr>
+        <div class="mb-1 fw-semibold small"><i class="bi bi-person-badge me-1"></i>Acesso do posto</div>
+        ${l && l.posto_username ? `<div class="small text-muted">Este posto já entra no sistema como <b>@${esc(l.posto_username)}</b>.
+          Para trocar a senha, use <a href="#/admin/users">Usuários</a>.</div>` : `
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="lm-acesso" ${l ? '' : 'checked'}>
+          <label class="form-check-label small" for="lm-acesso">Criar um usuário para o próprio posto abrir chamados</label>
+        </div>
+        <div class="row" id="lm-acesso-box">
+          <div class="col-6 mb-2"><label class="form-label small">Usuário de acesso *</label>
+            <input class="form-control" id="lm-user" autocomplete="off" placeholder="ex.: palhaseca"></div>
+          <div class="col-6 mb-2"><label class="form-label small">Senha * (mín. 6)</label>
+            <input class="form-control" id="lm-pass" type="password" autocomplete="new-password"></div>
+        </div>`}
+        <div class="form-text">O posto também aparece sozinho nos <b>Postos</b> do Dia a dia da TI, onde se definem as visitas e o checklist.
+          Pessoas (gestor, TI) se ligam a uma localização em <a href="#/admin/users">Usuários</a>.</div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -895,6 +894,20 @@ Views.adminLocations = async function adminLocations(el) {
     document.body.appendChild(m);
     const modal = new bootstrap.Modal(m);
     m.addEventListener('hidden.bs.modal', () => m.remove());
+    // sugere o usuário do posto a partir do nome (ex.: "Posto Palha Seca" -> "palhaseca")
+    const sugerir = () => {
+      const uIn = m.querySelector('#lm-user');
+      if (!uIn || uIn.dataset.mexido) return;
+      uIn.value = m.querySelector('#lm-name').value.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/^posto\s+/, '').replace(/[^a-z0-9]/g, '');
+    };
+    m.querySelector('#lm-name').addEventListener('input', sugerir);
+    const uInput = m.querySelector('#lm-user');
+    if (uInput) uInput.addEventListener('input', () => { uInput.dataset.mexido = '1'; });
+    const acesso = m.querySelector('#lm-acesso');
+    const syncAcesso = () => { if (acesso) m.querySelector('#lm-acesso-box').style.display = acesso.checked ? '' : 'none'; };
+    if (acesso) acesso.addEventListener('change', syncAcesso);
+    syncAcesso();
     m.querySelector('#lm-save').onclick = async () => {
       const body = {
         name: m.querySelector('#lm-name').value.trim(),
@@ -905,6 +918,12 @@ Views.adminLocations = async function adminLocations(el) {
         active: m.querySelector('#lm-active').checked,
       };
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
+      if (acesso && acesso.checked) {
+        const username = m.querySelector('#lm-user').value.trim();
+        const password = m.querySelector('#lm-pass').value;
+        if (!username || password.length < 6) { toast('Informe o usuário e uma senha de ao menos 6 caracteres para o posto.', 'warning'); return; }
+        body.posto_user = { username, password };
+      }
       try {
         if (l) await API.patch('/locations/' + l.id, body);
         else await API.post('/locations', { ...body, entity_id: parseInt(m.querySelector('#lm-entity').value, 10) });

@@ -3,6 +3,7 @@ const express = require('express');
 const { query } = require('../db');
 const { ah } = require('./common');
 const { requireGestor: requireGestorFn } = require('./auth');
+const sincronizar = () => require('./postos').sincronizarPostos().catch(() => {});
 
 const router = express.Router();
 const TZ = `'America/Sao_Paulo'`;
@@ -21,6 +22,7 @@ const dataOk = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 
 // ------------------------------- Agenda -------------------------------
 router.get('/agenda', ah(async (req, res) => {
+  await sincronizar();
   const u = req.gbfUser;
   const hoje = (await query(`SELECT ${HOJE}::text AS d`)).rows[0].d;
   const de = dataOk(req.query.de) ? req.query.de : hoje;
@@ -77,6 +79,7 @@ router.get('/agenda', ah(async (req, res) => {
 
 // ------------------------------- Meu dia ------------------------------
 router.get('/hoje', ah(async (req, res) => {
+  await sincronizar();
   const u = req.gbfUser;
   const pT = [];
   const fT = filtroTarefas(u, pT);

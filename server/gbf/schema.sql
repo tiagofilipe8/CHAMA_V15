@@ -214,3 +214,5 @@ CREATE INDEX IF NOT EXISTS idx_gbf_espelho_recebido ON gbf_espelho(tabela, receb
 
 -- Login unico: liga o usuario do painel ao usuario da Central (menu unico em /app.html)
 ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS central_user_id BIGINT UNIQUE;
+-- Posto do Dia a dia = localização da Central (cadastro único em Administração > Localizações)
+ALTER TABLE gbf_locations ADD COLUMN IF NOT EXISTS central_location_id BIGINT UNIQUE;

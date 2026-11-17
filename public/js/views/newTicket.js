@@ -1,8 +1,7 @@
 // ---------------------------------------------------------------
 // Views.newTicket — Abertura de novo chamado (formulario guiado)
-//   Empresas no modo "simples" veem a lista facil de categorias (com icones);
-//   no modo "complexo" (e para a equipe) aparece a arvore detalhada.
-//   Em ambos os casos o chamado fica gravado na categoria complexa.
+//   Todos veem a lista de categorias simples (com icones); o chamado fica
+//   gravado na propria categoria escolhida.
 // ---------------------------------------------------------------
 
 function categoryOptions(cats) {
@@ -235,6 +234,7 @@ Views.newTicket = async function newTicket(el) {
         list.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
       const entToUse = preEntity || String(user.entity_id || '');
       if (entToUse && list.some((e) => String(e.id) === entToUse)) sel.value = entToUse;
+      if (list.length === 1) { sel.value = String(list[0].id); sel.closest('.col-md-6').classList.add('multi-empresa'); }
       sel.addEventListener('change', onEntity);
     } catch {}
   }
