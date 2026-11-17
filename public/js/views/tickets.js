@@ -365,7 +365,7 @@ Views.tickets = async function tickets(el, opts = {}) {
                   <br><small class="text-muted">${esc(t.display_category || '')}</small></td>
                 <td>${badgeStatus(t.status)}</td>
                 <td>${badgeImpact(t)}</td>
-                <td>${esc(t.location_name || '—')}<br><small class="text-muted">${esc(t.entity_name || '')}</small></td>
+                <td>${esc(t.location_name || '—')}<br><small class="text-muted multi-empresa">${esc(t.entity_name || '')}</small></td>
                 <td>${t.assigned_name ? esc(t.assigned_name) : '<span class="text-muted">—</span>'}</td>
                 <td>${esc(t.requester_name || '—')}</td>
                 <td class="text-muted small" title="${fmt.dateTime(t.created_at)}">${fmt.timeAgo(t.created_at)}</td>

@@ -48,7 +48,6 @@ function buildNav(u) {
     admin.push({ href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' });
     admin.push({ href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' });
   }
-  if (tiGestor) admin.push({ href: '#/ti/config', icon: 'bi-sliders', label: 'Config. do Dia a dia' });
   if (admin.length) items.push({ group: 'Administração', g: 'g-admin' }, ...admin.map((i) => ({ ...i, g: 'g-admin' })));
   // itens do Dia a dia da TI: marca o grupo (cor do módulo)
   items.forEach((i) => { if (!i.g && i.href && i.href.startsWith('#/ti')) i.g = 'g-ti'; });
@@ -205,6 +204,8 @@ function aplicarTema(tema) {
 
 function activeNav() {
   marcarModulo();
+  const fab = document.getElementById('fab-novo');
+  if (fab) fab.classList.toggle('show', Roles.can(currentUser(), 'ticket.create') && !/^#\/new/.test(location.hash));
   const path = location.hash.replace(/^#/, '');
   document.querySelectorAll('#side-nav .nav-item').forEach((a) => {
     const href = a.getAttribute('href') || '';

@@ -89,7 +89,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
             <div class="small fw-bold mb-1"><i class="bi bi-stopwatch me-1"></i> SLA 1ª Resposta / Resolução</div>
             <div class="small">TMR médio: <b>${sla.tmr_hours ?? 0}h</b> (1ª resposta)</div>
             <div class="small">TMA médio: <b>${sla.tma_hours ?? 0}h</b> (resolução)</div>
-            <div class="small text-muted mt-1">Prazo por entidade (due_at)</div>
+            <div class="small text-muted mt-1">Prazo (SLA) de cada chamado</div>
           </div>
         </div>
       </div>
@@ -104,7 +104,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       <td class="fw-bold">${esc(t.number)}</td>
       <td>${esc(t.title)}</td>
       <td>${badgePriority(t.priority)}</td>
-      <td>${esc(t.entity_name||'')}</td>
+      <td class="multi-empresa">${esc(t.entity_name||'')}</td>
       <td>${esc(t.assigned_name||'—')}</td>
       <td>${t.due_at ? fmt.dateTime(t.due_at) : '—'}</td>
       <td>${badge} ${mins < 0 ? Math.abs(mins)+'m atraso' : mins+'m restantes'}</td>
@@ -118,7 +118,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <span class="badge text-bg-dark">${(sla.radar||[]).length} tickets</span>
       </div>
       <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead><tr><th>ID</th><th>Título</th><th>Prioridade</th><th>Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Prioridade</th><th class="multi-empresa">Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
         <tbody>${radarRows}</tbody>
       </table></div>
     </div>`;
@@ -169,7 +169,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       <td>${badgeStatus(t.status)} ${t.approval_status === 'pending' ? '<span class="badge bd-pending-approval ms-1"><i class="bi bi-check2-circle"></i> aprovação</span>' : ''}</td>
       <td class="ticket-title">${esc(t.title)}</td>
       <td>${t.assigned_name ? `<span class="tech-chip"><i class="bi bi-person-badge"></i> ${esc(t.assigned_name)}</span>` : '<span class="text-muted">— não atribuído —</span>'}</td>
-      <td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.entity_name || '')}</small></td>
+      <td>${esc(t.requester_name || '—')}<br><small class="text-muted multi-empresa">${esc(t.entity_name || '')}</small></td>
       <td>${badgePriority(t.priority)}</td>
       <td class="text-muted small">${fmt.timeAgo(t.updated_at)}</td>
     </tr>`).join('');
@@ -201,12 +201,12 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0">
-          <thead><tr><th>Ativo</th><th>Entidade</th><th>Vencimento</th><th>Atraso</th></tr></thead>
+          <thead><tr><th>Ativo</th><th class="multi-empresa">Entidade</th><th>Vencimento</th><th>Atraso</th></tr></thead>
           <tbody>
             ${(maint.items || []).map(a => `
               <tr class="table-danger asset-row" data-id="${a.id}" style="cursor:pointer">
                 <td><b>${esc(a.name)}</b> ${esc(a.asset_tag || '')}${a.next_maintenance_notes ? `<br><small class="text-muted">${esc(a.next_maintenance_notes)}</small>` : ''}</td>
-                <td>${esc(a.entity_name || '')}</td>
+                <td class="multi-empresa">${esc(a.entity_name || '')}</td>
                 <td>${String(a.next_maintenance_date).slice(0, 10)}</td>
                 <td><span class="badge text-bg-danger">${a.days_overdue} dia(s)</span></td>
               </tr>`).join('')}

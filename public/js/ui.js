@@ -192,3 +192,89 @@ function starsHtml(n) {
   const v = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
   return `<span class="stars" title="${v} de 5">${'<i class="bi bi-star-fill"></i>'.repeat(v)}${'<i class="bi bi-star"></i>'.repeat(5 - v)}</span>`;
 }
+
+// ---------------------------------------------------------------
+// Siglas explicadas: qualquer sigla conhecida que aparece na tela ganha
+// um sublinhado pontilhado. No computador, passe o mouse; no celular, toque.
+// ---------------------------------------------------------------
+const SIGLAS = {
+  NOC: 'Central de Operações: painel que acompanha os chamados em tempo real (do inglês Network Operations Center).',
+  SLA: 'Prazo combinado para atender e resolver o chamado (acordo de nível de serviço).',
+  TMR: 'Tempo médio de resposta: quanto a equipe demora, em média, para dar a 1ª resposta.',
+  TMA: 'Tempo médio de atendimento: quanto demora, em média, para resolver o chamado.',
+  OS: 'Ordem de Serviço: o mesmo que chamado.',
+  TI: 'Tecnologia da Informação: a equipe que cuida de computadores, rede, internet e sistemas.',
+  TAG: 'Etiqueta de patrimônio que identifica cada equipamento.',
+  PDV: 'Ponto de Venda: o caixa.',
+  IP: 'Endereço do equipamento na rede.',
+  MAC: 'Código único da placa de rede do equipamento.',
+  CPU: 'Processador do computador.',
+  RAM: 'Memória do computador.',
+  HD: 'Disco onde ficam os arquivos do computador.',
+  SSD: 'Disco rápido onde ficam os arquivos do computador.',
+  DNS: 'Serviço que transforma o nome de um site no endereço dele na internet.',
+  VPN: 'Conexão segura com a rede da empresa pela internet.',
+  UF: 'Estado (sigla, ex.: SP).',
+  QR: 'Código QR: aponte a câmera do celular para ler.',
+  ID: 'Número que identifica o registro.',
+};
+const SIGLA_RE = new RegExp(`(^|[^\\wÀ-ÿ])(${Object.keys(SIGLAS).join('|')})(?=$|[^\\wÀ-ÿ])`, 'g');
+const SIGLA_PULAR = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'CODE', 'PRE', 'ABBR', 'SVG', 'TEXT', 'TSPAN', 'TITLE', 'BUTTON']);
+function marcarSiglas(raiz) {
+  if (!raiz || raiz.nodeType !== 1) return;
+  const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      for (let p = n.parentNode; p && p !== raiz.parentNode; p = p.parentNode) {
+        if (p.nodeType === 1 && (SIGLA_PULAR.has(p.nodeName.toUpperCase()) || p.isContentEditable || (p.classList && p.classList.contains('sem-sigla')))) return NodeFilter.FILTER_REJECT;
+      }
+      SIGLA_RE.lastIndex = 0;
+      return SIGLA_RE.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    },
+  });
+  const nos = [];
+  while (walker.nextNode()) nos.push(walker.currentNode);
+  for (const n of nos) {
+    const frag = document.createDocumentFragment();
+    let ult = 0;
+    const txt = n.nodeValue;
+    SIGLA_RE.lastIndex = 0;
+    let m;
+    while ((m = SIGLA_RE.exec(txt))) {
+      const ini = m.index + m[1].length;
+      frag.appendChild(document.createTextNode(txt.slice(ult, ini)));
+      const ab = document.createElement('abbr');
+      ab.className = 'sigla';
+      ab.title = SIGLAS[m[2]];
+      ab.textContent = m[2];
+      frag.appendChild(ab);
+      ult = ini + m[2].length;
+    }
+    frag.appendChild(document.createTextNode(txt.slice(ult)));
+    n.parentNode.replaceChild(frag, n);
+  }
+}
+function ligarSiglas(aviso) {
+  let fila = [];
+  let agendado = false;
+  const obs = new MutationObserver((muts) => {
+    muts.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) fila.push(n); }));
+    if (!agendado && fila.length) {
+      agendado = true;
+      requestAnimationFrame(() => {
+        obs.disconnect();
+        const lote = fila; fila = []; agendado = false;
+        lote.forEach((n) => { if (n.isConnected) marcarSiglas(n); });
+        obs.observe(document.body, { childList: true, subtree: true });
+      });
+    }
+  });
+  marcarSiglas(document.body);
+  obs.observe(document.body, { childList: true, subtree: true });
+  // toque no celular: mostra a explicação
+  document.addEventListener('click', (ev) => {
+    const ab = ev.target.closest && ev.target.closest('abbr.sigla');
+    if (ab) aviso(`${ab.textContent}: ${ab.title}`);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => ligarSiglas((msg) => toast(msg, 'info')));

@@ -43,6 +43,91 @@
     set(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sem storage */ } },
   };
 
+  // ---------------------------------------------------------------
+  // Siglas explicadas: qualquer sigla conhecida que aparece na tela ganha
+  // um sublinhado pontilhado. No computador, passe o mouse; no celular, toque.
+  // ---------------------------------------------------------------
+  const SIGLAS = {
+    NOC: 'Central de Operações: painel que acompanha os chamados em tempo real (do inglês Network Operations Center).',
+    SLA: 'Prazo combinado para atender e resolver o chamado (acordo de nível de serviço).',
+    TMR: 'Tempo médio de resposta: quanto a equipe demora, em média, para dar a 1ª resposta.',
+    TMA: 'Tempo médio de atendimento: quanto demora, em média, para resolver o chamado.',
+    OS: 'Ordem de Serviço: o mesmo que chamado.',
+    TI: 'Tecnologia da Informação: a equipe que cuida de computadores, rede, internet e sistemas.',
+    TAG: 'Etiqueta de patrimônio que identifica cada equipamento.',
+    PDV: 'Ponto de Venda: o caixa.',
+    IP: 'Endereço do equipamento na rede.',
+    MAC: 'Código único da placa de rede do equipamento.',
+    CPU: 'Processador do computador.',
+    RAM: 'Memória do computador.',
+    HD: 'Disco onde ficam os arquivos do computador.',
+    SSD: 'Disco rápido onde ficam os arquivos do computador.',
+    DNS: 'Serviço que transforma o nome de um site no endereço dele na internet.',
+    VPN: 'Conexão segura com a rede da empresa pela internet.',
+    UF: 'Estado (sigla, ex.: SP).',
+    QR: 'Código QR: aponte a câmera do celular para ler.',
+    ID: 'Número que identifica o registro.',
+  };
+  const SIGLA_RE = new RegExp(`(^|[^\\wÀ-ÿ])(${Object.keys(SIGLAS).join('|')})(?=$|[^\\wÀ-ÿ])`, 'g');
+  const SIGLA_PULAR = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'CODE', 'PRE', 'ABBR', 'SVG', 'TEXT', 'TSPAN', 'TITLE', 'BUTTON']);
+  function marcarSiglas(raiz) {
+    if (!raiz || raiz.nodeType !== 1) return;
+    const walker = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        for (let p = n.parentNode; p && p !== raiz.parentNode; p = p.parentNode) {
+          if (p.nodeType === 1 && (SIGLA_PULAR.has(p.nodeName.toUpperCase()) || p.isContentEditable || (p.classList && p.classList.contains('sem-sigla')))) return NodeFilter.FILTER_REJECT;
+        }
+        SIGLA_RE.lastIndex = 0;
+        return SIGLA_RE.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+    const nos = [];
+    while (walker.nextNode()) nos.push(walker.currentNode);
+    for (const n of nos) {
+      const frag = document.createDocumentFragment();
+      let ult = 0;
+      const txt = n.nodeValue;
+      SIGLA_RE.lastIndex = 0;
+      let m;
+      while ((m = SIGLA_RE.exec(txt))) {
+        const ini = m.index + m[1].length;
+        frag.appendChild(document.createTextNode(txt.slice(ult, ini)));
+        const ab = document.createElement('abbr');
+        ab.className = 'sigla';
+        ab.title = SIGLAS[m[2]];
+        ab.textContent = m[2];
+        frag.appendChild(ab);
+        ult = ini + m[2].length;
+      }
+      frag.appendChild(document.createTextNode(txt.slice(ult)));
+      n.parentNode.replaceChild(frag, n);
+    }
+  }
+  function ligarSiglas(aviso) {
+    let fila = [];
+    let agendado = false;
+    const obs = new MutationObserver((muts) => {
+      muts.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) fila.push(n); }));
+      if (!agendado && fila.length) {
+        agendado = true;
+        requestAnimationFrame(() => {
+          obs.disconnect();
+          const lote = fila; fila = []; agendado = false;
+          lote.forEach((n) => { if (n.isConnected) marcarSiglas(n); });
+          obs.observe(document.body, { childList: true, subtree: true });
+        });
+      }
+    });
+    marcarSiglas(document.body);
+    obs.observe(document.body, { childList: true, subtree: true });
+    // toque no celular: mostra a explicação
+    document.addEventListener('click', (ev) => {
+      const ab = ev.target.closest && ev.target.closest('abbr.sigla');
+      if (ab) aviso(`${ab.textContent}: ${ab.title}`);
+    });
+  }
+  ligarSiglas((msg) => toast(msg));
+
   // Tema claro/escuro: o mesmo escolhido na Central (guardado no navegador)
   const aplicarTema = () => document.documentElement.setAttribute('data-bs-theme', store.get('tema') === 'dark' ? 'dark' : 'light');
   aplicarTema();
@@ -255,7 +340,7 @@
       // o que já existe na parte Orcim da Central abre lá (sem telas repetidas)
       const naCentral = {
         demandas: b ? `#/tickets/${encodeURIComponent(b)}` : '#/tickets', orcim: '#/dashboard', tudo: '#/dashboard',
-        manutencoes: '#/inventory', usuarios: '#/admin/users', conta: '#/perfil',
+        manutencoes: '#/inventory', usuarios: '#/admin/users', conta: '#/perfil', config: '#/admin/entities',
       }[a];
       // cadastro de posto é único: Administração > Localizações (cria local + usuário do posto)
       if (a === 'postos' && b === 'novo') { avisarCentral({ gbf: 'abrir', hash: '#/admin/locations' }); return; }
@@ -466,8 +551,8 @@
       par.push(`O tempo médio até resolver foi de ${dur(o.tempo_medio_resolucao)} (mediana de ${dur(o.tempo_mediano_resolucao)})`
         + `${o.tempo_medio_primeira_resposta !== null ? `, e a primeira resposta levou em média ${dur(o.tempo_medio_primeira_resposta)}` : ''}.`);
     }
-    const emp = d.orcim.por_empresa[0]; const tec = d.orcim.por_tecnico[0];
-    if (emp) par.push(`A empresa com mais chamados abertos no período foi ${emp.nome} (${emp.total}).`);
+    const cat = d.orcim.por_categoria[0]; const tec = d.orcim.por_tecnico[0];
+    if (cat && cat.nome !== '—') par.push(`A categoria com mais chamados abertos no período foi ${cat.nome} (${cat.total}).`);
     if (tec && tec.nome !== 'Sem técnico') par.push(`Quem mais resolveu chamados pela Orcim foi ${tec.nome} (${tec.total}, média de ${dur(tec.tempo_medio)} por chamado).`);
     par.push(`Na data deste relatório, há ${plural(o.abertas_agora, 'chamado', 'chamados')} em aberto`
       + `${o.atrasadas_agora ? `, ${plural(o.atrasadas_agora, 'atrasado', 'atrasados')}` : ', nenhum atrasado'}`
@@ -497,7 +582,7 @@
     const itens = [];
     d.orcim.atrasadas.forEach((x) => itens.push({
       tipo: 'Chamado atrasado', texto: `${x.number || '#' + x.id} — ${x.title}`,
-      detalhe: `${x.entity_name}${x.assigned_name ? ` · ${x.assigned_name}` : ' · sem técnico'} · prazo ${fmtData(x.due_at)}`,
+      detalhe: `${x.assigned_name ? x.assigned_name : 'sem técnico'} · prazo ${fmtData(x.due_at)}`,
       link: `#/demandas/${x.id}`,
     }));
     d.ti.postos_atrasados.forEach((x) => itens.push({
@@ -569,8 +654,8 @@
       <div class="grid-2">
         <div class="card-x"><h3><i class="bi bi-bar-chart"></i>Chamados abertos × resolvidos ${tituloEscala}</h3>
           ${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_ })}</div>
-        <div class="card-x"><h3><i class="bi bi-buildings"></i>Chamados abertos por empresa</h3>
-          ${barras(d.orcim.por_empresa, { vazio: 'Nenhum chamado no período.' })}
+        <div class="card-x"><h3><i class="bi bi-tags"></i>Chamados abertos por categoria</h3>
+          ${barras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' })}
           <h3 class="mt-3"><i class="bi bi-person-gear"></i>Resolvidos por técnico da Orcim</h3>
           ${barras(d.orcim.por_tecnico, { vazio: 'Nenhum resolvido no período.' })}</div>
       </div>
@@ -669,7 +754,7 @@
     <div style="flex:0 0 130px;text-align:center">${medidor(o.prazo_cumprido_pct, 'Dentro do prazo')}<div class="muted">dentro do prazo</div></div>
   </div>
   <div class="grafico-box"><h3>Chamados abertos × resolvidos ${tituloEscala}</h3>${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_, altura: 190 })}</div>
-  <div class="grafico-box"><h3>Chamados abertos por empresa</h3>${graficoBarrasSvg(d.orcim.por_empresa)}</div>
+  <div class="grafico-box"><h3>Chamados abertos por categoria</h3>${graficoBarrasSvg(d.orcim.por_categoria)}</div>
   <div class="grafico-box"><h3>Resolvidos por técnico da Orcim</h3>${d.orcim.por_tecnico.length
     ? `<table><thead><tr><th>Técnico</th><th class="num">Resolvidos</th><th class="num">Tempo médio</th></tr></thead><tbody>${d.orcim.por_tecnico.map((x) => `<tr><td>${esc(x.nome)}</td><td class="num">${x.total}</td><td class="num">${dur(x.tempo_medio)}</td></tr>`).join('')}</tbody></table>`
     : '<p class="muted">Nenhum chamado resolvido no período.</p>'}</div>
@@ -1916,7 +2001,7 @@
               ${btnReag({ tipo: 'posto', id: p.id, data: p.next_visit_date, hora: p.next_visit_time }, 'ms-1')}</dd>
             <dt>Frequência</dt><dd>${esc(p.frequency_label)}</dd>
             <dt>Checklist</dt><dd>${p.checklist_id ? `<a href="#/checklists/${p.checklist_id}">${esc(p.checklist_name)}</a>` : 'Nenhum'}</dd>
-            <dt>Empresa na Orcim</dt><dd>${esc(p.entity_name || 'Não vinculada')}</dd>
+            <dt class="so-multi">Empresa na Orcim</dt><dd class="so-multi">${esc(p.entity_name || 'Não vinculada')}</dd>
           </dl>
           ${p.notes ? `<hr><div class="small-muted mb-1">Observações</div><div style="white-space:pre-wrap">${esc(p.notes)}</div>` : ''}
         </div>
@@ -1930,8 +2015,8 @@
         </div>
       </div>
       <div class="grid-3">
-        <div class="card-x"><h3><i class="bi bi-inboxes"></i>Demandas Orcim abertas</h3>
-          ${!p.entity_id ? '<div class="small-muted">Vincule o posto a uma empresa da Orcim (em Editar posto) para ver as demandas dela aqui.</div>'
+        <div class="card-x"><h3><i class="bi bi-inboxes"></i>Chamados abertos deste posto</h3>
+          ${!p.entity_id && !p.central_location_id ? '<div class="small-muted">Este posto ainda não está ligado a uma localização. Cadastre-o em Administração › Localizações.</div>'
     : p.demandas_orcim.length ? p.demandas_orcim.map((d) => `<div class="task" data-href="#/demandas/${d.id}"><div class="ttl">${esc(d.title)}</div>
               <div class="meta"><span class="num">${esc(d.number || '#' + d.id)}</span>${tag('tag-gray', d.status_label)}${d.due_at && new Date(d.due_at) < new Date() ? tag('tag-red', 'Atrasada') : ''}</div></div>`).join('')
       : vazio('Nenhuma demanda aberta na Orcim.', 'emoji-smile')}
@@ -1987,7 +2072,7 @@
             <select class="form-select" id="fp-ck" name="checklist_id"><option value="">Nenhum</option>
               ${checklists.filter((c) => c.active || String(c.id) === String(p?.checklist_id)).map((c) => `<option value="${c.id}" ${String(c.id) === String(p?.checklist_id) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
             ${checklists.length ? '' : '<div class="form-text">Crie um modelo em <a href="#/checklists/novo">Checklists</a>.</div>'}</div>
-          <div class="col-sm-6"><label class="form-label" for="fp-ent">Empresa correspondente na Orcim</label>
+          <div class="col-sm-6 so-multi"><label class="form-label" for="fp-ent">Empresa correspondente na Orcim</label>
             <select class="form-select" id="fp-ent" name="entity_id"><option value="">Não vincular</option>
               ${empresas.map((e) => `<option value="${e.id}" ${String(e.id) === String(p?.entity_id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
             <div class="form-text">Mostra as demandas da Orcim deste posto na ficha e na visita.</div></div>

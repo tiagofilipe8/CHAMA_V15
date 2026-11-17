@@ -188,7 +188,7 @@ Views.inventory = async function inventory(el) {
             <tr>
               <th>Foto</th>
               <th>Status</th>
-              <th>Entidade</th>
+              <th class="multi-empresa">Entidade</th>
               <th>Localização</th>
               <th>Nome</th>
               <th>Tipo</th>
@@ -239,7 +239,7 @@ Views.inventory = async function inventory(el) {
               : ''}
           </td>
           <td><span class="badge text-bg-${INV_STATUS_TONE[a.status]||'secondary'}">${INV_STATUS[a.status]||a.status}</span>${a.next_maintenance_date && String(a.next_maintenance_date).slice(0,10) <= new Date().toISOString().slice(0,10) && a.status !== 'DISPOSED' && a.status !== 'LOST' ? ` <i class="bi bi-tools text-danger" title="Manutenção vencida"></i>` : ''}</td>
-          <td class="small">${esc(a.entity_name||'')}</td>
+          <td class="small multi-empresa">${esc(a.entity_name||'')}</td>
           <td class="small">${esc(a.location||'—')}</td>
           <td>
             <div class="fw-semibold">${esc(a.name)}</div>
@@ -283,7 +283,7 @@ Views.assetDetail = async function assetDetail(id, el) {
           <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>ID ORCIM:</b> ${esc(a.asset_tag||'—')}</div></div>
           <div class="row"><div class="col-6"><b>Tipo:</b> ${INV_TYPES[a.type]||a.type}</div><div class="col-6"><b>Status:</b> <span class="badge text-bg-${INV_STATUS_TONE[a.status]}">${INV_STATUS[a.status]}</span></div></div>
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
-          <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
+          <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6 multi-empresa"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
           <div class="row"><div class="col-6"><b>Local:</b> ${esc(a.location||'—')}</div><div class="col-6"><b>Setor:</b> ${esc(a.department||'—')}</div></div>
           <div class="row"><div class="col-6"><b>Usuário / Posse:</b> ${esc(a.responsible_name||a.responsible_user_id||'—')}</div><div class="col-6"><b>Data de compra:</b> ${a.purchase_date ? String(a.purchase_date).slice(0,10) : '—'}</div></div>
           <div class="row"><div class="col-6"><b>Garantia até:</b> ${a.warranty_expiration ? String(a.warranty_expiration).slice(0,10) : '—'}</div><div class="col-6"><b>IP:</b> ${esc(a.ip_address||'—')}</div></div>
@@ -427,7 +427,7 @@ Views.assetDetail = async function assetDetail(id, el) {
   document.getElementById('btn-provision').onclick = async ()=>{
     try{
       const r = await API.post('/inventory/agents/provision', { entity_id: a.entity_id });
-      document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h · Entidade: ${esc(a.entity_name)}</small></div>`;
+      document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h<span class="multi-empresa"> · Entidade: ${esc(a.entity_name)}</span></small></div>`;
     }catch(e){ showError(e); }
   };
   document.getElementById('btn-new-os-asset').onclick = ()=> { location.hash = `#/new?entity_id=${a.entity_id}&asset_id=${a.id}`; };
@@ -540,14 +540,14 @@ Views.assetDetail = async function assetDetail(id, el) {
 };
 
 Views.agents = async function agents(el){
-  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th>Entidade</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
+  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th class="multi-empresa">Entidade</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
   try{
     const agents = await API.get('/inventory/agents');
     document.getElementById('agents-body').innerHTML = agents.length ? agents.map(a=>`
       <tr>
         <td><code class="small">${esc(a.agent_id.slice(0,16))}…</code></td>
         <td>${a.asset_name ? `<a href="#/inventory/${a.asset_id}">${esc(a.asset_name)}</a>` : '—'}</td>
-        <td>${esc(a.entity_name||'')}</td>
+        <td class="multi-empresa">${esc(a.entity_name||'')}</td>
         <td>${esc(a.version||'—')}</td>
         <td><span class="badge text-bg-${a.status==='ONLINE'?'success':a.status==='OFFLINE'?'warning':'secondary'}">${a.status}</span></td>
         <td class="small text-muted">${a.last_seen_at ? fmt.timeAgo(a.last_seen_at) : 'nunca'}</td>

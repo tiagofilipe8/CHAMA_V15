@@ -145,12 +145,12 @@ Views.newTicket = async function newTicket(el) {
   // resumo "Empresa · Posto" mostrado no topo
   const updateWhere = () => {
     const entSel = document.getElementById('nt-entity');
-    const entName = chooseEntity ? (entSel.value ? entSel.selectedOptions[0].textContent : '') : (user.entity_name || '');
+    const entName = window.EMPRESA_UNICA ? '' : (chooseEntity ? (entSel.value ? entSel.selectedOptions[0].textContent : '') : (user.entity_name || ''));
     const locSel = document.getElementById('nt-location');
     const locName = !locSel.disabled && locSel.value ? locSel.selectedOptions[0].textContent : '';
     const txt = [entName, locName].filter(Boolean).join(' · ');
-    document.getElementById('nt-where').textContent = txt || 'Escolha a empresa e a localização';
-    if (!entName || (!locSel.disabled && !locSel.value)) showWhere();
+    document.getElementById('nt-where').textContent = txt || (window.EMPRESA_UNICA ? 'Escolha a localização' : 'Escolha a empresa e a localização');
+    if ((!entName && !window.EMPRESA_UNICA) || (!locSel.disabled && !locSel.value)) showWhere();
   };
   document.getElementById('nt-location').addEventListener('change', updateWhere);
 
@@ -277,7 +277,7 @@ Views.newTicket = async function newTicket(el) {
     const entityId = currentEntity();
     const title = document.getElementById('nt-title').value.trim();
     const desc = document.getElementById('nt-desc').value.trim();
-    const needWhere = () => { showWhere(); toast('Confira o local do chamado (empresa e localização).', 'warning'); };
+    const needWhere = () => { showWhere(); toast(window.EMPRESA_UNICA ? 'Confira a localização do chamado.' : 'Confira o local do chamado (empresa e localização).', 'warning'); };
     const catSel = document.getElementById('nt-cat');
     const locSel = document.getElementById('nt-location');
     if (chooseEntity && !entityId) { needWhere(); return; }

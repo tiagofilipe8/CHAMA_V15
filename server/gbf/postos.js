@@ -26,15 +26,23 @@ const POSTO_SELECT = `
 
 // Nome da empresa e demandas abertas vêm da Central (que pode estar em outro banco)
 async function comCentral(lista) {
-  const ids = [...new Set(lista.map((p) => p.entity_id).filter(Boolean).map(String))];
-  if (!ids.length) return lista.map((p) => ({ ...p, entity_name: null, demandas_orcim_abertas: null }));
-  const { rows } = await queryCentral(
-    `SELECT e.id, e.name,
-            (SELECT count(*)::int FROM tickets tk WHERE tk.entity_id = e.id AND tk.status NOT IN (5,6,7)) AS abertas
-     FROM entities e WHERE e.id = ANY($1::bigint[])`, [ids]);
-  const mapa = new Map(rows.map((r) => [String(r.id), r]));
+  // posto ligado a uma localização da Central: conta os chamados daquele local;
+  // posto antigo sem ligação: conta pela empresa (como antes)
+  const locIds = [...new Set(lista.map((p) => p.central_location_id).filter(Boolean).map(String))];
+  const entIds = [...new Set(lista.filter((p) => !p.central_location_id).map((p) => p.entity_id).filter(Boolean).map(String))];
+  const [porLocal, porEmpresa] = await Promise.all([
+    locIds.length ? queryCentral(
+      `SELECT location_id AS id, count(*)::int AS abertas FROM tickets
+       WHERE location_id = ANY($1::bigint[]) AND status NOT IN (5,6,7) GROUP BY location_id`, [locIds]) : { rows: [] },
+    entIds.length ? queryCentral(
+      `SELECT e.id, e.name, (SELECT count(*)::int FROM tickets tk WHERE tk.entity_id = e.id AND tk.status NOT IN (5,6,7)) AS abertas
+       FROM entities e WHERE e.id = ANY($1::bigint[])`, [entIds]) : { rows: [] },
+  ]);
+  const mLoc = new Map(porLocal.rows.map((r) => [String(r.id), r.abertas]));
+  const mEnt = new Map(porEmpresa.rows.map((r) => [String(r.id), r]));
   return lista.map((p) => {
-    const e = p.entity_id ? mapa.get(String(p.entity_id)) : null;
+    if (p.central_location_id) return { ...p, entity_name: null, demandas_orcim_abertas: mLoc.get(String(p.central_location_id)) || 0 };
+    const e = p.entity_id ? mEnt.get(String(p.entity_id)) : null;
     return { ...p, entity_name: e?.name ?? null, demandas_orcim_abertas: p.entity_id ? (e?.abertas ?? 0) : null };
   });
 }
@@ -131,10 +139,13 @@ router.get('/postos/:id', ah(async (req, res) => {
            WHERE t.location_id = $1 AND t.status NOT IN ('concluida','cancelada') ORDER BY t.due_at NULLS LAST`, [p.id]),
     query(`SELECT id, title, status, priority, desired_date FROM gbf_requests
            WHERE location_id = $1 AND status IN ('a_fazer','em_andamento') ORDER BY created_at DESC`, [p.id]),
-    p.entity_id
+    p.central_location_id
       ? queryCentral(`SELECT id, number, title, status, due_at, created_at FROM tickets
-               WHERE entity_id = $1 AND status NOT IN (5,6,7) ORDER BY created_at ASC LIMIT 30`, [p.entity_id])
-      : { rows: [] },
+               WHERE location_id = $1 AND status NOT IN (5,6,7) ORDER BY created_at ASC LIMIT 30`, [p.central_location_id])
+      : p.entity_id
+        ? queryCentral(`SELECT id, number, title, status, due_at, created_at FROM tickets
+                 WHERE entity_id = $1 AND status NOT IN (5,6,7) ORDER BY created_at ASC LIMIT 30`, [p.entity_id])
+        : { rows: [] },
   ]);
   res.json({
     ...fmtPosto(p),

@@ -372,3 +372,9 @@ html[data-bs-theme="dark"] .table { --bs-table-bg: transparent; --bs-table-color
 html[data-bs-theme="dark"] svg text { fill: #cbd5e1; }
 html[data-bs-theme="dark"] svg line { stroke: #2b3947; }
 html[data-bs-theme="dark"] .bar-track { background: #223040; }
+
+/* Empresa única: dentro da Central some o que era para várias empresas */
+body.embed .so-multi { display: none !important; }
+
+/* Siglas explicadas */
+abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }

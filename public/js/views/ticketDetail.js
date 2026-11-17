@@ -110,7 +110,7 @@ Views.ticketDetail = function ticketDetail(id) {
             ${t.approval_status !== 'none' ? `<span class="badge bd-approval-${t.approval_status}">${LABELS.approval[t.approval_status]}</span>` : ''}
           </div>
           <h5 class="mt-1 mb-0">${esc(t.title)}</h5>
-          <small class="text-muted">${esc(t.entity_name || '')}${t.location_name ? ' · ' + esc(t.location_name) : ''} · ${esc(t.display_category || '')}</small>
+          <small class="text-muted"><span class="multi-empresa">${esc(t.entity_name || '')} · </span>${t.location_name ? esc(t.location_name) + ' · ' : ''}${esc(t.display_category || '')}</small>
         </div>
         <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
       </div>
@@ -177,7 +177,7 @@ Views.ticketDetail = function ticketDetail(id) {
                 <tbody>
                   <tr><th>Solicitante</th><td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.requester_email || '')}</small>
                     ${t.requester_rating_summary && t.requester_rating_summary.count ? `<br><small title="Média das notas dadas pela equipe">${starsHtml(t.requester_rating_summary.avg)} ${String(t.requester_rating_summary.avg).replace('.', ',')} em ${t.requester_rating_summary.count} chamado(s)</small>` : ''}</td></tr>
-                  <tr><th>Empresa</th><td>${esc(t.entity_name || '—')}</td></tr>
+                  <tr class="multi-empresa"><th>Empresa</th><td>${esc(t.entity_name || '—')}</td></tr>
                   <tr><th>Localização</th><td>${t.location_name ? esc(t.location_name) + (t.location_code ? ` <small class="text-muted">(${esc(t.location_code)})</small>` : '') : '<span class="text-muted">—</span>'}</td></tr>
                   <tr><th>Categoria</th><td>${esc(t.display_category || '—')}${triage && t.simple_category_name ? `<br><small class="text-muted">Na lista simples: ${esc(t.simple_category_icon || '')} ${esc(t.simple_category_name)}</small>` : ''}</td></tr>
                   <tr><th>Urgência</th><td>${esc(t.impact_name || LABELS.priority[t.priority] || '—')}</td></tr>
@@ -514,7 +514,7 @@ Views.ticketDetail = function ticketDetail(id) {
       const eLoc = el.querySelector('#e-location');
       if (eLoc) {
         API.get(`/locations?entity_id=${t.entity_id}&active=true`).then((locs) => {
-          if (!locs.length) { eLoc.innerHTML = '<option value="">Empresa sem localizações</option>'; eLoc.disabled = true; return; }
+          if (!locs.length) { eLoc.innerHTML = '<option value="">Nenhuma localização cadastrada</option>'; eLoc.disabled = true; return; }
           eLoc.innerHTML = '<option value="">— nenhuma —</option>' + locs.map((l) =>
             `<option value="${l.id}" ${String(l.id) === String(t.location_id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
         }).catch(() => {});
