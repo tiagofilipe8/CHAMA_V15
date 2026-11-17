@@ -211,3 +211,6 @@ CREATE TABLE IF NOT EXISTS gbf_espelho (
     PRIMARY KEY (tabela, chave)
 );
 CREATE INDEX IF NOT EXISTS idx_gbf_espelho_recebido ON gbf_espelho(tabela, recebido_em DESC);
+
+-- Login unico: liga o usuario do painel ao usuario da Central (menu unico em /app.html)
+ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS central_user_id BIGINT UNIQUE;

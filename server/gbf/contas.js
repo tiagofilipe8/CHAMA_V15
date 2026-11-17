@@ -6,6 +6,8 @@ const { query } = require('../db');
 const { signToken, publicUser, requireGbf, requireGestor } = require('./auth');
 const { ah, getSetting, setSetting } = require('./common');
 const { queryCentral, statusCentral } = require('./fonte');
+const crypto = require('crypto');
+const central = require('../middleware/auth');
 
 const publico = express.Router();
 const privado = express.Router();
@@ -29,6 +31,44 @@ publico.post('/auth/login', loginLimiter, ah(async (req, res) => {
   }
   await query('UPDATE gbf_users SET last_login = now() WHERE id = $1', [u.id]);
   res.json({ token: signToken(u), user: publicUser(u) });
+}));
+
+// ------------------- Login único (dentro da Central) -------------------
+// A Central abre o Dia a dia da TI dentro do próprio menu. Quem já entrou na Central
+// troca o token dela por um token do painel, sem digitar senha de novo.
+// Quem pode: permissão "ti.view" (técnico) ou "ti.manage" (gestor) em Perfis e permissões.
+publico.post('/auth/central', central.requireAuth, ah(async (req, res) => {
+  const cu = req.user;
+  if (cu.preview) return res.status(403).json({ error: 'O Dia a dia da TI não abre na Visualização de Cargos.' });
+  const gestor = central.has(cu, 'ti.manage');
+  if (!gestor && !central.has(cu, 'ti.view')) {
+    return res.status(403).json({ error: 'Seu perfil não tem acesso ao Dia a dia da TI. Peça ao administrador (Perfis e permissões).' });
+  }
+  const role = gestor ? 'gestor' : 'tecnico';
+  let { rows } = await query('SELECT * FROM gbf_users WHERE central_user_id = $1', [cu.id]);
+  if (!rows.length) {
+    // usuário do painel com o mesmo login, ainda não ligado: liga
+    ({ rows } = await query(
+      'UPDATE gbf_users SET central_user_id = $1 WHERE lower(username) = lower($2) AND central_user_id IS NULL RETURNING *',
+      [cu.id, cu.username]));
+  }
+  if (!rows.length) {
+    let username = String(cu.username || `central${cu.id}`).toLowerCase();
+    const existe = await query('SELECT 1 FROM gbf_users WHERE lower(username) = $1', [username]);
+    if (existe.rows.length) username = `${username}.central${cu.id}`;
+    // senha aleatória: este usuário entra pela Central, não pela tela de login do painel
+    const hash = await bcrypt.hash(crypto.randomBytes(24).toString('base64url'), 10);
+    ({ rows } = await query(
+      `INSERT INTO gbf_users (username, password_hash, name, email, phone, role, must_change_password, central_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7) RETURNING *`,
+      [username, hash, cu.name || cu.username, cu.email || null, cu.phone || null, role, cu.id]));
+  } else {
+    ({ rows } = await query(
+      `UPDATE gbf_users SET name = $2, role = $3, active = TRUE, must_change_password = FALSE,
+              last_login = now(), updated_at = now() WHERE id = $1 RETURNING *`,
+      [rows[0].id, cu.name || rows[0].name, role]));
+  }
+  res.json({ token: signToken(rows[0]), user: publicUser(rows[0]) });
 }));
 
 publico.get('/config/publica', ah(async (req, res) => {

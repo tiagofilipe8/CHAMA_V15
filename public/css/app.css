@@ -644,3 +644,12 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
   .cal-count, .cal-pill { min-width: 18px; height: 17px; padding: 0 4px; font-size: .66rem; }
   .cal-done { display: none; }
 }
+
+/* Menu em categorias (Orcim / Dia a dia da TI / Administração) */
+.nav-group { color: #64748b; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 14px 12px 6px; }
+.nav-group:first-child { padding-top: 6px; }
+
+/* Dia a dia da TI aberto dentro da Central */
+.main-content.ti-embed { padding: 0; display: flex; }
+.ti-frame { border: 0; width: 100%; flex: 1; min-height: calc(100vh - 67px); display: block; background: #f4f6f9; }

@@ -36,6 +36,9 @@ const PERMISSIONS = [
   { key: 'dashboard.view', group: 'Painel e inventário', label: 'Ver o painel' },
   { key: 'inventory.view', group: 'Painel e inventário', label: 'Ver o inventário de equipamentos' },
   { key: 'inventory.manage', group: 'Painel e inventário', label: 'Cadastrar e editar equipamentos' },
+  // Dia a dia da TI (rotina do tecnico do grupo: agenda, postos, visitas, atividades)
+  { key: 'ti.view', group: 'Dia a dia da TI', label: 'Usar o Dia a dia da TI (agenda, postos, visitas, solicitações, atividades)' },
+  { key: 'ti.manage', group: 'Dia a dia da TI', label: 'Gerenciar o Dia a dia da TI e ver o Painel do gestor' },
   // Administracao
   { key: 'users.manage', group: 'Administração', label: 'Gerenciar usuários da própria empresa' },
   { key: 'locations.manage', group: 'Administração', label: 'Gerenciar localizações da própria empresa' },
@@ -55,6 +58,7 @@ const DEFAULTS = {
     'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.cancel', 'ticket.internal', 'ticket.rating',
     'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage', 'locations.manage',
+    'ti.view', 'ti.manage',
   ],
   moderator: [
     'ticket.create', 'ticket.view_all', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
@@ -68,6 +72,7 @@ const DEFAULTS = {
   manager: [
     'ticket.create', 'ticket.view_company', 'ticket.approve', 'ticket.cancel', 'ticket.manager_note',
     'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
+    'ti.view', 'ti.manage',
   ],
   user: ['ticket.create', 'ticket.approve', 'ticket.cancel'],
 };

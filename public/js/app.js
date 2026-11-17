@@ -3,19 +3,42 @@
 // ---------------------------------------------------------------
 
 // Menu lateral montado a partir das permissoes do perfil
+//  - Orcim: o sistema de chamados (painel, chamados, inventario...)
+//  - Dia a dia da TI: rotina do tecnico do grupo (aberta dentro desta tela, ver TI abaixo)
+//  - Administracao
 function buildNav(u) {
   const can = (perm) => Roles.can(u, perm);
   const master = Roles.isMaster(u);
   const client = Roles.isClient(u);
   const items = [];
-  if (can('dashboard.view')) items.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
+  const orcim = [];
+  if (can('dashboard.view')) orcim.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados'
     : (can('ticket.view_company') && !client) ? 'Chamados da empresa' : 'Meus Chamados';
-  items.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
-  if (client && can('ticket.view_company')) items.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe' });
-  items.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
-  if (can('inventory.view')) items.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
-  if (can('ticket.create')) items.push({ href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' });
+  orcim.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
+  if (client && can('ticket.view_company')) orcim.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe' });
+  orcim.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
+  if (can('inventory.view')) orcim.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
+  if (can('ticket.create')) orcim.push({ href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' });
+  items.push({ group: 'Orcim' }, ...orcim);
+
+  const tiGestor = can('ti.manage');
+  if (tiGestor || can('ti.view')) {
+    items.push({ group: 'Dia a dia da TI' });
+    if (tiGestor) {
+      items.push({ href: '#/ti/painel', icon: 'bi-graph-up-arrow', label: 'Painel do gestor' });
+      items.push({ href: '#/ti', icon: 'bi-binoculars', label: 'Acompanhamento' });
+      items.push({ href: '#/ti/hoje', icon: 'bi-sun', label: 'Dia do técnico' });
+    } else {
+      items.push({ href: '#/ti', icon: 'bi-sun', label: 'Meu dia' });
+    }
+    items.push({ href: '#/ti/agenda', icon: 'bi-calendar3', label: 'Agenda' });
+    items.push({ href: '#/ti/postos', icon: 'bi-pin-map', label: 'Postos' });
+    items.push({ href: '#/ti/solicitacoes', icon: 'bi-megaphone', label: 'Solicitações' });
+    items.push({ href: '#/ti/atividades', icon: 'bi-kanban', label: tiGestor ? 'Atividades' : 'Minhas atividades' });
+    items.push({ href: '#/ti/checklists', icon: 'bi-ui-checks', label: 'Checklists' });
+  }
+
   const admin = [];
   if (can('users.manage')) admin.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
   if (master) admin.push({ href: '#/admin/entities', icon: 'bi-buildings', label: 'Empresas' });
@@ -25,9 +48,61 @@ function buildNav(u) {
     admin.push({ href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' });
     admin.push({ href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' });
   }
-  if (admin.length) items.push({ sep: true }, ...admin);
+  if (tiGestor) admin.push({ href: '#/ti/config', icon: 'bi-sliders', label: 'Config. do Dia a dia' });
+  if (admin.length) items.push({ group: 'Administração' }, ...admin);
   return items;
 }
+
+// ---------------- Dia a dia da TI (embutido) ----------------
+// As telas do Dia a dia da TI ficam em /gbf e abrem num quadro dentro desta tela,
+// com o mesmo login (a /gbf troca o token da Central pelo dela) e sem o menu proprio.
+const TI_TITULOS = {
+  '': 'Dia a dia da TI', painel: 'Painel do gestor', hoje: 'Dia do técnico', agenda: 'Agenda',
+  postos: 'Postos', visitas: 'Visita', solicitacoes: 'Solicitações', atividades: 'Atividades',
+  checklists: 'Checklists', config: 'Config. do Dia a dia',
+};
+const TI = {
+  // '#/ti/postos/3?x=1' -> '#/postos/3?x=1' (rota dentro do /gbf)
+  rotaInterna(hash) { return '#/' + hash.replace(/^#\/ti\/?/, ''); },
+  titulo(hash) {
+    const parte = hash.replace(/^#\/ti\/?/, '').split(/[/?]/)[0];
+    return TI_TITULOS[parte] || 'Dia a dia da TI';
+  },
+  frame() { return document.getElementById('ti-frame'); },
+  // ja existe o quadro: so muda a rota dentro dele (nao recarrega)
+  navegar(hash) {
+    const f = this.frame();
+    if (!f || !f.contentWindow) return false;
+    const alvo = this.rotaInterna(hash);
+    if (f.contentWindow.location.hash !== alvo) f.contentWindow.location.hash = alvo;
+    document.getElementById('page-title').textContent = this.titulo(hash);
+    return true;
+  },
+  abrir(el, hash) {
+    const view = document.getElementById('view');
+    view.classList.add('ti-embed');
+    el.innerHTML = `<iframe id="ti-frame" class="ti-frame" title="Dia a dia da TI"
+      src="/gbf/?embed=1${this.rotaInterna(hash)}"></iframe>`;
+    document.getElementById('page-title').textContent = this.titulo(hash);
+  },
+};
+
+// Mensagens vindas do quadro do Dia a dia da TI
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== location.origin || !ev.data || typeof ev.data !== 'object') return;
+  const m = ev.data;
+  if (m.gbf === 'rota' && typeof m.hash === 'string') {
+    // navegacao dentro do quadro: atualiza o endereco e o menu sem recarregar
+    const novo = '#/ti' + (m.hash === '#/' ? '' : m.hash.replace(/^#/, ''));
+    if (location.hash !== novo) history.replaceState(null, '', novo);
+    activeNav();
+    document.getElementById('page-title').textContent = TI.titulo(novo);
+  } else if (m.gbf === 'abrir' && typeof m.hash === 'string' && /^#\/[\w/?=&.-]*$/.test(m.hash)) {
+    location.hash = m.hash; // ex.: chamado da Orcim citado numa atividade
+  } else if (m.gbf === 'sem-acesso') {
+    toast(m.mensagem || 'Sem acesso ao Dia a dia da TI.', 'warning');
+  }
+});
 
 let socket = null;
 
@@ -53,6 +128,7 @@ function pageTitleFromPath() {
     '/admin/roles': 'Perfis e permissões',
     '/perfil': 'Meu Perfil',
   };
+  if (path === '/ti' || path.startsWith('/ti/') || path.startsWith('/ti?')) return TI.titulo('#' + path);
   if (path.startsWith('/tickets/')) return 'Chamado';
   if (path.startsWith('/inventory/')) return 'Ativo';
   return map[path] || 'Sistema';
@@ -63,6 +139,7 @@ function renderNav() {
   const nav = document.getElementById('side-nav');
   const items = buildNav(user);
   nav.innerHTML = items.map((it) =>
+    it.group ? `<div class="nav-group">${esc(it.group)}</div>` :
     it.sep ? '<hr class="nav-sep">' :
     `<a class="nav-item" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`
   ).join('');
@@ -106,7 +183,8 @@ function activeNav() {
     const href = a.getAttribute('href') || '';
     const target = href.replace(/^#/, '');
     a.classList.toggle('active',
-      target === '/dashboard' ? path === '/dashboard' : path === target || path.startsWith(target + '/'));
+      (target === '/dashboard' || target === '/ti') ? path === target || (target === '/ti' && path.startsWith('/ti?'))
+        : path === target || path.startsWith(target + '/') || path.startsWith(target + '?'));
   });
 }
 
@@ -128,6 +206,7 @@ const routes = [
   { re: /^#\/admin\/settings$/, view: () => Views.adminSettings },
   { re: /^#\/admin\/roles$/, view: () => Views.adminRoles },
   { re: /^#\/perfil$/, view: () => Views.profile },
+  { re: /^#\/ti(\/.*|\?.*)?$/, view: (m) => (el) => TI.abrir(el, m[0]) },
 ];
 
 async function router() {
@@ -136,6 +215,11 @@ async function router() {
   activeNav();
   const hash = location.hash || '#/dashboard';
   const viewEl = document.getElementById('view');
+  if (/^#\/ti(\/|\?|$)/.test(hash)) {
+    if (TI.navegar(hash)) return;
+  } else {
+    viewEl.classList.remove('ti-embed');
+  }
   for (const r of routes) {
     const m = hash.match(r.re);
     if (m) {

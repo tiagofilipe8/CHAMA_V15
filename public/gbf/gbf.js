@@ -43,6 +43,34 @@
     set(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sem storage */ } },
   };
 
+  // Modo embutido: aberto dentro da Central (/app.html), com o login e o menu dela
+  const EMBED = new URLSearchParams(location.search).get('embed') === '1' && window.parent !== window;
+  if (EMBED) document.body.classList.add('embed');
+  const avisarCentral = (msg) => { if (EMBED) window.parent.postMessage(msg, location.origin); };
+
+  // Troca o token da Central (mesmo navegador) por um token do painel
+  let tentativasPonte = 0;
+  async function entrarPelaCentral() {
+    tentativasPonte += 1;
+    const tokenCentral = store.get('os_token');
+    const erro = (msg) => {
+      $('#tela-login').classList.add('d-none');
+      $('#app').classList.remove('d-none');
+      $('#view').innerHTML = `<div class="alert alert-warning m-3">${esc(msg)}</div>`;
+      avisarCentral({ gbf: 'sem-acesso', mensagem: msg });
+    };
+    if (!tokenCentral) { erro('Entre na Central para usar o Dia a dia da TI.'); return; }
+    try {
+      const res = await fetch('/api/gbf/auth/central', { method: 'POST', headers: { Authorization: `Bearer ${tokenCentral}` } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { erro(data.error || 'Não foi possível abrir o Dia a dia da TI.'); return; }
+      API.token = data.token;
+      await entrar(data.user);
+    } catch (e) {
+      erro(e.message);
+    }
+  }
+
   function toast(msg, erro = false) {
     const el = document.createElement('div');
     el.className = `toast-x${erro ? ' err' : ''}`;
@@ -118,6 +146,7 @@
   }
 
   function sair(avisar = true) {
+    if (EMBED) { API.token = null; EU = null; if (tentativasPonte < 3) entrarPelaCentral(); return; }
     API.token = null;
     EU = null;
     pararNotificacoes();
@@ -217,6 +246,15 @@
       return;
     }
     const [a, b] = partes;
+    if (EMBED) {
+      // o que já existe na parte Orcim da Central abre lá (sem telas repetidas)
+      const naCentral = {
+        demandas: b ? `#/tickets/${encodeURIComponent(b)}` : '#/tickets', orcim: '#/dashboard', tudo: '#/dashboard',
+        manutencoes: '#/inventory', usuarios: '#/admin/users', conta: '#/perfil',
+      }[a];
+      if (naCentral) { avisarCentral({ gbf: 'abrir', hash: naCentral }); return; }
+      avisarCentral({ gbf: 'rota', hash: location.hash || '#/' });
+    }
     try {
       carregando();
       if (!a) { marcarMenu('#/'); if (ehGestor()) await vAcompanhamento(qs, seq); else await vHoje(seq); }
@@ -2437,6 +2475,7 @@
       $('#login-titulo').textContent = c.nome;
       $('#side-titulo').textContent = c.nome;
     }).catch(() => {});
+    if (EMBED) { await entrarPelaCentral(); return; }
     if (!API.token) { mostrarLogin(); return; }
     try {
       await entrar(await API.get('/auth/me'));
