@@ -313,11 +313,30 @@ router.get('/calendar', async (req, res) => {
 // ---------------------------------------------------------------------
 router.post('/', async (req, res) => {
   const {
-    title, description, category_id, simple_category_id, priority, entity_id, due_at, asset_id,
-    impact_id, needed_by, location_id,
+    title, category_id, simple_category_id, priority, entity_id, due_at, asset_id,
+    impact_id, needed_by, location_id, materials,
   } = req.body || {};
+  // Pedido de material: itens da lista (o texto vira opcional)
+  const itensPedidos = Array.isArray(materials)
+    ? materials.map((m) => ({ id: parseInt(m.material_id, 10), qtd: parseInt(m.quantity, 10) }))
+      .filter((m) => m.id > 0 && m.qtd > 0 && m.qtd <= 999)
+    : [];
+  let description = req.body?.description;
+  let materiaisOk = [];
+  if (itensPedidos.length) {
+    const { rows } = await query('SELECT id, name, unit FROM materials WHERE active AND id = ANY($1::bigint[])',
+      [itensPedidos.map((m) => m.id)]);
+    const mapa = new Map(rows.map((r) => [r.id, r]));
+    materiaisOk = itensPedidos.filter((m) => mapa.has(String(m.id)) || mapa.has(m.id))
+      .map((m) => ({ ...(mapa.get(String(m.id)) || mapa.get(m.id)), qtd: m.qtd }));
+    const lista = materiaisOk.map((m) => `- ${m.qtd} ${m.unit || 'un'} · ${m.name}`).join('\n');
+    const obs = String(description || '').trim();
+    description = `Pedido de material:\n${lista}${obs ? `\n\nObservações: ${obs}` : ''}`;
+  }
   if (!description || !String(description).trim()) {
-    return res.status(422).json({ error: 'Conte o que está acontecendo.' });
+    const cid = parseInt(simple_category_id || category_id, 10);
+    const mat = cid ? (await query('SELECT is_material FROM categories WHERE id = $1', [cid])).rows[0] : null;
+    return res.status(422).json({ error: mat?.is_material ? 'Escolha pelo menos um material da lista.' : 'Conte o que está acontecendo.' });
   }
   const user = req.user;
   if (!has(user, 'ticket.create')) return res.status(403).json({ error: 'Seu perfil não pode abrir chamados.' });
@@ -334,6 +353,10 @@ router.post('/', async (req, res) => {
   const cat = await resolveCategory(category_id, simple_category_id);
   if (cat.error) return res.status(422).json({ error: cat.error });
   if (!cat.category_id) return res.status(422).json({ error: 'Escolha a categoria do chamado.' });
+  const catMat = await query('SELECT is_material FROM categories WHERE id = $1', [cat.simple_category_id || cat.category_id]);
+  if (catMat.rows[0]?.is_material && !materiaisOk.length) {
+    return res.status(422).json({ error: 'Escolha pelo menos um material da lista.' });
+  }
 
   // Urgencia (obrigatoria). Compatibilidade: se vier so a prioridade antiga, converte.
   let impact = await resolveImpact(impact_id);
@@ -391,7 +414,9 @@ router.post('/', async (req, res) => {
   if (!finalTitle) {
     const { rows: cn } = await query('SELECT name FROM categories WHERE id = $1',
       [cat.simple_category_id || cat.category_id]);
-    const first = String(description).trim().split(/\r?\n/)[0];
+    const first = materiaisOk.length
+      ? materiaisOk.map((m) => `${m.qtd}x ${m.name}`).join(', ')
+      : String(description).trim().split(/\r?\n/)[0];
     finalTitle = `${cn[0] ? cn[0].name + ': ' : ''}${first.length > 70 ? first.slice(0, 70) + '…' : first}`.slice(0, 200);
   }
   try {
@@ -415,6 +440,10 @@ router.post('/', async (req, res) => {
     await query(
       `INSERT INTO ticket_messages (ticket_id, user_id, kind, content)
        VALUES ($1, $2, 'comment', $3)`, [ticketId, user.id, description]);
+    for (const m of materiaisOk) {
+      await query(`INSERT INTO ticket_materials (ticket_id, material_id, name, unit, quantity) VALUES ($1, $2, $3, $4, $5)`,
+        [ticketId, m.id, m.name, m.unit || null, m.qtd]);
+    }
     await addHistory(ticketId, user.id, 'created', null, impact.name);
 
     const ticket = await loadTicket(ticketId);
@@ -437,7 +466,7 @@ router.get('/:id', async (req, res) => {
 
   const team = canInternal(req.user);
   const seesRating = has(req.user, 'ticket.rating');
-  const [messages, history, atts, events, watchers] = await Promise.all([
+  const [messages, history, atts, events, watchers, mats] = await Promise.all([
     query(`SELECT m.*, u.name AS author_name, u.role AS author_role
            FROM ticket_messages m JOIN users u ON u.id = m.user_id
            WHERE m.ticket_id = $1 ${team ? '' : "AND m.kind <> 'internal'"}
@@ -454,6 +483,7 @@ router.get('/:id', async (req, res) => {
            FROM ticket_watchers w JOIN users u ON u.id = w.user_id
            LEFT JOIN locations l ON l.id = u.location_id
            WHERE w.ticket_id = $1 ORDER BY w.created_at`, [id]),
+    query(`SELECT name, unit, quantity FROM ticket_materials WHERE ticket_id = $1 ORDER BY id`, [id]),
   ]);
   let requesterRating = null;
   if (seesRating) {
@@ -470,6 +500,7 @@ router.get('/:id', async (req, res) => {
     status_history: history.rows,
     history: events.rows,
     watchers: watchers.rows,
+    materials: mats.rows,
     attachments: atts.rows,
     can: ticketAbilities(req.user, ticket),
   });

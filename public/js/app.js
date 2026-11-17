@@ -43,6 +43,7 @@ function buildNav(u) {
   if (can('users.manage')) admin.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
   if (master) admin.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
   if (can('locations.manage')) admin.push({ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' });
+  if (master || u.role === 'admin_local') admin.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
   if (master) {
     admin.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
     admin.push({ href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' });
@@ -119,6 +120,7 @@ function pageTitleFromPath() {
     '/team-tickets': 'Chamados da Equipe',
     '/watching': 'Chamados a observar',
     '/admin/locations': 'Localizações',
+    '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
     '/inventory/agents': 'Agentes',
     '/new': 'Abrir Chamado',
@@ -229,6 +231,7 @@ const routes = [
   { re: /^#\/inventory\/agents$/, view: () => Views.agents },
   { re: /^#\/inventory\/(\d+)$/, view: (m) => (el) => Views.assetDetail(m[1], el) },
   { re: /^#\/admin\/users$/, view: () => Views.adminUsers },
+  { re: /^#\/admin\/materials$/, view: () => Views.adminMaterials },
   { re: /^#\/admin\/entities$/, view: () => Views.adminEntities },
   { re: /^#\/admin\/categories$/, view: () => Views.adminCategories },
   { re: /^#\/admin\/settings$/, view: () => Views.adminSettings },

@@ -788,7 +788,7 @@ abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; curs
   .nt-step h6 { font-size: 1.02rem; }
   .nt-step .badge { font-size: .9rem; padding: .4em .65em; }
   /* categorias: botões grandes, fáceis de tocar */
-  .nt-simple { min-height: 96px; padding: 10px; border-radius: 12px; }
+  
   .nt-simple .fs-4 { font-size: 1.7rem !important; }
   .nt-simple .small { display: none; }
   /* urgência: um por linha, com texto inteiro */
@@ -864,3 +864,32 @@ abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; curs
 .urg-card.sel .urg-ok { opacity: 1; }
 .urg-card:has(input:focus-visible) { outline: 2px solid var(--u); outline-offset: 2px; }
 [data-bs-theme="dark"] .urg-nome { color: color-mix(in srgb, var(--u) 55%, #fff); }
+
+/* ---------- Abrir chamado: mais simples ---------- */
+.nt-card { border-radius: 16px; }
+.nt-card > .card-body { padding: 22px 24px; }
+.nt-local { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; background: var(--surface-2); }
+.nt-step h6 { font-weight: 700; }
+/* passo 1: cartões compactos e do mesmo tamanho */
+.nt-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 8px; }
+.nt-cat-grid .nt-simple { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 8px 12px;
+  text-align: left; border-radius: 12px; line-height: 1.2; }
+.nt-cat-ico { font-size: 1.45rem; flex: 0 0 auto; }
+.nt-cat-nome { font-size: .9rem; }
+.nt-cat-mat:not(.btn-primary) { border-style: dashed; }
+/* pedido de material: lista com quantidade */
+.nt-mat { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.nt-mat-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); background: var(--card); }
+.nt-mat-row:last-child { border-bottom: 0; }
+.nt-mat-row.on { background: var(--c-teal-bg); }
+.nt-mat-qtd { display: inline-flex; align-items: center; gap: 8px; }
+.nt-mat-qtd b { min-width: 22px; text-align: center; }
+.nt-mat-qtd .btn { width: 34px; height: 34px; padding: 0; border-radius: 10px; }
+@media (max-width: 575px) {
+  .nt-card > .card-body { padding: 14px; }
+  .nt-cat-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .nt-cat-grid .nt-simple { min-height: 64px; padding: 8px 10px; }
+  .nt-cat-nome { font-size: .86rem; }
+  .nt-mat-qtd .btn { width: 40px; height: 40px; }
+}

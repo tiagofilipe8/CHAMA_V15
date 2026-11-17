@@ -518,3 +518,42 @@ CREATE TRIGGER trg_locations_touch
 INSERT INTO entities (name, category_mode) SELECT 'Grupo Beija-Flor', 'simple'
 WHERE NOT EXISTS (SELECT 1 FROM entities);
 UPDATE entities SET category_mode = 'simple' WHERE category_mode <> 'simple';
+
+-- ---------------------------------------------------------------------
+-- Pedido de material: lista de materiais (editada pelo administrador)
+-- e os itens pedidos em cada chamado
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS materials (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT        NOT NULL,
+    unit        TEXT,
+    description TEXT,
+    active      BOOLEAN     NOT NULL DEFAULT TRUE,
+    sort_order  INTEGER     NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_materials_name ON materials (lower(name));
+
+CREATE TABLE IF NOT EXISTS ticket_materials (
+    id          BIGSERIAL PRIMARY KEY,
+    ticket_id   BIGINT      NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    material_id BIGINT      REFERENCES materials(id) ON DELETE SET NULL,
+    name        TEXT        NOT NULL,   -- nome guardado no pedido (não muda se o material for renomeado)
+    unit        TEXT,
+    quantity    INTEGER     NOT NULL CHECK (quantity > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_materials_ticket ON ticket_materials(ticket_id);
+
+-- categoria que abre a lista de materiais
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_material BOOLEAN NOT NULL DEFAULT FALSE;
+INSERT INTO categories (name, kind, icon, description, examples, sort_order, is_material, active)
+SELECT 'Pedido de material', 'simple', '📦', 'Peça algo que está faltando.', 'Toner; bobina; mouse; cabo', 0, TRUE, TRUE
+WHERE NOT EXISTS (SELECT 1 FROM categories WHERE is_material);
+
+-- alguns materiais para começar (o administrador edita em Administração > Materiais)
+INSERT INTO materials (name, unit, sort_order)
+SELECT v.name, v.unit, v.ord FROM (VALUES
+  ('Toner / cartucho de impressora', 'un', 1), ('Bobina de impressora (PDV)', 'un', 2), ('Papel A4', 'resma', 3),
+  ('Mouse', 'un', 4), ('Teclado', 'un', 5), ('Cabo de rede', 'un', 6), ('Fone / headset', 'un', 7)
+) AS v(name, unit, ord)
+WHERE NOT EXISTS (SELECT 1 FROM materials);

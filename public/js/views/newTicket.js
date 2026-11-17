@@ -37,11 +37,10 @@ Views.newTicket = async function newTicket(el) {
   el.innerHTML = `
     <div class="row justify-content-center">
       <div class="col-lg-8">
-        <div class="card panel-card">
-          <div class="card-header"><i class="bi bi-plus-circle me-1"></i> Abrir novo chamado</div>
+        <div class="card panel-card nt-card">
           <div class="card-body">
             <form id="new-ticket-form" onsubmit="return false">
-              <div class="border rounded p-2 px-3 mb-4 bg-light">
+              <div class="nt-local mb-4">
                 <div class="d-flex align-items-center gap-2">
                   <i class="bi bi-geo-alt-fill text-primary"></i>
                   <div class="flex-grow-1 small">
@@ -59,11 +58,12 @@ Views.newTicket = async function newTicket(el) {
                 </div>
               </div>
 
-              ${step(1, 'O que você precisa?', 'Escolha o mais parecido. A equipe ajusta depois, se precisar.',
+              ${step(1, 'Qual é o seu problema?', 'Escolha o mais parecido.',
                 `<div id="nt-cat-box"><div class="text-muted small">Carregando categorias...</div></div>`)}
 
-              ${step(2, 'O que está acontecendo?', '',
-                `<textarea class="form-control" id="nt-desc" rows="4"
+              ${step(2, '<span id="nt-step2-tit">O que está acontecendo?</span>', '',
+                `<div id="nt-mat-box" class="nt-mat mb-2" style="display:none"></div>
+                 <textarea class="form-control" id="nt-desc" rows="3"
                            placeholder="Conte com suas palavras: o que aconteceu, desde quando e o que você já tentou."></textarea>
                  <div class="d-flex flex-wrap gap-2 mt-2">
                    <button type="button" class="btn btn-outline-secondary btn-sm" id="nt-pick-photo">
@@ -81,7 +81,7 @@ Views.newTicket = async function newTicket(el) {
               ${step(3, 'Isso está afetando a operação?', '',
                 `<div class="row g-2" id="nt-impact-box"><div class="text-muted small">Carregando...</div></div>`)}
 
-              ${step(4, 'Para quando você precisa disso resolvido?', 'Marque o dia no calendário. O número em cada dia mostra quantos chamados já estão marcados para ele.',
+              ${step(4, 'Para quando você precisa?', 'Toque no dia. O número mostra quantos chamados já estão marcados nele.',
                 `<div id="nt-cal"></div>`)}
 
               <details class="mb-4" id="nt-more">
@@ -111,6 +111,51 @@ Views.newTicket = async function newTicket(el) {
   let catMode = 'complex';
   let pickedSimple = null;
   let pickedImpact = null;
+  let catsData = [];
+
+  // ---------- pedido de material ----------
+  // Na categoria "Pedido de material" o passo 2 vira a lista de materiais (com quantidade)
+  let ehMaterial = false;
+  let materiais = null;
+  const qtds = {};
+  async function modoMaterial(on) {
+    ehMaterial = on;
+    const boxM = document.getElementById('nt-mat-box');
+    const desc = document.getElementById('nt-desc');
+    document.getElementById('nt-step2-tit').textContent = on ? 'Quais materiais você precisa?' : 'O que está acontecendo?';
+    desc.placeholder = on ? 'Observações (opcional): modelo, cor, para quem é...'
+      : 'Conte com suas palavras: o que aconteceu, desde quando e o que você já tentou.';
+    boxM.style.display = on ? '' : 'none';
+    if (!on) return;
+    if (!materiais) {
+      boxM.innerHTML = '<div class="text-muted small">Carregando materiais...</div>';
+      try { materiais = await API.get('/materials'); } catch (e) { boxM.innerHTML = `<div class="text-danger small">${esc(e.message)}</div>`; return; }
+    }
+    pintarMateriais();
+    // pedido de material normalmente não para a operação: já marca "Requisição" (dá para trocar)
+    if (!pickedImpact) document.querySelector('#nt-impact-box .urg-card.u-req')?.click();
+  }
+  function pintarMateriais() {
+    const boxM = document.getElementById('nt-mat-box');
+    if (!materiais.length) {
+      boxM.innerHTML = '<div class="text-muted small">Nenhum material cadastrado. Peça ao administrador para cadastrar em Administração › Materiais.</div>';
+      return;
+    }
+    boxM.innerHTML = materiais.map((m) => `
+      <div class="nt-mat-row ${qtds[m.id] ? 'on' : ''}" data-id="${m.id}">
+        <span class="nt-mat-nome">${esc(m.name)}${m.unit ? ` <small class="text-muted">(${esc(m.unit)})</small>` : ''}</span>
+        <span class="nt-mat-qtd">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-d="-1" aria-label="Menos ${esc(m.name)}"><i class="bi bi-dash-lg"></i></button>
+          <b>${qtds[m.id] || 0}</b>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-d="1" aria-label="Mais ${esc(m.name)}"><i class="bi bi-plus-lg"></i></button>
+        </span>
+      </div>`).join('');
+    boxM.querySelectorAll('.nt-mat-row button').forEach((bt) => bt.addEventListener('click', () => {
+      const id = bt.closest('.nt-mat-row').dataset.id;
+      qtds[id] = Math.min(999, Math.max(0, (qtds[id] || 0) + Number(bt.dataset.d)));
+      pintarMateriais();
+    }));
+  }
 
   // ---------- data de necessidade (calendario aberto, obrigatorio) ----------
   const neededCal = CalendarUI.picker(document.getElementById('nt-cal'), {
@@ -164,20 +209,20 @@ Views.newTicket = async function newTicket(el) {
       const data = await API.get('/categories/for-entity/' + entityId);
       catMode = data.mode;
       if (data.mode === 'simple') {
-        box.innerHTML = `<div class="row g-2">${data.categories.map((c) => `
-          <div class="col-6 col-md-4">
-            <button type="button" class="btn btn-outline-secondary w-100 h-100 text-start nt-simple" data-id="${c.id}">
-              <div class="fs-4">${esc(c.icon || '📌')}</div>
-              <div class="fw-semibold">${esc(c.name)}</div>
-              ${c.examples ? `<div class="small text-muted">${esc(c.examples)}</div>` : ''}
-            </button>
-          </div>`).join('')}</div>`;
+        catsData = data.categories;
+        box.innerHTML = `<div class="nt-cat-grid">${data.categories.map((c) => `
+            <button type="button" class="btn btn-outline-secondary nt-simple ${c.is_material ? 'nt-cat-mat' : ''}" data-id="${c.id}"
+              title="${esc(c.examples ? 'Ex.: ' + c.examples.replace(/;\s*/g, ', ') : (c.description || ''))}">
+              <span class="nt-cat-ico">${esc(c.icon || '📌')}</span>
+              <span class="fw-semibold nt-cat-nome">${esc(c.name)}</span>
+            </button>`).join('')}</div>`;
         box.querySelectorAll('.nt-simple').forEach((b) => b.addEventListener('click', () => {
           pickedSimple = b.dataset.id;
           box.querySelectorAll('.nt-simple').forEach((x) => {
             x.classList.toggle('btn-primary', x === b);
             x.classList.toggle('btn-outline-secondary', x !== b);
           });
+          modoMaterial(!!(catsData.find((c) => String(c.id) === String(b.dataset.id)) || {}).is_material);
         }));
       } else {
         box.innerHTML = `<select class="form-select" id="nt-cat">
@@ -285,7 +330,9 @@ Views.newTicket = async function newTicket(el) {
     if (chooseEntity && !entityId) { needWhere(); return; }
     if (!locSel.disabled && !locSel.value) { needWhere(); return; }
     if (catMode === 'simple' ? !pickedSimple : !(catSel && catSel.value)) { toast('Escolha o que você precisa (passo 1).', 'warning'); return; }
-    if (!desc) { toast('Conte o que está acontecendo (passo 2).', 'warning'); return; }
+    const itens = Object.entries(qtds).filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: Number(id), quantity: q }));
+    if (ehMaterial && !itens.length) { toast('Escolha pelo menos um material (passo 2).', 'warning'); return; }
+    if (!ehMaterial && !desc) { toast('Conte o que está acontecendo (passo 2).', 'warning'); return; }
     if (!pickedImpact) { toast('Diga se isso está afetando a operação (passo 3).', 'warning'); return; }
     if (!neededCal.value) { neededCal.flagInvalid(); toast('Marque no calendário o dia em que você precisa disso (passo 4).', 'warning'); return; }
 
@@ -295,6 +342,7 @@ Views.newTicket = async function newTicket(el) {
       impact_id: parseInt(pickedImpact, 10),
       needed_by: neededCal.value,
     };
+    if (ehMaterial) payload.materials = itens;
     if (catMode === 'simple') payload.simple_category_id = parseInt(pickedSimple, 10);
     else payload.category_id = parseInt(catSel.value, 10);
     if (chooseEntity) payload.entity_id = parseInt(entityId, 10);

@@ -126,6 +126,15 @@ Views.ticketDetail = function ticketDetail(id) {
               <p class="mb-0 ticket-desc">${esc(t.description).replace(/\n/g, '<br>')}</p>
             </div>
           </div>
+          ${(t.materials || []).length ? `
+          <div class="card panel-card mb-3">
+            <div class="card-header"><i class="bi bi-box-seam me-1"></i> Materiais pedidos</div>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Material</th><th class="text-end">Quantidade</th></tr></thead>
+              <tbody>${t.materials.map((m) => `<tr><td>${esc(m.name)}</td>
+                <td class="text-end"><span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span></td></tr>`).join('')}</tbody>
+            </table></div>
+          </div>` : ''}
 
           <div class="card panel-card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">

@@ -1579,3 +1579,95 @@ Views.adminRoles = async function adminRoles(el) {
 
   paint();
 };
+
+// ---------------- Materiais (Pedido de material) ----------------
+// Lista do que pode ser pedido no chamado "Pedido de material".
+Views.adminMaterials = async function adminMaterials(el) {
+  const u = currentUser();
+  if (!(Roles.isMaster(u) || u.role === 'admin_local')) {
+    location.hash = '#/dashboard';
+    toast('Apenas administradores editam a lista de materiais.', 'warning');
+    return;
+  }
+  el.innerHTML = `
+    <div class="alert alert-info small"><i class="bi bi-box-seam me-1"></i>
+      É a lista que aparece quando alguém abre um chamado de <b>📦 Pedido de material</b>.
+      Desative o que não estiver mais disponível: ele some da lista, mas os pedidos antigos continuam.</div>
+    <div class="d-flex justify-content-end mb-2">
+      <button class="btn btn-primary btn-sm" id="btn-new-mat"><i class="bi bi-plus-lg"></i> Novo material</button>
+    </div>
+    <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Ordem</th><th>Material</th><th>Unidade</th><th>Já pedido</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+      <tbody id="mat-body"><tr><td colspan="6">${spinner()}</td></tr></tbody>
+    </table></div></div>`;
+
+  let lista = [];
+  const load = async () => {
+    try {
+      lista = await API.get('/materials?all=true');
+      document.getElementById('mat-body').innerHTML = lista.map((m) => `
+        <tr>
+          <td class="text-muted">${m.sort_order}</td>
+          <td><strong>${esc(m.name)}</strong>${m.description ? `<br><small class="text-muted">${esc(m.description)}</small>` : ''}</td>
+          <td>${esc(m.unit || 'un')}</td>
+          <td><span class="tg ${m.pedidos ? 'tg-teal' : 'tg-gray'}">${m.pedidos} vez(es)</span></td>
+          <td>${m.active ? '<span class="tg tg-green">Disponível</span>' : '<span class="tg tg-gray">Indisponível</span>'}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary mat-edit" data-id="${m.id}"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger mat-del" data-id="${m.id}"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="6" class="text-center py-4 text-muted">Nenhum material cadastrado.</td></tr>';
+      el.querySelectorAll('.mat-edit').forEach((b) => b.addEventListener('click', () => abrir(lista.find((x) => String(x.id) === b.dataset.id))));
+      el.querySelectorAll('.mat-del').forEach((b) => b.addEventListener('click', async () => {
+        const ok = await confirmDialog({ title: 'Remover material', body: 'Se já foi pedido em algum chamado, ele só fica indisponível.', confirmText: 'Remover', danger: true });
+        if (!ok) return;
+        try { const r = await API.del('/materials/' + b.dataset.id); toast(r.message || 'Removido.', 'warning'); load(); } catch (e) { showError(e); }
+      }));
+    } catch (e) { showError(e); }
+  };
+
+  function abrir(m) {
+    const md = document.createElement('div');
+    md.className = 'modal fade';
+    md.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h6>${m ? 'Editar' : 'Novo'} material</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-8 mb-2"><label class="form-label small">Nome *</label>
+            <input class="form-control" id="m-name" value="${esc((m && m.name) || '')}" placeholder="Ex.: Toner HP 85A"></div>
+          <div class="col-4 mb-2"><label class="form-label small">Unidade</label>
+            <input class="form-control" id="m-unit" value="${esc((m && m.unit) || '')}" placeholder="un, caixa, resma"></div>
+        </div>
+        <div class="mb-2"><label class="form-label small">Detalhe (opcional)</label>
+          <input class="form-control" id="m-desc" value="${esc((m && m.description) || '')}" placeholder="Ex.: para as impressoras do caixa"></div>
+        <div class="row">
+          <div class="col-4 mb-2"><label class="form-label small">Ordem</label>
+            <input class="form-control" id="m-ord" type="number" value="${esc(String((m && m.sort_order) || 0))}"></div>
+          <div class="col-8 mb-2 d-flex align-items-end"><label class="form-check">
+            <input class="form-check-input" type="checkbox" id="m-active" ${!m || m.active ? 'checked' : ''}>
+            <span class="form-check-label small">Disponível para pedir</span></label></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="m-save">Salvar</button></div>
+    </div></div>`;
+    document.body.appendChild(md);
+    const modal = new bootstrap.Modal(md);
+    md.addEventListener('hidden.bs.modal', () => md.remove());
+    md.querySelector('#m-save').onclick = async () => {
+      const body = {
+        name: md.querySelector('#m-name').value.trim(), unit: md.querySelector('#m-unit').value.trim(),
+        description: md.querySelector('#m-desc').value.trim(), sort_order: parseInt(md.querySelector('#m-ord').value, 10) || 0,
+        active: md.querySelector('#m-active').checked,
+      };
+      if (!body.name) { toast('Informe o nome.', 'warning'); return; }
+      try {
+        if (m) await API.patch('/materials/' + m.id, body); else await API.post('/materials', body);
+        modal.hide(); toast('Material salvo.', 'success'); load();
+      } catch (e) { showError(e); }
+    };
+    modal.show();
+  }
+  document.getElementById('btn-new-mat').onclick = () => abrir(null);
+  await load();
+};
