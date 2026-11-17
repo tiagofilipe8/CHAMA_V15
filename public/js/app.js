@@ -349,6 +349,7 @@ async function boot() {
     const s = await (await fetch('/api/settings/public')).json();
     document.title = s.app_name || 'Central de Serviços';
     document.getElementById('side-title').textContent = s.app_name || 'Central de Serviços';
+    if (s.versao) document.getElementById('side-versao').textContent = `Versão ${s.versao}`;
     const logoBox = document.getElementById('side-logo');
     if (s.logo) {
       logoBox.innerHTML = '';

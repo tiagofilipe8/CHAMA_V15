@@ -56,6 +56,8 @@ body { background: var(--bg); color: var(--ink); font-size: 14.5px; }
 .side-nav a.active { background: var(--brand); color: #fff; }
 .side-nav a .cnt { margin-left: auto; background: rgba(255, 255, 255, .14); border-radius: 999px; padding: 0 8px; font-size: .75rem; }
 .side-nav a .cnt.bad { background: var(--bad); color: #fff; }
+.side-versao { padding: 6px 18px 8px; color: #6f9590; font-size: .7rem; }
+.side-versao:empty { display: none; }
 .side-user { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-top: 1px solid rgba(255, 255, 255, .08); }
 .side-user strong { display: block; color: #fff; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-user small { color: #8fb3ae; font-size: .75rem; }

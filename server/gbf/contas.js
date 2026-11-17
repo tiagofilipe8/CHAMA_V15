@@ -72,7 +72,7 @@ publico.post('/auth/central', central.requireAuth, ah(async (req, res) => {
 }));
 
 publico.get('/config/publica', ah(async (req, res) => {
-  res.json({ nome: (await getSetting('nome_painel', null)) || 'Painel Beija-Flor' });
+  res.json({ nome: (await getSetting('nome_painel', null)) || 'Painel Beija-Flor', versao: require('../versao') });
 }));
 
 privado.use(requireGbf);

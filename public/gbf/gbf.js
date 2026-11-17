@@ -2566,6 +2566,7 @@
     API.get('/config/publica').then((c) => {
       $('#login-titulo').textContent = c.nome;
       $('#side-titulo').textContent = c.nome;
+      if (c.versao) $('#side-versao').textContent = `Versão ${c.versao}`;
     }).catch(() => {});
     if (EMBED) { await entrarPelaCentral(); return; }
     if (!API.token) { mostrarLogin(); return; }

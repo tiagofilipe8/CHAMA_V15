@@ -126,6 +126,8 @@ body {
 .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
 .nav-item.active { background: rgba(14,124,102,.22); color: #fff; box-shadow: inset 3px 0 0 #3fd1ae; }
 .nav-sep { border-color: rgba(255,255,255,.08); margin: 10px 6px; }
+.sidebar-versao { padding: 6px 22px 8px; color: #94a3b8; font-size: .7rem; }
+.sidebar-versao:empty { display: none; }
 .sidebar-foot { padding: 12px; border-top: 1px solid rgba(255,255,255,.08); }
 .user-mini { display: flex; align-items: center; gap: 10px; }
 .avatar {
