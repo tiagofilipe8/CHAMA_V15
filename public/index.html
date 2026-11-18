@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entrar — Central de Serviços</title>
+  <link rel="stylesheet" href="/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/vendor/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="login-body">
+
+  <!-- Fundo dinamico (vem das configuracoes do sistema) -->
+  <div class="login-bg" id="login-bg">
+    <div class="login-bg-layer" id="login-bg-layer"></div>
+  </div>
+
+  <div class="login-wrap">
+    <div class="login-card glass">
+      <div class="login-brand">
+        <div class="login-logo" id="login-logo">
+          <i class="bi bi-headset"></i>
+        </div>
+        <h1 class="login-title" id="login-title">Central de Serviços</h1>
+      </div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="form-floating mb-3">
+          <input type="text" class="form-control" id="username" placeholder="Usuário"
+                 autocomplete="username" required>
+          <label for="username"><i class="bi bi-person me-1"></i>Usuário</label>
+        </div>
+        <div class="form-floating mb-3">
+          <input type="password" class="form-control" id="password" placeholder="Senha"
+                 autocomplete="current-password" required>
+          <label for="password"><i class="bi bi-lock me-1"></i>Senha</label>
+        </div>
+        <div class="login-error alert alert-danger py-2 px-3" id="login-error" hidden></div>
+        <button type="submit" class="btn btn-primary btn-login w-100" id="login-btn">
+          <span class="btn-text">Entrar</span>
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="login-spinner"></span>
+          <i class="bi bi-box-arrow-in-right ms-1"></i>
+        </button>
+      </form>
+
+      <div class="login-footer" hidden></div>
+    </div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/api.js"></script>
+  <script>
+    (async function init() {
+      try {
+        const s = await (await fetch('/api/settings/public')).json();
+        document.title = s.app_name ? `Entrar — ${s.app_name}` : 'Central de Serviços';
+        if (s.app_name) document.getElementById('login-title').textContent = s.app_name;
+        const logo = document.getElementById('login-logo');
+        if (s.logo) logo.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = s.logo;
+          img.alt = 'Logo';
+          logo.appendChild(img);
+        const bg = document.getElementById('login-bg-layer');
+        if (s.background) { bg.style.backgroundImage = `url("${s.background}")`; bg.classList.add('has-image'); }
+      } catch {}
+
+      const form = document.getElementById('login-form');
+      const errBox = document.getElementById('login-error');
+      const btn = document.getElementById('login-btn');
+      const spinner = document.getElementById('login-spinner');
+
+      if (API.token) {
+        // ja autenticado? valida e encaminha
+        API.get('/auth/me').then(() => { location.href = '/app.html#/dashboard'; })
+          .catch(() => API.logout());
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errBox.hidden = true;
+        btn.disabled = true;
+        spinner.classList.remove('d-none');
+        try {
+          const data = await API.post('/auth/login', {
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+          });
+          API.token = data.token;
+          API.user = data.user;
+          location.href = '/app.html#/dashboard';
+        } catch (err) {
+          errBox.hidden = false;
+          errBox.textContent = err.message || 'Não foi possível entrar.';
+          btn.disabled = false;
+          spinner.classList.add('d-none');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "orcim-inventory-agent",
+  "version": "1.0.0",
+  "description": "Orcim Inventory Agent - coleta de inventário para Central de Serviços",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "install-service": "powershell -ExecutionPolicy Bypass -File install.ps1",
+    "uninstall-service": "powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}

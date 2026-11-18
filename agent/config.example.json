@@ -1,0 +1,6 @@
+{
+  "server_url": "http://localhost:3000",
+  "provision_token": "",
+  "interval_seconds": 900,
+  "inventory_interval_seconds": 3600
+}

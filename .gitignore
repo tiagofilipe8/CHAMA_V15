@@ -1,0 +1,13 @@
+node_modules/
+.env
+uploads/*
+!uploads/.gitkeep
+*.log
+.DS_Store
+
+# caches e artefatos (regeneráveis)
+server/.wwebjs/
+.wwebjs_cache/
+backups/
+_backup_db.sql
+*.zip
