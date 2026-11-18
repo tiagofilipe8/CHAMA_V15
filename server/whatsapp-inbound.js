@@ -1,18 +1,19 @@
 // ---------------------------------------------------------------------------
 // Recepcao de chamados pelo WhatsApp
 // ---------------------------------------------------------------------------
-// Fluxo:
-//   * Numero cadastrado (users.phone) -> abre o chamado na hora e responde com
-//     o numero.
-//   * Numero desconhecido -> guarda a primeira mensagem e envia o pedido de
-//     identificacao; quando o solicitante responde com o nome completo, abre o
-//     chamado usando a PRIMEIRA mensagem como descricao.
-//   * Mensagem seguinte -> vira comentario do chamado aberto nas ultimas 24 h
-//     (ou do chamado citado em resposta). Comecar com "NOVO" abre outro.
+// Coleta guiada (todo mundo: numero novo ou cadastrado). O chamado SO abre
+// depois de ter todos os dados, nesta ordem:
+//   1) Nome completo  2) Empresa  3) Descricao do chamado
+// Se a resposta do nome ja trouber a empresa ("Joao Silva - Empresa X"),
+// o passo de empresa e pulado. Depois de ativo, a conversa continua:
+//   * Mensagem seguinte (em ate 24 h) -> comentario do ultimo chamado aberto
+//     por aqui (ou do chamado citado em resposta).
+//   * Comecar com "NOVO" -> abre outro chamado.
 //
-// Empresa: chamados de quem chega sem cadastro caem na empresa padrao
-// "WhatsApp - nao identificado"; o tecnico redireciona para a empresa certa
-// ao assumir. Quem ja e cadastrado abre na propria empresa.
+// Empresa: o chamado SEMPRE cai na empresa padrao "WhatsApp - nao
+// identificado" (ou na propria empresa de quem ja e cadastrado); a empresa
+// digitada fica gravada como texto na descricao e o tecnico redireciona
+// ao assumir.
 //
 // O envio das respostas e "best effort": se o WhatsApp nao estiver conectado,
 // o chamado e criado mesmo assim e a resposta nao sai (o log registra).
@@ -31,15 +32,30 @@ const INTERNO = new Set(['admin', 'technician', 'moderator']);
 const JANELA_COMENTARIO_H = 24; // horas em que a conversa continua no mesmo chamado
 
 // ------------------------------- mensagens -------------------------------
-const MSG_IDENTIFICACAO = `Olá! Aqui é a Central de Atendimento.
+const MSG_NOME = `Olá! Aqui é a Central de Atendimento.
 
-Não encontrei o seu número cadastrado. Para abrir seu chamado, responda apenas com o seu nome completo.
+Para abrir seu chamado, primeiro me envie o seu nome completo.
 
-Exemplo: Maria Silva`;
+Exemplo: João Silva`;
 
-const MSG_IDENTIFICACAO_REPETE = `Não consegui reconhecer o nome. Responda apenas com o seu nome completo, sem números e sem pontuação.
+const MSG_NOME_REPETE = `Não consegui reconhecer o nome. Envie apenas o seu nome completo, sem números e sem pontuação.
 
-Exemplo: Maria Silva`;
+Exemplo: João Silva`;
+
+const MSG_EMPRESA = (nome) => `Certo, ${nome}!
+
+Qual é a empresa? Envie o nome dela.
+
+Exemplo: Empresa X
+(ou "particular" se não tiver empresa)`;
+
+const MSG_EMPRESA_REPETE = `Não entendi a empresa. Envie o nome da empresa — ou "particular" se não tiver.`;
+
+const MSG_DESCRICAO = `Por último, descreva o seu chamado: o problema, onde aconteceu e desde quando. Tudo em uma só mensagem.
+
+Exemplo: A impressora do 2º andar não puxa papel desde segunda-feira.`;
+
+const MSG_DESCRICAO_REPETE = `A descrição precisa detalhar o problema (pelo menos duas palavras). Envie a descrição do seu chamado.`;
 
 const MSG_DESISTENCIA = `Não consegui identificar você. Para abrir um chamado, entre em contato com a Central pelo sistema ou telefone.`;
 
@@ -133,7 +149,7 @@ async function setPending(norm, body) {
   await query(
     `UPDATE whatsapp_contacts
         SET status = 'awaiting_id', pending_message = $2, pending_at = now(),
-            attempts = 0, updated_at = now()
+            step = 'name', attempts = 0, updated_at = now()
       WHERE phone = $1`, [norm, String(body).slice(0, 4000)]);
 }
 
@@ -153,7 +169,8 @@ async function markActive(norm, userId, ticketId) {
   await query(
     `UPDATE whatsapp_contacts
         SET status = 'active', user_id = $2, pending_message = NULL,
-            attempts = 0, last_ticket_id = COALESCE($3, last_ticket_id),
+            attempts = 0, step = NULL, draft_name = NULL, draft_empresa = NULL,
+            last_ticket_id = COALESCE($3, last_ticket_id),
             last_seen_at = now(), updated_at = now()
       WHERE phone = $1`, [norm, userId, ticketId || null]);
 }
@@ -237,6 +254,40 @@ function parseIdentification(texto) {
   };
 }
 
+// Descricao precisa descrever o problema: nao vale saudacao, nome ou "ok".
+const VAZIAS = new Set([
+  'oi','ola','olá','obrigado','obrigada','obg','vlw','ok','sim','nao','não',
+  'valeu','teste','bom','boa','dia','tarde','noite','tudo','bem','favor','por',
+  'aqui','isso','isto','né','tbm','tb','muito','legal','certo','entendi',
+]);
+
+function descricaoValida(texto) {
+  const s = String(texto || '').trim();
+  if (s.length < 10 || s.length > 4000) return false;
+  const palavras = s.split(/\s+/);
+  if (palavras.length < 2) return false;
+  if (!/[A-Za-zÀ-ÿ]{4,}/.test(s)) return false;
+  if (parseIdentification(s)) return false; // parece nome de pessoa
+  // so palavras de preenchimento ("ok obrigado", "bom dia") nao contam
+  const limpas = palavras.map((p) => p.toLowerCase().replace(/[!.,;]+$/, ''));
+  if (limpas.every((p) => VAZIAS.has(p))) return false;
+  return true;
+}
+
+// Resposta invalida no passo atual: conta ate MAX_TENTATIVAS e entao bloqueia.
+async function tentativaInvalida(norm, contact, mensagem, etapa) {
+  const tentativa = (contact.attempts || 0) + 1;
+  if (tentativa >= MAX_TENTATIVAS) {
+    await markBlocked(norm);
+    console.log(`[whatsapp-inbound] ${norm} desistiu apos ${tentativa} tentativas (${etapa}) -> bloqueado`);
+    await reply(norm, MSG_DESISTENCIA);
+    return;
+  }
+  await setAttempts(norm, tentativa);
+  console.log(`[whatsapp-inbound] ${norm} ${etapa} invalida (tentativa ${tentativa}/${MAX_TENTATIVAS})`);
+  await reply(norm, mensagem);
+}
+
 // ------------------------------- padroes ------------------------------------
 async function ensureEmpresaPadrao() {
   const { rows } = await query('SELECT id FROM entities WHERE name = $1', [EMPRESA_PADRAO]);
@@ -284,7 +335,8 @@ async function ensureImpactoPadrao() {
 }
 
 // ------------------------------- chamados -----------------------------------
-async function abrirChamado({ user, descricao }) {
+// assunto: inicio da descricao (o que aparece no topo do chamado).
+async function abrirChamado({ user, descricao, assunto }) {
   const entId = user.entity_id || (await ensureEmpresaPadrao());
   const catId = await ensureCategoriaPadrao();
   const impact = await ensureImpactoPadrao();
@@ -313,8 +365,8 @@ async function abrirChamado({ user, descricao }) {
   }
 
   const texto = String(descricao || '').trim().slice(0, 4000);
-  const primeira = texto.split(/\r?\n/)[0] || texto;
-  const title = `Outros: ${primeira.slice(0, 70)}${primeira.length > 70 ? '…' : ''}`.slice(0, 200);
+  const primeira = (String(assunto || '').split(/\r?\n/)[0] || texto.split(/\r?\n/)[0] || '').trim();
+  const title = (primeira.slice(0, 80) + (primeira.length > 80 ? '…' : '')) || 'Chamado por WhatsApp';
   const hoje = new Date().toISOString().slice(0, 10);
 
   const { rows } = await query(
@@ -400,6 +452,112 @@ async function criarUsuario(norm, nome) {
 }
 
 // --------------------------------- fluxo ------------------------------------
+// Coleta guiada: nome -> empresa -> descricao. O chamado so abre no final.
+async function coletar(norm, contact, user, body) {
+  // bloqueado: so volta a conversar quando mandar um nome valido
+  if (contact.status === 'blocked') {
+    if (!parseIdentification(body)) return;
+    await query(
+      `UPDATE whatsapp_contacts
+          SET status = 'awaiting_id', step = 'name',
+              draft_name = NULL, draft_empresa = NULL, attempts = 0,
+              updated_at = now()
+        WHERE phone = $1`, [norm]);
+    contact.status = 'awaiting_id';
+    contact.step = 'name';
+    contact.draft_name = null;
+    contact.draft_empresa = null;
+  }
+
+  // primeira mensagem: ja aceita se ja for um nome; senao guarda e pede
+  if (contact.status === 'new') {
+    if (!parseIdentification(body)) {
+      await setPending(norm, body);
+      console.log(`[whatsapp-inbound] ${norm} primeiro contato -> pedido de nome`);
+      await reply(norm, MSG_NOME);
+      return;
+    }
+    await query(
+      `UPDATE whatsapp_contacts
+          SET status = 'awaiting_id', step = 'name', pending_message = $2,
+              attempts = 0, updated_at = now()
+        WHERE phone = $1`, [norm, String(body).slice(0, 4000)]);
+    contact.status = 'awaiting_id';
+    contact.step = 'name';
+  }
+
+  const step = contact.step || 'name';
+
+  // ---------------------------- 1) nome ----------------------------
+  if (step === 'name') {
+    const ident = parseIdentification(body);
+    if (!ident) return tentativaInvalida(norm, contact, MSG_NOME_REPETE, 'nome');
+    const proximo = ident.empresa ? 'description' : 'company';
+    await query(
+      `UPDATE whatsapp_contacts
+          SET status = 'awaiting_id', draft_name = $2,
+              draft_empresa = COALESCE($3, draft_empresa), step = $4,
+              attempts = 0, updated_at = now()
+        WHERE phone = $1`, [norm, ident.nome, ident.empresa, proximo]);
+    console.log(`[whatsapp-inbound] ${norm} nome aceito: ${ident.nome}` +
+      (ident.empresa ? ` (empresa na mesma mensagem: ${ident.empresa})` : ''));
+    await reply(norm, proximo === 'company' ? MSG_EMPRESA(ident.nome) : MSG_DESCRICAO);
+    return;
+  }
+
+  // --------------------------- 2) empresa ---------------------------
+  if (step === 'company') {
+    const emp = String(body).replace(/\s+/g, ' ').trim();
+    if (emp.length < 2 || emp.length > 80 || !/[A-Za-zÀ-ÿ]/.test(emp)) {
+      return tentativaInvalida(norm, contact, MSG_EMPRESA_REPETE, 'empresa');
+    }
+    await query(
+      `UPDATE whatsapp_contacts
+          SET draft_empresa = $2, step = 'description', attempts = 0,
+              updated_at = now()
+        WHERE phone = $1`, [norm, emp]);
+    console.log(`[whatsapp-inbound] ${norm} empresa aceita: ${emp}`);
+    await reply(norm, MSG_DESCRICAO);
+    return;
+  }
+
+  // -------------------------- 3) descricao --------------------------
+  if (step === 'description') {
+    if (!descricaoValida(body)) {
+      return tentativaInvalida(norm, contact, MSG_DESCRICAO_REPETE, 'descricao');
+    }
+
+    let solicitante = user;
+    if (!solicitante) {
+      const nome = contact.draft_name;
+      if (!nome) { // seguro: so chega aqui com o nome coletado
+        await query(
+          `UPDATE whatsapp_contacts SET status = 'new', step = 'name',
+                  updated_at = now() WHERE phone = $1`, [norm]);
+        await reply(norm, MSG_NOME);
+        return;
+      }
+      solicitante = await criarUsuario(norm, nome);
+    }
+
+    let descricao = String(body).trim().slice(0, 4000);
+    if (contact.draft_empresa) {
+      descricao += `\n\nEmpresa informada pelo solicitante: ${contact.draft_empresa}`;
+    }
+    const chamado = await abrirChamado({ user: solicitante, descricao, assunto: body });
+    await markActive(norm, solicitante.id, chamado.id);
+    console.log(`[whatsapp-inbound] ${norm} coleta concluida -> ${solicitante.name} (chamado ${chamado.number}, assunto: ${chamado.title})`);
+    await reply(norm, MSG_CHAMADO(chamado));
+    return;
+  }
+
+  // passo desconhecido: recomeca pelo nome
+  await query(
+    `UPDATE whatsapp_contacts SET status = 'awaiting_id', step = 'name',
+            attempts = 0, updated_at = now() WHERE phone = $1`, [norm]);
+  await reply(norm, MSG_NOME);
+}
+
 async function handle(msg) {
   if (process.env.WHATSAPP_INBOUND === '0') return;
   if (!msg || msg.fromMe) return; // nao processa o que a propria conta envia
@@ -423,102 +581,61 @@ async function handle(msg) {
     return;
   }
 
-  // ------------------------- ainda nao identificado -------------------------
-  if (!user) {
+  if (!body) { await reply(norm, MSG_TEXTO); return; }
 
-    // identificacao desistida: so volta a conversar se mandar um nome valido
-    if (contact.status === 'blocked' && !parseIdentification(body)) return;
+  // usuario apagado da base: recomeca a coleta do zero
+  if (!user && contact.status === 'active') {
+    await query(
+      `UPDATE whatsapp_contacts
+          SET status = 'new', user_id = NULL, pending_message = NULL,
+              step = 'name', attempts = 0, updated_at = now()
+        WHERE phone = $1`, [norm]);
+    contact.status = 'new';
+    contact.user_id = null;
+  }
 
-    if (!body) { await reply(norm, MSG_TEXTO); return; }
-
-    // usuario apagado da base: recomeca a identificacao
-    if (contact.status === 'active') {
-      await query(
-        `UPDATE whatsapp_contacts
-            SET status = 'new', user_id = NULL, pending_message = NULL,
-                attempts = 0, updated_at = now()
-          WHERE phone = $1`, [norm]);
-      contact.status = 'new';
-    }
-
-    // primeira mensagem: guarda e pede o nome
-    if (contact.status === 'new') {
-      await setPending(norm, body);
-      console.log(`[whatsapp-inbound] ${norm} novo numero -> pedido de identificacao`);
-      await reply(norm, MSG_IDENTIFICACAO);
+  // ---------------- contato ativo: conversa continua ----------------
+  if (user && contact.status === 'active') {
+    // resposta a uma confirmacao nossa que cita o numero do chamado
+    const citado = await chamadoCitado(msg);
+    if (citado && String(citado.requester_id) === String(user.id)) {
+      await adicionarComentario(citado, user, body);
+      console.log(`[whatsapp-inbound] ${norm} comentario (citado) no chamado ${citado.number}`);
+      await reply(norm, MSG_COMENTARIO(citado.number));
       return;
     }
 
-    // aguardando identificacao (attempts = nomes errados ate agora)
-    const ident = parseIdentification(body);
-    if (!ident) {
-      const tentativa = (contact.attempts || 0) + 1;
-      if (tentativa >= MAX_TENTATIVAS) {
-        await markBlocked(norm);
-        console.log(`[whatsapp-inbound] ${norm} desistiu apos ${tentativa} tentativas -> bloqueado`);
-        await reply(norm, MSG_DESISTENCIA);
+    // "NOVO ..." abre outro chamado mesmo com conversa recente
+    const ehNovo = /^novo\b/i.test(body);
+    const texto = ehNovo ? body.replace(/^novo\s*[:\-–—]?\s*/i, '').trim() : body;
+    if (!texto) { await reply(norm, MSG_TEXTO); return; }
+
+    if (!ehNovo) {
+      const recente = await chamadoRecente(contact);
+      if (recente) {
+        await adicionarComentario(recente, user, texto);
+        console.log(`[whatsapp-inbound] ${norm} comentario no chamado ${recente.number}`);
+        await reply(norm, MSG_COMENTARIO(recente.number));
         return;
       }
-      await setAttempts(norm, tentativa);
-      console.log(`[whatsapp-inbound] ${norm} nome nao reconhecido (tentativa ${tentativa}/${MAX_TENTATIVAS})`);
-      await reply(norm, MSG_IDENTIFICACAO_REPETE);
-      return;
     }
 
-    user = await criarUsuario(norm, ident.nome);
-    let descricao = String(contact.pending_message || body).trim();
-    if (ident.empresa) descricao += `\n\nEmpresa informada pelo solicitante: ${ident.empresa}`;
-    const chamado = await abrirChamado({ user, descricao });
-    await markActive(norm, user.id, chamado.id);
-    console.log(`[whatsapp-inbound] identificado ${norm} -> ${user.name} (chamado ${chamado.number})`);
+    const chamado = await abrirChamado({ user, descricao: texto, assunto: texto });
+    await setLastTicket(norm, chamado.id);
+    console.log(`[whatsapp-inbound] ${norm} chamado ${chamado.number} criado para ${user.name}`);
     await reply(norm, MSG_CHAMADO(chamado));
     return;
   }
 
-  // ---------------------------- ja cadastrado ----------------------------
-  // o contato passa a apontar para o usuario encontrado
-  if (contact.status !== 'active' || String(contact.user_id) !== String(user.id)) {
-    await markActive(norm, user.id, null);
-    contact.status = 'active';
-    contact.user_id = user.id;
-  }
-
-  if (!body) { await reply(norm, MSG_TEXTO); return; }
-
-  // resposta a uma confirmacao nossa que cita o numero do chamado
-  const citado = await chamadoCitado(msg);
-  if (citado && String(citado.requester_id) === String(user.id)) {
-    await adicionarComentario(citado, user, body);
-    console.log(`[whatsapp-inbound] ${norm} comentario (citado) no chamado ${citado.number}`);
-    await reply(norm, MSG_COMENTARIO(citado.number));
-    return;
-  }
-
-  // "NOVO ..." abre outro chamado mesmo com conversa recente
-  const ehNovo = /^novo\b/i.test(body);
-  const texto = ehNovo ? body.replace(/^novo\s*[:\-–—]?\s*/i, '').trim() : body;
-  if (!texto) { await reply(norm, MSG_TEXTO); return; }
-
-  if (!ehNovo) {
-    const recente = await chamadoRecente(contact);
-    if (recente) {
-      await adicionarComentario(recente, user, texto);
-      console.log(`[whatsapp-inbound] ${norm} comentario no chamado ${recente.number}`);
-      await reply(norm, MSG_COMENTARIO(recente.number));
-      return;
-    }
-  }
-
-  const chamado = await abrirChamado({ user, descricao: texto });
-  await setLastTicket(norm, chamado.id);
-  console.log(`[whatsapp-inbound] ${norm} chamado ${chamado.number} criado para ${user.name}`);
-  await reply(norm, MSG_CHAMADO(chamado));
+  // --------------- nao coletado ainda: coleta guiada ---------------
+  await coletar(norm, contact, user, body);
 }
 
 module.exports = {
   handle,
   normalizePhone,
   parseIdentification,
+  descricaoValida,
   // expostos para teste
   _internos: { abrirChamado, ensureEmpresaPadrao, ensureCategoriaPadrao },
 };

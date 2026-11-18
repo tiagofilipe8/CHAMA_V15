@@ -486,6 +486,13 @@ CREATE INDEX IF NOT EXISTS idx_wa_contacts_user ON whatsapp_contacts(user_id);
 -- Bancos ja criados antes desta coluna
 ALTER TABLE whatsapp_contacts ADD COLUMN IF NOT EXISTS last_ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL;
 
+-- Coleta guiada: nome -> empresa -> descricao (o chamado so abre no final)
+ALTER TABLE whatsapp_contacts ADD COLUMN IF NOT EXISTS step TEXT NOT NULL DEFAULT 'name';
+ALTER TABLE whatsapp_contacts ADD COLUMN IF NOT EXISTS draft_name TEXT;
+ALTER TABLE whatsapp_contacts ADD COLUMN IF NOT EXISTS draft_empresa TEXT;
+-- step so faz sentido durante a coleta (NULL quando o contato ja esta ativo)
+ALTER TABLE whatsapp_contacts ALTER COLUMN step DROP NOT NULL;
+
 -- @@INVENTARIO@@  (o init.js cria as tabelas de inventario neste ponto)
 -- Migracao: data programada da proxima manutencao do ativo
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS next_maintenance_date DATE;
