@@ -202,7 +202,8 @@
   // Rótulos
   // ------------------------------------------------------------------
   const TAG_STATUS_CENTRAL = { 1: 'tag-blue', 2: 'tag-violet', 3: 'tag-teal', 4: 'tag-amber', 5: 'tag-green', 6: 'tag-gray', 7: 'tag-gray' };
-  const TAG_PRIO = { 1: 'tag-gray', 2: 'tag-blue', 3: 'tag-amber', 4: 'tag-red' };
+  // urgência (mesmas cores da Central): 4 vermelho, 3 laranja, 2 amarelo, 1 azul
+  const TAG_PRIO = { 1: 'tag-urg1', 2: 'tag-urg2', 3: 'tag-urg3', 4: 'tag-urg4' };
   const SLA = {
     atrasado: ['tag-red', 'Atrasada'], em_risco: ['tag-amber', 'Vence logo'], no_prazo: ['tag-green', 'No prazo'],
     sem_prazo: ['tag-gray', 'Sem prazo'], cumprido: ['tag-green', 'Prazo cumprido'], estourado: ['tag-red', 'Fora do prazo'],
@@ -792,7 +793,7 @@
 
   function abaOrcim(d) {
     const k = d.orcim.kpis; const a = d.orcim.anterior || {};
-    const corUrg = { 4: '#dc2626', 3: '#f59e0b', 2: '', 1: '#94a3b8' };
+    const corUrg = { 4: '#d7263d', 3: '#ec7a1c', 2: '#d9a400', 1: '#4c7dd9' };
     return `
       ${faixa([
     { l: 'Abertos', v: k.criadas, var: variacao(k.criadas, a.criadas, { menorMelhor: true }) },
@@ -1306,7 +1307,7 @@
     return `<div class="task ${cls}" data-href="#/atividades/${t.id}">
       <div class="ttl">${esc(t.title)}</div>
       <div class="meta">
-        ${t.priority >= 3 ? tag(t.priority === 4 ? 'tag-red' : 'tag-amber', PRIO_TAREFA[t.priority]) : ''}
+        ${t.priority >= 3 ? tag(TAG_PRIO[t.priority], PRIO_TAREFA[t.priority]) : ''}
         ${tagPrazoTarefa(t.prazo)}
         ${t.due_at ? `<span><i class="bi bi-calendar"></i> ${fmtData(t.due_at)}</span>` : ''}
         ${t.ticket_number ? `<span><i class="bi bi-link-45deg"></i>${esc(t.ticket_number)}</span>` : ''}
@@ -1444,7 +1445,7 @@
       <a href="#/atividades" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Atividades</a>
       <div class="detail-head">
         <div class="min-w-0">
-          <div class="d-flex flex-wrap gap-2 mt-2">${tagTarefa(t.status)}${tagPrazoTarefa(t.prazo)}${t.priority >= 3 ? tag(t.priority === 4 ? 'tag-red' : 'tag-amber', PRIO_TAREFA[t.priority]) : ''}</div>
+          <div class="d-flex flex-wrap gap-2 mt-2">${tagTarefa(t.status)}${tagPrazoTarefa(t.prazo)}${t.priority >= 3 ? tag(TAG_PRIO[t.priority], PRIO_TAREFA[t.priority]) : ''}</div>
           <h3>${esc(t.title)}</h3>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -1905,7 +1906,7 @@
           ${h.solicitacoes.length ? h.solicitacoes.map((s) => `<div class="task" data-href="#/solicitacoes/${s.id}">
             <div class="d-flex justify-content-between gap-2 align-items-start"><div class="ttl">${esc(s.title)}</div>${btnVisitaSolic(s)}</div>
             ${s.kind === 'visita' ? `<div class="small-muted">${s.tarefas} tarefa(s)${s.atrasada ? ' · <span class="text-danger">passou da data</span>' : ''}</div>` : ''}
-            <div class="meta">${tagSolic(s.status)}${s.priority >= 3 ? tag(s.priority === 4 ? 'tag-red' : 'tag-amber', PRIO_TAREFA[s.priority]) : ''}
+            <div class="meta">${tagSolic(s.status)}${s.priority >= 3 ? tag(TAG_PRIO[s.priority], PRIO_TAREFA[s.priority]) : ''}
               ${s.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(s.location_name)}</span>` : ''}
               ${s.desired_date ? `<span><i class="bi bi-calendar"></i> ${dataBR(s.desired_date)}</span>` : ''}
               <span>· ${relativo(s.created_at)}</span></div></div>`).join('') : vazio('Nenhuma solicitação aberta.', 'emoji-smile')}
@@ -2613,7 +2614,7 @@
   const RESP_VISITA = { ok: ['tag-green', 'OK'], nao_ok: ['tag-red', 'NÃO OK'], na: ['tag-gray', 'N/A'] };
   const metaSolic = (s) => [
     s.kind === 'visita' ? `<span><i class="bi bi-clipboard-check"></i>${esc(s.tipo_visita_label || 'Visita')} · ${s.tarefas.length} tarefa(s)</span>` : '',
-    s.priority >= 2 ? tag(s.priority === 4 ? 'tag-red' : s.priority === 3 ? 'tag-amber' : 'tag-blue', s.priority_label) : '',
+    tag(TAG_PRIO[s.priority] || 'tag-urg1', s.priority_label),
     s.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(s.location_name)}</span>` : '',
     s.desired_date ? `<span${['a_fazer', 'em_andamento'].includes(s.status) && s.desired_date < hojeSP() ? ' class="text-danger"' : ''}><i class="bi bi-calendar"></i> para ${dataBR(s.desired_date)}</span>` : '',
   ].join('');
@@ -2670,7 +2671,7 @@
       </div>` : '';
     view().innerHTML = `
       <a href="#/solicitacoes" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Solicitações</a>
-      <div class="detail-head"><div class="min-w-0"><div class="mt-2">${tagSolic(s.status)} ${s.priority >= 2 ? tag(s.priority === 4 ? 'tag-red' : s.priority === 3 ? 'tag-amber' : 'tag-blue', s.priority_label) : tag('tag-gray', s.priority_label)}</div>
+      <div class="detail-head"><div class="min-w-0"><div class="mt-2">${tagSolic(s.status)} ${tag(TAG_PRIO[s.priority] || 'tag-urg1', s.priority_label)}</div>
         <h3>${esc(s.title)}</h3><div class="small-muted">${esc(s.numero)}</div></div></div>
       <div class="acoes-grandes">
         ${btnVisitaSolic(s, true)}
@@ -3035,6 +3036,14 @@
 
   const TUTORIAIS = [
     {
+      id: 'usuarios', papeis: ['gestor'], icone: 'people', titulo: 'Cadastrar gestores e técnicos',
+      resumo: 'Dê acesso ao Pedro, à Silvani e aos técnicos.',
+      passos: [
+        { rota: '#/usuarios', alvo: '#form-user', titulo: 'Novo usuário', texto: 'Crie o acesso com usuário e senha inicial. A pessoa troca a senha no primeiro login.' },
+        { alvo: 'table.table-x', titulo: 'Gestor ou técnico', texto: 'Gestor: pede visitas, cria checklists e vê o painel. Técnico: faz as visitas e as atividades. Todos os gestores veem a mesma coisa.' },
+      ],
+    },
+    {
       id: 'checklist', papeis: ['gestor'], icone: 'ui-checks', titulo: 'Criar um checklist que se repete',
       resumo: 'Monte a lista de tarefas da visita de rotina e defina de quanto em quanto tempo o posto é visitado.',
       passos: [
@@ -3075,23 +3084,9 @@
       passos: [
         { rota: '#/', alvo: blocoComTitulo('Precisa de você'), titulo: 'Precisa de você', texto: 'Tudo o que está atrasado ou com problema, do mais grave para o menos grave, com a ação ao lado (Reagendar, Criar atividade, Abrir).' },
         { alvo: blocoComTitulo('Hoje'), titulo: 'Hoje', texto: 'As visitas do dia: feitas, em andamento (com quantas tarefas faltam) e previstas.' },
-        { alvo: () => $$('.ac-sec')[2] || null, titulo: 'Resultado do período', texto: 'Visitas, atividades e solicitações do período, comparadas com o período anterior. Troque o período nos botões lá em cima.' },
+        { alvo: () => $$('.ac-sec')[2] || null, titulo: 'Resultado do período', texto: 'Visitas, atividades e solicitações do período, comparadas com o período anterior. Troque o período nos botões Hoje, 7 dias, 30 dias e Mês.' },
         { alvo: blocoComTitulo('Postos'), titulo: 'Postos', texto: 'Cada posto com uma bolinha: vermelho = visita atrasada, amarelo = item NÃO OK sem atividade, verde = em dia.' },
         { alvo: '#btn-sino', titulo: 'Avisos', texto: 'O sino avisa quando uma visita pedida é concluída e quando alguém reagenda (com o motivo).' },
-      ],
-    },
-    {
-      id: 'resultados', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados e o calendário',
-      resumo: 'Painel do gestor: problemas encontrados, visitas feitas, Orcim, postos e o calendário por urgência.',
-      passos: [
-        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'TI do Beija-Flor (nosso trabalho), Orcim (chamados) e Por posto.' },
-        { alvo: '.pg-filtro', titulo: 'Período', texto: 'Escolha Dia, Semana, Mês, Ano ou Personalizado e use as setas para ir ao período anterior ou ao seguinte. Os gráficos acompanham.' },
-        { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... Escolha o período nos botões de cima.' },
-        { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
-        { alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período para guardar ou enviar.' },
-        { rota: '#/calendario', alvo: '.cal-grade', titulo: 'Calendário', texto: 'No menu Gestão → Calendário. Em cada dia, um número por urgência, na cor dela. O reloginho indica algo atrasado.' },
-        { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, amarelo = parada iminente, azul = operação prejudicada, cinza = requisição.' },
-        { alvo: '.cal-dia', titulo: 'O dia escolhido', texto: 'Clique num dia para ver aqui tudo o que foi pedido nele, do mais urgente ao menos urgente.' },
       ],
     },
     {
@@ -3105,11 +3100,28 @@
       ],
     },
     {
-      id: 'usuarios', papeis: ['gestor'], icone: 'people', titulo: 'Cadastrar gestores e técnicos',
-      resumo: 'Dê acesso ao Pedro, à Silvani e aos técnicos.',
+      id: 'painel', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados no Painel do gestor',
+      resumo: 'Números e gráficos do período: visitas, problemas encontrados, Orcim e postos.',
       passos: [
-        { rota: '#/usuarios', alvo: '#form-user', titulo: 'Novo usuário', texto: 'Crie o acesso com usuário e senha inicial. A pessoa troca a senha no primeiro login.' },
-        { alvo: 'table.table-x', titulo: 'Gestor ou técnico', texto: 'Gestor: pede visitas, cria checklists e vê o painel. Técnico: faz as visitas e as atividades. Todos os gestores veem a mesma coisa.' },
+        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'TI do Beija-Flor (o nosso trabalho), Orcim (chamados) e Por posto.' },
+        { alvo: '.pg-filtro .pg-seg', titulo: 'Escolha o período', texto: 'Dia, Semana, Mês, Ano ou Personalizado. Os gráficos acompanham: Dia mostra por hora, Semana e Mês por dia, Ano por mês.' },
+        { alvo: '.pg-filtro .pg-nav', titulo: 'Anterior e seguinte', texto: 'As setas vão para o período anterior ou o seguinte (ex.: outubro, dezembro). "Hoje" volta para o atual.' },
+        { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... O número pequeno ao lado compara com o período anterior.' },
+        { alvo: () => $('.pg-card'), titulo: 'Gráficos', texto: 'Passe o mouse (ou toque) numa coluna para ver o valor de cada parte.' },
+        { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
+        { alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período escolhido para guardar ou enviar.' },
+      ],
+    },
+    {
+      id: 'calendario', papeis: ['gestor'], icone: 'calendar-week', titulo: 'Usar o calendário',
+      resumo: 'Tudo o que foi pedido em cada dia, com as cores da urgência.',
+      passos: [
+        { alvo: '.side-nav a[href="#/calendario"]', titulo: 'Calendário', texto: 'No menu, em Gestão → Calendário.' },
+        { rota: '#/calendario', alvo: '.cal-grade', titulo: 'O mês', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica que algo daquele dia está atrasado.' },
+        { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, laranja = parada iminente, amarelo = operação prejudicada, azul = requisição.' },
+        { alvo: '.cal-filtros', titulo: 'O que mostrar', texto: 'Chamados da Orcim, visitas pedidas à TI do Beija-Flor e "só em aberto". As visitas aparecem no dia desejado; os chamados, no dia em que foram abertos.' },
+        { alvo: '.cal-dia', titulo: 'O dia escolhido', texto: 'Clique num dia para ver aqui tudo o que foi pedido nele, do mais urgente ao menos urgente. Clique num item para abrir.' },
+        { alvo: '.cal-topo .btn', titulo: 'Outros meses', texto: 'Use as setas para ir ao mês anterior ou ao seguinte.' },
       ],
     },
     {

@@ -494,7 +494,7 @@ html[data-bs-theme="dark"] .pg-api { background: rgba(245,158,11,.18); color: #f
 .cal-legenda .cal-num { color: transparent; }
 .cal-num { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 5px;
   border-radius: 9px; font-size: .72rem; font-weight: 700; font-style: normal; color: #fff; line-height: 1; }
-.urg-4 { background: #dc2626; } .urg-3 { background: #f59e0b; color: #422006; } .urg-2 { background: #3b82f6; } .urg-1 { background: #94a3b8; }
+.urg-4 { background: #d7263d; } .urg-3 { background: #ec7a1c; } .urg-2 { background: #d9a400; color: #3d2e00; } .urg-1 { background: #4c7dd9; }
 .cal-corpo { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .cal-sem { font-size: .7rem; color: var(--muted); text-align: center; text-transform: uppercase; padding-bottom: 2px; }
@@ -602,3 +602,13 @@ html[data-bs-theme="dark"] .g-l { stroke: #2b3947; }
   .pg-seg a { flex: 1; text-align: center; padding: 5px 8px; }
   .pg-pdf { margin-left: 0; }
 }
+
+/* Etiquetas de urgência (mesmas cores da Central) */
+.tag-urg4 { background: #fde5e8; color: #b0182d; }
+.tag-urg3 { background: #fdeedd; color: #b85a0e; }
+.tag-urg2 { background: #fbf2cc; color: #8a6a00; }
+.tag-urg1 { background: #e6eefb; color: #2f5fb8; }
+html[data-bs-theme="dark"] .tag-urg4 { background: rgba(215,38,61,.22); color: #ff8fa0; }
+html[data-bs-theme="dark"] .tag-urg3 { background: rgba(236,122,28,.22); color: #fdba74; }
+html[data-bs-theme="dark"] .tag-urg2 { background: rgba(217,164,0,.22); color: #fde047; }
+html[data-bs-theme="dark"] .tag-urg1 { background: rgba(76,125,217,.22); color: #9dbcf5; }
