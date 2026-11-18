@@ -449,15 +449,19 @@
   }
 
   function rotuloBalde(iso, escala) {
-    if (escala === 'mes') return `${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+    if (escala === 'hora') return `${iso.slice(11, 13)}h`;
+    if (escala === 'mes') return `${MESES_CURTOS[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}`;
     if (escala === 'semana') return `sem. ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
     return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   }
 
+  const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const nomeEscala = (e) => ({ hora: 'por hora', dia: 'por dia', semana: 'por semana', mes: 'por mês' }[e] || 'por período');
+
   // Colunas por período (agrupadas ou empilhadas). Devolve SVG puro (serve na tela e no PDF).
-  function graficoColunas(serie, series, { escala = 'dia', empilhado = false, altura = 170 } = {}) {
+  function graficoColunas(serie, series, { escala = 'dia', empilhado = false, altura = 170, largura = 640 } = {}) {
     if (!serie?.length) return '<div class="small-muted">Sem dados no período.</div>';
-    const W = 640; const H = altura; const base = H - 22; const topo = 14; const esq = 30;
+    const W = largura; const H = altura; const base = H - 22; const topo = 14; const esq = 30;
     const n = serie.length; const larg = (W - esq) / n;
     const totais = serie.map((s) => (empilhado
       ? series.reduce((a, c) => a + (s[c.campo] || 0), 0)
@@ -483,7 +487,7 @@
       });
     });
     // rótulos do eixo X: no máximo ~8, sempre o primeiro e o último
-    const passo = Math.max(1, Math.ceil(n / 8));
+    const passo = Math.max(1, Math.ceil(n / (largura >= 900 ? 12 : 8)));
     const rotulos = serie.map((s, i) => (((i % passo === 0 && n - 1 - i >= passo / 2) || i === n - 1)
       ? `<text x="${esq + i * larg + larg / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#64748b">${esc(rotuloBalde(s.periodo, escala))}</text>` : '')).join('');
     const grade = [0, 0.5, 1].map((f) => {
@@ -639,50 +643,96 @@
   const emBreveApi = '<span class="pg-api">API Orcim</span>';
   const pctTxt = (v) => (v === null || v === undefined ? '—' : `${v}%`);
 
+  // Período do painel: Dia, Semana, Mês, Ano (com setas para voltar/avançar) ou Personalizado.
+  // Os gráficos agrupam por hora (Dia), por dia (Semana e Mês) ou por mês (Ano).
+  const TIPOS_PERIODO = [['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês'], ['ano', 'Ano'], ['livre', 'Personalizado']];
+  const isoMes = (iso, n) => { // soma n meses mantendo o dia 1
+    const [a, m] = iso.split('-').map(Number);
+    const x = new Date(Date.UTC(a, m - 1 + n, 1));
+    return x.toISOString().slice(0, 10);
+  };
+  const fimDoMes = (iso) => isoSoma(isoMes(`${iso.slice(0, 7)}-01`, 1), -1);
+  function periodoPainel(tipo, ref) {
+    if (tipo === 'dia') return { de: ref, ate: ref, escala: 'hora' };
+    if (tipo === 'semana') {
+      const dow = new Date(`${ref}T12:00:00Z`).getUTCDay();
+      const seg = isoSoma(ref, -((dow + 6) % 7));
+      return { de: seg, ate: isoSoma(seg, 6), escala: 'dia' };
+    }
+    if (tipo === 'ano') return { de: `${ref.slice(0, 4)}-01-01`, ate: `${ref.slice(0, 4)}-12-31`, escala: 'mes' };
+    return { de: `${ref.slice(0, 7)}-01`, ate: fimDoMes(ref), escala: 'dia' }; // mês
+  }
+  function moverPeriodo(tipo, ref, n) {
+    if (tipo === 'dia') return isoSoma(ref, n);
+    if (tipo === 'semana') return isoSoma(ref, 7 * n);
+    if (tipo === 'ano') return `${Number(ref.slice(0, 4)) + n}${ref.slice(4, 10)}`;
+    return isoMes(`${ref.slice(0, 7)}-01`, n);
+  }
+  function nomePeriodo(tipo, de, ate) {
+    if (tipo === 'dia') {
+      const t = new Date(`${de}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+      return t.charAt(0).toUpperCase() + t.slice(1);
+    }
+    if (tipo === 'semana') return `${de.slice(8, 10)}/${de.slice(5, 7)} a ${fmtIso(ate)}`;
+    if (tipo === 'mes') { const m = MESES_CAL[Number(de.slice(5, 7)) - 1]; return `${m.charAt(0).toUpperCase() + m.slice(1)} de ${de.slice(0, 4)}`; }
+    if (tipo === 'ano') return de.slice(0, 4);
+    return `${fmtIso(de)} a ${fmtIso(ate)}`;
+  }
+
   async function vPainelGestor(qs, seq) {
     titulo('Painel do gestor');
-    const salvo = (store.get('gbf_painel_periodo') || '').split('|');
-    const pre = presetsPeriodo();
-    const de = qs.get('de') || salvo[0] || pre[1][2];
-    const ate = qs.get('ate') || salvo[1] || pre[1][3];
     let aba = qs.get('aba') || store.get('gbf_painel_aba') || 'ti';
     if (!ABAS_PAINEL.some(([k]) => k === aba)) aba = 'ti';
     store.set('gbf_painel_aba', aba);
-    const abasHtml = (deA, ateA) => `<nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="#/painel?${new URLSearchParams(k === 'calendario' ? { aba: k } : { de: deA, ate: ateA, aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>`;
-    if (aba === 'calendario') { await vCalendarioPainel(qs, seq, abasHtml(de, ate)); ligarCliques(); return; }
-    const d = await API.get(`/painel-gestor?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`);
+    let salvo = {};
+    try { salvo = JSON.parse(store.get('gbf_painel_filtro') || '{}'); } catch { /* padrão */ }
+    let tipo = qs.get('per') || salvo.per || 'mes';
+    if (!TIPOS_PERIODO.some(([k]) => k === tipo)) tipo = 'mes';
+    const ref = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('ref') || '') ? qs.get('ref') : (salvo.per === tipo && salvo.ref ? salvo.ref : hojeSP());
+    let per;
+    if (tipo === 'livre') {
+      const de0 = qs.get('de') || salvo.de || isoSoma(hojeSP(), -29);
+      const ate0 = qs.get('ate') || salvo.ate || hojeSP();
+      per = { de: de0 <= ate0 ? de0 : ate0, ate: de0 <= ate0 ? ate0 : de0, escala: '' };
+    } else per = periodoPainel(tipo, ref);
+    const url = (x) => `#/painel?${new URLSearchParams({ aba, per: tipo, ...(tipo === 'livre' ? { de: per.de, ate: per.ate } : { ref }), ...x })}`;
+    const abasHtml = () => `<nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="${k === 'calendario' ? '#/painel?aba=calendario' : url({ aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>`;
+    if (aba === 'calendario') { await vCalendarioPainel(qs, seq, abasHtml()); ligarCliques(); return; }
+
+    const d = await API.get(`/painel-gestor?${new URLSearchParams({ de: per.de, ate: per.ate, escala: per.escala })}`);
     if (seq !== renderSeq) return;
     ultimoPainel = d;
-    store.set('gbf_painel_periodo', `${d.periodo.de}|${d.periodo.ate}`);
-    store.set('gbf_painel_aba', aba);
-    const ativo = pre.find((p) => p[2] === d.periodo.de && p[3] === d.periodo.ate)?.[0];
+    store.set('gbf_painel_filtro', JSON.stringify({ per: tipo, ref, de: per.de, ate: per.ate }));
+    const contemHoje = per.de <= hojeSP() && hojeSP() <= per.ate;
 
     const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos }[aba](d);
     view().innerHTML = `
       <div class="pg-topo">
-        <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Períodos prontos">
-          ${pre.map(([k, nome]) => `<button class="btn ${k === ativo ? 'btn-dark' : 'btn-outline-secondary'}" data-preset="${k}">${nome}</button>`).join('')}
+        <div class="btn-group btn-group-sm" role="group" aria-label="Ver por">
+          ${TIPOS_PERIODO.map(([k, nome]) => `<a class="btn ${k === tipo ? 'btn-dark' : 'btn-outline-secondary'}" href="${url({ per: k, ...(k === 'livre' ? { de: per.de, ate: per.ate } : { ref: tipo === 'livre' ? hojeSP() : ref }) })}">${nome}</a>`).join('')}
         </div>
-        <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(d.periodo.de)}"></label>
-        <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(d.periodo.ate)}"></label>
-        <button class="btn btn-sm btn-outline-secondary" id="pg-aplicar">Aplicar</button>
+        ${tipo === 'livre' ? `
+          <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(per.de)}"></label>
+          <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(per.ate)}"></label>
+          <button class="btn btn-sm btn-outline-secondary" id="pg-aplicar">Aplicar</button>` : `
+          <div class="pg-nav">
+            <a class="btn btn-sm btn-outline-secondary" href="${url({ ref: moverPeriodo(tipo, ref, -1) })}" aria-label="Período anterior"><i class="bi bi-chevron-left"></i></a>
+            <strong class="pg-nome">${esc(nomePeriodo(tipo, per.de, per.ate))}</strong>
+            <a class="btn btn-sm btn-outline-secondary" href="${url({ ref: moverPeriodo(tipo, ref, 1) })}" aria-label="Próximo período"><i class="bi bi-chevron-right"></i></a>
+            ${contemHoje ? '' : `<a class="btn btn-sm btn-link" href="${url({ ref: hojeSP() })}">Hoje</a>`}
+          </div>`}
         <button class="btn btn-sm btn-outline-secondary ms-auto" id="pg-pdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
       </div>
-      <div class="small-muted mb-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · comparado com ${fmtIso(d.periodo.anterior.de)} a ${fmtIso(d.periodo.anterior.ate)}.
+      <div class="small-muted mb-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · gráficos ${nomeEscala(d.periodo.escala)} · comparado com ${fmtIso(d.periodo.anterior.de)} a ${fmtIso(d.periodo.anterior.ate)}.
         "Agora" é a situação neste momento.</div>
-      ${abasHtml(d.periodo.de, d.periodo.ate)}
+      ${abasHtml()}
       <div id="pg-conteudo">${conteudo}</div>`;
 
-    const ir = (a, b) => { location.hash = `#/painel?${new URLSearchParams({ de: a, ate: b, aba })}`; };
-    $('#pg-aplicar').addEventListener('click', () => {
+    $('#pg-aplicar')?.addEventListener('click', () => {
       const a = $('#pg-de').value; const b = $('#pg-ate').value;
       if (!a || !b) { toast('Escolha as duas datas.', true); return; }
-      ir(a, b);
+      location.hash = url({ per: 'livre', de: a, ate: b });
     });
-    $$('[data-preset]').forEach((btn) => btn.addEventListener('click', () => {
-      const p = pre.find((x) => x[0] === btn.dataset.preset);
-      ir(p[2], p[3]);
-    }));
     $('#pg-pdf').addEventListener('click', () => exportarPdf(ultimoPainel));
     ligarCliques();
   }
@@ -698,6 +748,10 @@
     { l: 'Atividades concluídas', v: k.atividades, var: variacao(k.atividades, a.atividades), sub: k.no_prazo_pct !== null ? `${k.no_prazo_pct}% no prazo` : '' },
     { l: 'Em aberto agora', v: k.atividades_abertas_agora, sub: k.atividades_atrasadas_agora ? `${k.atividades_atrasadas_agora} atrasada(s)` : 'atividades', href: '#/atividades' },
   ])}
+      <div class="pg-duas">
+        ${blocoPg(`Entregas da TI ${nomeEscala(d.periodo.escala)}`, graficoColunas(d.ti.serie, CORES_TI, { escala: d.periodo.escala, empilhado: true, altura: 180 }))}
+        ${blocoPg(`Itens com problema ${nomeEscala(d.periodo.escala)}`, graficoColunas(d.ti.serie, [{ campo: 'nao_ok', nome: 'Itens NÃO OK nas visitas', cor: '#dc2626' }], { escala: d.periodo.escala, altura: 180 }))}
+      </div>
       ${blocoPg('Problemas encontrados nas visitas', d.ti.nao_ok.length ? d.ti.nao_ok.slice(0, 12).map((n) => `<div class="pg-prob" data-href="#/visitas/${n.visit_id}">
           <span class="pg-prob-t"><b>${esc(n.item_label)}</b> — ${esc(n.local)}</span>
           <span class="small-muted text-nowrap">${fmtDia(n.finished_at)}</span>
@@ -728,6 +782,7 @@
     { l: '1ª resposta', v: dur(k.tempo_medio_primeira_resposta), var: variacao(k.tempo_medio_primeira_resposta, a.tempo_medio_primeira_resposta, { menorMelhor: true, tempo: true }) },
     { l: 'Em aberto agora', v: k.abertas_agora, sub: k.atrasadas_agora ? `${k.atrasadas_agora} atrasado(s)` : '', href: '#/demandas?situacao=abertas' },
   ])}
+      ${blocoPg(`Chamados abertos × resolvidos ${nomeEscala(d.periodo.escala)}`, graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: d.periodo.escala, altura: 170, largura: 900 }))}
       <div class="pg-duas">
         ${blocoPg('Problemas mais recorrentes', listaBarras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' }), `${emBreveApi} hoje: categorias da Central`)}
         ${blocoPg('Equipamentos mais solicitados', d.orcim.equipamentos ? listaBarras(d.orcim.equipamentos)
@@ -757,7 +812,12 @@
   function abaPostos(d) {
     const cor = { atrasado: 'red', atencao: 'amber', ok: 'green', sem_data: 'gray' };
     const semChamados = d.postos.every((p) => p.chamados === null);
-    return blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+    const porNome = (campo) => d.postos.map((p) => ({ nome: p.nome, total: p[campo] || 0 })).sort((a, b) => b.total - a.total);
+    return `<div class="pg-duas">
+      ${blocoPg('Visitas por posto', listaBarras(porNome('visitas'), { max: 10, vazio: 'Nenhuma visita no período.' }))}
+      ${blocoPg('Itens com problema por posto', listaBarras(porNome('nao_ok'), { max: 10, cor: '#dc2626', vazio: 'Nenhum item NÃO OK no período.' }))}
+      </div>
+      ${semChamados ? '' : blocoPg('Chamados da Orcim por posto', listaBarras(porNome('chamados'), { max: 10, cor: '#534AB7', vazio: 'Nenhum chamado no período.' }))}` + blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
       <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th></tr></thead>
       <tbody>${d.postos.map((p) => `<tr data-href="#/postos/${p.id}" class="clicavel">
         <td class="text-nowrap"><span class="ac-dot ${cor[p.situacao]} d-inline-block me-2"></span>${esc(p.nome)}${p.dias_atraso ? ` <span class="small text-danger">${p.dias_atraso} d</span>` : ''}</td>
@@ -887,7 +947,7 @@
     if (!d) return;
     const o = d.orcim.kpis; const t = d.ti.kpis; const per = d.periodo;
     const esc_ = per.escala;
-    const tituloEscala = esc_ === 'dia' ? 'por dia' : esc_ === 'semana' ? 'por semana' : 'por mês';
+    const tituloEscala = nomeEscala(esc_);
     const nomeArquivo = `Relatorio_Painel_Gestor_${per.de}_a_${per.ate}`;
     const linha = (rot, val) => `<tr><td>${esc(rot)}</td><td class="num">${esc(val)}</td></tr>`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${esc(nomeArquivo)}</title>

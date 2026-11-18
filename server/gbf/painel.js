@@ -46,11 +46,26 @@ function contar(arr, chave) {
   return [...m.entries()].map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
 }
 
-// Agrupa os dias do período em dia / semana / mês, conforme o tamanho do período
-function montarEixo(de, ate) {
+// "AAAA-MM-DDTHH" do instante "d" no fuso de São Paulo (para agrupar por hora)
+const horaSP = (d) => {
+  const x = new Date(d);
+  const h = x.toLocaleString('en-GB', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).slice(0, 2);
+  return `${diaSP(x)}T${h}`;
+};
+
+// Agrupa o período em hora / dia / semana / mês. A tela escolhe (Dia = por hora, Semana e Mês = por
+// dia, Ano = por mês); sem escolha, vai pelo tamanho do período.
+// As chaves aceitam "AAAA-MM-DD" ou "AAAA-MM-DDTHH".
+function montarEixo(de, ate, pedida) {
   const n = difDias(de, ate) + 1;
-  const escala = n <= 62 ? 'dia' : n <= 200 ? 'semana' : 'mes';
-  const chave = (iso) => {
+  let escala = n <= 62 ? 'dia' : n <= 200 ? 'semana' : 'mes';
+  if (['dia', 'semana', 'mes'].includes(pedida)) escala = pedida;
+  if (pedida === 'hora' && n === 1) escala = 'hora';
+  if (escala === 'dia' && n > 400) escala = 'mes';
+  const chave = (valor) => {
+    const v = String(valor);
+    if (escala === 'hora') return v.length > 10 ? v.slice(0, 13) : `${v.slice(0, 10)}T00`;
+    const iso = v.slice(0, 10);
     if (escala === 'dia') return iso;
     if (escala === 'mes') return `${iso.slice(0, 7)}-01`;
     // semana começando na segunda-feira (limitada ao início do período)
@@ -59,6 +74,10 @@ function montarEixo(de, ate) {
     return seg < de ? de : seg;
   };
   const baldes = [];
+  if (escala === 'hora') {
+    for (let h = 0; h < 24; h += 1) baldes.push(`${de}T${String(h).padStart(2, '0')}`);
+    return { escala, chave, baldes };
+  }
   const vistos = new Set();
   for (let i = 0; i < n; i += 1) {
     const k = chave(somaDias(de, i));
@@ -77,7 +96,7 @@ router.get('/', requireGestor, ah(async (req, res) => {
   if (ate < de) [de, ate] = [ate, de];
   if (difDias(de, ate) + 1 > MAX_DIAS) de = somaDias(ate, -(MAX_DIAS - 1));
   const dias = difDias(de, ate) + 1;
-  const eixo = montarEixo(de, ate);
+  const eixo = montarEixo(de, ate, String(req.query.escala || ''));
   const noPeriodo = (d) => {
     if (!d) return false;
     const x = diaSP(d);
@@ -115,8 +134,8 @@ router.get('/', requireGestor, ah(async (req, res) => {
   const atrasadas = abertas.filter((d) => d.sla === 'atrasado');
 
   const serieOrcim = new Map(eixo.baldes.map((b) => [b, { periodo: b, criadas: 0, resolvidas: 0 }]));
-  for (const d of criadas) serieOrcim.get(eixo.chave(diaSP(d.created_at))).criadas += 1;
-  for (const d of resolvidas) serieOrcim.get(eixo.chave(diaSP(d.resolvido_em))).resolvidas += 1;
+  for (const d of criadas) { const b = serieOrcim.get(eixo.chave(horaSP(d.created_at))); if (b) b.criadas += 1; }
+  for (const d of resolvidas) { const b = serieOrcim.get(eixo.chave(horaSP(d.resolvido_em))); if (b) b.resolvidas += 1; }
 
   const tecnicos = new Map();
   for (const d of resolvidas) {
@@ -163,7 +182,7 @@ router.get('/', requireGestor, ah(async (req, res) => {
   const INI = `($1::date::timestamp AT TIME ZONE '${TZ}')`;
   const FIM = `(($2::date + 1)::timestamp AT TIME ZONE '${TZ}')`;
   const ENTRE = (col) => `${col} >= ${INI} AND ${col} < ${FIM}`;
-  const DIA = (col) => `to_char(${col} AT TIME ZONE '${TZ}', 'YYYY-MM-DD')`;
+  const DIA = (col) => `to_char(${col} AT TIME ZONE '${TZ}', 'YYYY-MM-DD"T"HH24')`;
   const HOJE = `(now() AT TIME ZONE '${TZ}')::date`;
 
   const [visitas, tarefas, solicConcl, naoOk, postosAtrasados, abertasTI, paradas, porPessoa] = await Promise.all([
@@ -198,11 +217,12 @@ router.get('/', requireGestor, ah(async (req, res) => {
            FROM gbf_users u WHERE u.active ORDER BY u.name`, p),
   ]);
 
-  const serieTI = new Map(eixo.baldes.map((b) => [b, { periodo: b, visitas: 0, atividades: 0, solicitacoes: 0 }]));
+  const serieTI = new Map(eixo.baldes.map((b) => [b, { periodo: b, visitas: 0, atividades: 0, solicitacoes: 0, nao_ok: 0 }]));
   const somar = (linhas, campo) => linhas.forEach((r) => {
     const s = serieTI.get(eixo.chave(r.dia));
     if (s) s[campo] += 1;
   });
+  visitas.rows.forEach((r) => { const b = serieTI.get(eixo.chave(r.dia)); if (b) b.nao_ok += r.nao_ok; });
   somar(visitas.rows, 'visitas');
   somar(tarefas.rows, 'atividades');
   somar(solicConcl.rows, 'solicitacoes');
