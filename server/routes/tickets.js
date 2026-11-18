@@ -871,6 +871,10 @@ router.post('/:id/status', async (req, res) => {
 
   const updated = await loadTicket(req.params.id);
   await notify.statusChanged(updated, user, toStatus);
+  if (toStatus === 5 && resolution) {
+    await notify.solutionToWhatsApp(updated, resolution.notes).catch((e) =>
+      console.log('[tickets] aviso whatsapp da solucao falhou:', e.message));
+  }
   res.json(decorate(updated, user));
 });
 
@@ -951,6 +955,10 @@ router.post('/:id/approval/respond', async (req, res) => {
 
   const updated = await loadTicket(req.params.id);
   await notify.approvalResponded(updated, decision, user.name);
+  if (decision === 'approved' && updated.resolution_notes) {
+    await notify.solutionToWhatsApp(updated, updated.resolution_notes).catch((e) =>
+      console.log('[tickets] aviso whatsapp da solucao aprovada falhou:', e.message));
+  }
   res.json(decorate(updated, user));
 });
 

@@ -1,6 +1,7 @@
 const { query } = require('../db');
 const settingsStore = require('./settingsStore');
 const mailer = require('./mailer');
+const config = require('../config');
 const whatsapp = require('./whatsapp');
 const realtime = require('./realtime');
 const { isPreview } = require('../db');
@@ -211,6 +212,46 @@ async function deliver({ ticket, event, recipients, title, subject, message, tic
   }
 }
 
+// Chamados abertos pelo WhatsApp recebem a solucao de volta no mesmo numero.
+// Best effort: se o WhatsApp estiver offline, registra o erro e nao derruba a
+// mudanca de status. Nao depende do aviso generico de "status alterado".
+async function solutionToWhatsApp(ticket, solution) {
+  if (!ticket || !ticket.via_whatsapp || !solution || isPreview()) return;
+  let phone = null;
+  try {
+    const found = await query(
+      `SELECT wc.phone
+         FROM whatsapp_contacts wc
+        WHERE wc.user_id = $1
+          AND wc.phone ~ '^[0-9]+$'
+        ORDER BY wc.last_seen_at DESC NULLS LAST
+        LIMIT 1`, [ticket.requester_id]);
+    phone = found.rows.length ? found.rows[0].phone : null;
+  } catch (e) {
+    console.log('[notify] solucao whatsapp: falha ao buscar contato:', e.message);
+  }
+  if (!phone) return;
+
+  const texto = `Seu chamado ${ticket.number} foi resolvido!\n\n` +
+    `Assunto: ${ticket.title}\n\n` +
+    `Solução:\n${String(solution).slice(0, 3000)}\n\n` +
+    (config.publicUrl ? `Acesse o sistema para avaliar: ${config.publicUrl}` : 'Obrigado pelo contato!');
+
+  try {
+    await whatsapp.sendTextMessage(phone, texto);
+    await logNotification({
+      ticketId: ticket.id, channel: 'whatsapp', event: 'resolution.whatsapp',
+      recipient: phone, status: 'sent',
+    });
+  } catch (err) {
+    await logNotification({
+      ticketId: ticket.id, channel: 'whatsapp', event: 'resolution.whatsapp',
+      recipient: phone, status: 'error', error: err.message,
+    }).catch(() => {});
+    console.log('[notify] solucao whatsapp nao enviada:', err.message);
+  }
+}
+
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // Helper para resolver template com fallback para DEFAULT
@@ -364,6 +405,7 @@ module.exports = {
   getParticipants,
   getAdminsAndTechs,
   createInApp,
+  solutionToWhatsApp,
   ticketCreated,
   statusChanged,
   ticketAssigned,

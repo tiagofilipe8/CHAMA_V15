@@ -339,9 +339,18 @@ async function ensureImpactoPadrao() {
   return rows[0] || null;
 }
 
+// Numero legivel no texto do chamado: +55 (31) 99999-9999
+function formatarTelefone(norm) {
+  const d = String(norm || '').replace(/\D/g, '');
+  if (d.length === 13 && d.startsWith('55')) {
+    return `+55 (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
+  }
+  return `+${d}`;
+}
+
 // ------------------------------- chamados -----------------------------------
 // assunto: inicio da descricao (o que aparece no topo do chamado).
-async function abrirChamado({ user, descricao, assunto }) {
+async function abrirChamado({ user, descricao, assunto, telefone }) {
   const entId = user.entity_id || (await ensureEmpresaPadrao());
   const catId = await ensureCategoriaPadrao();
   const impact = await ensureImpactoPadrao();
@@ -369,15 +378,19 @@ async function abrirChamado({ user, descricao, assunto }) {
     if (loc.rows.length && String(loc.rows[0].entity_id) === String(entId)) locId = user.location_id;
   }
 
-  const texto = String(descricao || '').trim().slice(0, 4000);
+  let texto = String(descricao || '').trim().slice(0, 4000);
+  // Numero do WhatsApp usado na abertura fica registrado no chamado
+  if (telefone) {
+    texto += `\n\nWhatsApp do solicitante: ${formatarTelefone(telefone)}`;
+  }
   const primeira = (String(assunto || '').split(/\r?\n/)[0] || texto.split(/\r?\n/)[0] || '').trim();
   const title = (primeira.slice(0, 80) + (primeira.length > 80 ? '…' : '')) || 'Chamado por WhatsApp';
   const hoje = new Date().toISOString().slice(0, 10);
 
   const { rows } = await query(
     `INSERT INTO tickets (title, description, category_id, simple_category_id, entity_id,
-                          requester_id, priority, impact_id, due_at, location_id, needed_by)
-     VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10)
+                          requester_id, priority, impact_id, due_at, location_id, needed_by, via_whatsapp)
+     VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)
      RETURNING id`,
     [title, texto, catId, entId, user.id,
       impact ? impact.priority : 2, impact ? impact.id : null, dueAt, locId, hoje]);
@@ -511,7 +524,7 @@ async function coletar(norm, contact, user, body) {
     if (contact.draft_empresa) {
       descricao += `\n\nEmpresa informada pelo solicitante: ${contact.draft_empresa}`;
     }
-    const chamado = await abrirChamado({ user: solicitante, descricao, assunto: body });
+    const chamado = await abrirChamado({ user: solicitante, descricao, assunto: body, telefone: norm });
     await markActive(norm, solicitante.id, chamado.id);
     console.log(`[whatsapp-inbound] ${norm} coleta concluida -> ${solicitante.name} (chamado ${chamado.number}, assunto: ${chamado.title})`);
     await reply(norm, MSG_CHAMADO(chamado));
@@ -567,7 +580,7 @@ async function handle(msg) {
     if (/^novo\b/i.test(body)) {
       const texto = body.replace(/^novo\s*[:\-–—]?\s*/i, '').trim();
       if (!texto) { await reply(norm, MSG_TEXTO); return; }
-      const chamado = await abrirChamado({ user, descricao: texto, assunto: texto });
+      const chamado = await abrirChamado({ user, descricao: texto, assunto: texto, telefone: norm });
       await setLastTicket(norm, chamado.id);
       console.log(`[whatsapp-inbound] ${norm} chamado ${chamado.number} criado para ${user.name}`);
       await reply(norm, MSG_CHAMADO(chamado));

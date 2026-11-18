@@ -483,6 +483,9 @@ CREATE TABLE IF NOT EXISTS whatsapp_contacts (
 );
 CREATE INDEX IF NOT EXISTS idx_wa_contacts_user ON whatsapp_contacts(user_id);
 
+-- Identificacao do chamado aberto pelo WhatsApp (para enviar a solucao de volta)
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS via_whatsapp BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Bancos ja criados antes desta coluna
 ALTER TABLE whatsapp_contacts ADD COLUMN IF NOT EXISTS last_ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL;
 

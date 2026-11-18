@@ -53,8 +53,9 @@ Documentação completa do módulo: `docs/painel-beija-flor/README.md`.
 
 ## Recepção de chamados por WhatsApp
 
-O sistema **abre chamados a partir de mensagens de WhatsApp** (`server/whatsapp-inbound.js`).
-O envio de notificações por WhatsApp continua sendo o mesmo de antes.
+O sistema **abre chamados a partir de mensagens de WhatsApp** (`server/whatsapp-inbound.js`)
+e **devolve a solução ao solicitante pelo WhatsApp** quando o chamado é resolvido
+(`server/services/notify.js`).
 
 ### Como funciona
 
@@ -82,7 +83,17 @@ Padrões do chamado aberto por WhatsApp: empresa **"WhatsApp - não identificado
 (criada sozinha; o técnico redireciona para a empresa certa ao assumir), categoria
 **"Outros"**, urgência **"Operação prejudicada"** e data de necessidade = hoje.
 Quem já é cadastrado abre na **própria empresa**. A empresa digitada na coleta fica
-gravada como texto na descrição (`Empresa informada pelo solicitante: ...`).
+gravada como texto na descrição (`Empresa informada pelo solicitante: ...`). O número
+usado no WhatsApp também fica no chamado (`WhatsApp do solicitante: +55 (31) 99999-9999`).
+
+### Solução de volta pelo WhatsApp
+
+Chamados abertos pelo WhatsApp são marcados internamente (`tickets.via_whatsapp`).
+Quando o técnico **resolve** (status *Resolvido*) ou a aprovação é **aprovada**, a
+solução é enviada automaticamente para o último número conhecido do solicitante,
+com o número e o assunto do chamado. O envio é *best effort*: se o WhatsApp estiver
+offline ou o contato não existir, a mudança de status não é afetada e o resultado
+fica em `notification_log` (`event = 'resolution.whatsapp'`).
 
 ### Atribuir empresa (triagem)
 
