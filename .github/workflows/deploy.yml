@@ -30,17 +30,23 @@ jobs:
             }
           }
 
-      - name: Atualizar codigo
+      - name: Atualizar codigo da aplicacao
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $proj = 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          $dst = 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
           $env:Path = "C:\Program Files\Git\cmd;$env:Path"
-          Set-Location $proj
-          git config --global --add safe.directory $proj
-          git fetch origin
+          git config --global --add safe.directory $dst
+
+          # Autentica no git com o token temporario do job (sem expor credencial).
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+          $auth  = "AUTHORIZATION: basic $basic"
+
+          Set-Location $dst
+          git -c "http.https://github.com/.extraheader=$auth" fetch origin --prune
           git reset --hard origin/main
-          Write-Host "Commit: $(git rev-parse --short HEAD)"
+          Write-Host "Commit publicado: $(git rev-parse --short HEAD)"
+          git status -sb
 
       - name: Instalar dependencias
         shell: powershell
