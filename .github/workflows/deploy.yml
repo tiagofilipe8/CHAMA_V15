@@ -32,19 +32,25 @@ jobs:
 
       - name: Atualizar codigo da aplicacao
         shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
           $dst = 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
           $env:Path = "C:\Program Files\Git\cmd;$env:Path"
+          $env:GIT_TERMINAL_PROMPT = '0'
           git config --global --add safe.directory $dst
 
           # Autentica no git com o token temporario do job (sem expor credencial).
+          if (-not $env:GITHUB_TOKEN) { throw 'GITHUB_TOKEN nao disponivel' }
           $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
           $auth  = "AUTHORIZATION: basic $basic"
 
           Set-Location $dst
-          git -c "http.https://github.com/.extraheader=$auth" fetch origin --prune
+          git -c credential.helper= -c "http.https://github.com/.extraheader=$auth" fetch origin --prune
+          if ($LASTEXITCODE -ne 0) { throw "git fetch falhou ($LASTEXITCODE)" }
           git reset --hard origin/main
+          if ($LASTEXITCODE -ne 0) { throw "git reset falhou ($LASTEXITCODE)" }
           Write-Host "Commit publicado: $(git rev-parse --short HEAD)"
           git status -sb
 
