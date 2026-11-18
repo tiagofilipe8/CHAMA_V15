@@ -1,0 +1,79 @@
+name: Deploy (LAN)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-lan
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Garantir PostgreSQL no ar
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = 'C:\ORCIM\runtime\pgsql\bin'
+          & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
+          if ($LASTEXITCODE -ne 0) {
+            & "$bin\pg_ctl.exe" -D 'C:\ORCIM\runtime\pgdata' -l 'C:\ORCIM\runtime\postgres.log' -o '-h 127.0.0.1 -p 5432' start
+            foreach ($i in 1..30) {
+              Start-Sleep -Seconds 1
+              & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
+              if ($LASTEXITCODE -eq 0) { break }
+            }
+          }
+
+      - name: Atualizar codigo
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          $env:Path = "C:\Program Files\Git\cmd;$env:Path"
+          Set-Location $proj
+          git config --global --add safe.directory $proj
+          git fetch origin
+          git reset --hard origin/main
+          Write-Host "Commit: $(git rev-parse --short HEAD)"
+
+      - name: Instalar dependencias
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "C:\ORCIM\runtime\node;$env:Path"
+          Set-Location 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          npm install --no-audit --no-fund
+
+      - name: Banco de dados (schema + seed + inventario)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "C:\ORCIM\runtime\node;C:\ORCIM\runtime\pgsql\bin;$env:Path"
+          Set-Location 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          npm run init
+          node _migrate_inventory.js
+
+      - name: Reiniciar aplicacao
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\ORCIM\runtime\start-os.ps1'
+
+      - name: Healthcheck
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($i in 1..12) {
+            Start-Sleep -Seconds 5
+            try {
+              $r = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/healthz' -UseBasicParsing -TimeoutSec 15
+              if ($r.StatusCode -eq 200) { Write-Host "OK: $($r.Content)"; exit 0 }
+            } catch { Write-Host "tentativa $i falhou..." }
+          }
+          throw 'Healthcheck falhou apos 60s'
