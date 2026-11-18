@@ -1,0 +1,40 @@
+# Publicação do Painel Beija-Flor (Central + /gbf) no Render — usado pelo Grupo Beija-Flor em ti.sgogeral.com.
+# O serviço foi criado pela API do Render; este arquivo documenta a configuração.
+# As variáveis GBF_HOME e WHATSAPP_DISABLED só existem aqui: sem elas a Central roda como sempre.
+services:
+  - type: web
+    name: ti-painel
+    runtime: node
+    plan: starter
+    region: virginia
+    # npm install (não npm ci): o package-lock.json da Central está fora de sincronia com o package.json
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    startCommand: node server/gbf/instalar-banco.js && node server/index.js
+    healthCheckPath: /healthz
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: America/Sao_Paulo
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
+      - key: WHATSAPP_DISABLED
+        value: "1"
+      - key: GBF_HOME
+        value: "1"
+      - key: PUBLIC_URL
+        value: https://ti.sgogeral.com
+      - key: JWT_SECRET
+        generateValue: true
+      # DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD: do banco ti-painel-db (conexão interna)
+      # GBF_ADMIN_USER / GBF_ADMIN_PASSWORD: primeiro gestor do painel (troca a senha no 1º acesso)
+
+databases:
+  - name: ti-painel-db
+    plan: basic-256mb
+    region: virginia
+    postgresMajorVersion: "18"

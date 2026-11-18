@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Central de Serviços</title>
+  <script>try{document.documentElement.setAttribute('data-bs-theme',localStorage.getItem('tema')==='dark'?'dark':'light')}catch(e){}</script>
   <link rel="stylesheet" href="/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/vendor/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/app.css?v=20261117h">
 </head>
 <body class="app-body">
 
@@ -21,6 +22,7 @@
         </div>
       </div>
       <nav class="sidebar-nav" id="side-nav"><!-- gerado por usuario --></nav>
+      <div class="sidebar-versao" id="side-versao"></div>
       <div class="sidebar-foot">
         <div class="user-mini">
           <div class="avatar" id="side-avatar">?</div>
@@ -39,8 +41,10 @@
         <div class="topbar-left">
           <button class="icon-btn d-lg-none" id="btn-side-toggle"><i class="bi bi-list"></i></button>
           <h2 id="page-title">Painel</h2>
+          <span class="tg page-modulo" id="page-modulo"></span>
         </div>
         <div class="topbar-right">
+          <button class="icon-btn" id="btn-tema" title="Modo escuro / claro"><i class="bi bi-moon-stars-fill"></i></button>
           <button class="icon-btn" id="btn-voice" title="Notificação por voz">
             <i class="bi bi-volume-up-fill" id="voice-icon"></i>
           </button>
@@ -60,19 +64,22 @@
     </div>
   </div>
 
+  <a href="#/new" class="fab-novo" id="fab-novo" aria-label="Abrir novo chamado"><i class="bi bi-plus-lg"></i><span>Novo chamado</span></a>
   <div class="toast-wrap" id="toast-wrap"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/vendor/bootstrap.bundle.min.js"></script>
-  <script src="/js/ui.js"></script>
-  <script src="/js/api.js"></script>
-  <script src="/js/voice.js"></script>
-  <script src="/js/views/dashboard.js"></script>
-  <script src="/js/views/tickets.js"></script>
-  <script src="/js/views/ticketDetail.js"></script>
-  <script src="/js/views/newTicket.js"></script>
-  <script src="/js/views/settingsView.js"></script>
-  <script src="/js/views/inventory.js"></script>
-  <script src="/js/app.js"></script>
+  <script src="/js/ui.js?v=20261117h"></script>
+  <script src="/js/api.js?v=20261117h"></script>
+  <script src="/js/voice.js?v=20261117h"></script>
+  <script src="/js/calendar.js?v=20261117h"></script>
+  <script src="/js/views/dashboard.js?v=20261117h"></script>
+  <script src="/js/views/tickets.js?v=20261117h"></script>
+  <script src="/js/views/ticketModals.js?v=20261117h"></script>
+  <script src="/js/views/ticketDetail.js?v=20261117h"></script>
+  <script src="/js/views/newTicket.js?v=20261117h"></script>
+  <script src="/js/views/settingsView.js?v=20261117h"></script>
+  <script src="/js/views/inventory.js?v=20261117h"></script>
+  <script src="/js/app.js?v=20261117h"></script>
 </body>
-</html>
+</html>

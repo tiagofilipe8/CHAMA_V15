@@ -1,6 +1,9 @@
 const express = require('express');
 const { query } = require('../db');
-const { requireAuth, scopeConditions } = require('../middleware/auth');
+const { requireAuth, scopeConditions, isStaff, has, entityIdsOf } = require('../middleware/auth');
+
+// Painel: quem tem a permissao "Ver o painel" (cada um ve so o seu escopo de empresas)
+const canSeeDashboard = (u) => has(u, 'dashboard.view');
 const notify = require('../services/notify');
 
 const router = express.Router();
@@ -9,7 +12,7 @@ router.use(requireAuth);
 // Resumo do painel: contadores + chamados em aberto ordenados por ultima atualizacao (apenas admin/técnico)
 router.get('/', async (req, res) => {
   const user = req.user;
-  if (user.role === 'client') return res.status(403).json({ error: 'Painel disponível apenas para Administradores e Técnicos.' });
+  if (!canSeeDashboard(user)) return res.status(403).json({ error: 'Painel disponível para a equipe, administradores e gestores.' });
   const scope = scopeConditions(user, 1);
   const params = [...scope.params];
 
@@ -39,7 +42,7 @@ router.get('/', async (req, res) => {
 
   res.json({
     counts: q1.rows[0],
-    my_open: user.role !== 'client'
+    my_open: isStaff(user)
       ? q2.rows.filter((r) => r.assigned_user_id === user.id).length
       : q2.rows.length,
     tickets: q2.rows.map((r) => ({
@@ -66,7 +69,7 @@ router.get('/', async (req, res) => {
 // NOC Dashboard — métricas completas (apenas admin/técnico)
 router.get('/noc', async (req, res) => {
   const user = req.user;
-  if (user.role === 'client') return res.status(403).json({ error: 'Painel NOC disponível apenas para Administradores e Técnicos.' });
+  if (!canSeeDashboard(user)) return res.status(403).json({ error: 'Painel NOC disponível para a equipe, administradores e gestores.' });
   const scope = scopeConditions(user, 1);
   const baseParams = [...scope.params];
   try {
@@ -102,7 +105,7 @@ router.get('/noc', async (req, res) => {
       `SELECT avg(EXTRACT(EPOCH FROM (sub.first_resp - sub.created_at))/3600)::numeric(10,2) AS tmr_hours
        FROM (
          SELECT t.id, t.created_at,
-                (SELECT min(m.created_at) FROM ticket_messages m JOIN users u ON u.id=m.user_id WHERE m.ticket_id=t.id AND u.role IN ('admin','technician') AND m.kind='comment') AS first_resp
+                (SELECT min(m.created_at) FROM ticket_messages m JOIN users u ON u.id=m.user_id WHERE m.ticket_id=t.id AND u.role IN ('admin','moderator','technician') AND m.kind='comment') AS first_resp
          FROM tickets t WHERE 1=1 ${scope.sql ? 'AND ' + scope.sql : ''} AND t.created_at >= now() - interval '30 days'
        ) sub WHERE sub.first_resp IS NOT NULL`, baseParams);
     const qRadar = await query(
@@ -126,12 +129,13 @@ router.get('/noc', async (req, res) => {
       `SELECT count(*)::int AS total FROM tickets t WHERE t.assigned_user_id IS NULL AND t.status NOT IN (6,7) ${scope.sql ? 'AND ' + scope.sql : ''}`, baseParams);
     // Workload por técnico
     let workload;
-    if (user.role === 'client' && user.client_level === 2) {
+    if (!isStaff(user)) {
       const w2 = await query(
         `SELECT u.id, u.name, count(t.id)::int AS open_count
-         FROM users u LEFT JOIN tickets t ON t.assigned_user_id=u.id AND t.status NOT IN (6,7) AND t.entity_id=$1
+         FROM users u LEFT JOIN tickets t ON t.assigned_user_id=u.id AND t.status NOT IN (6,7)
+                                         AND t.entity_id::text = ANY($1::text[])
          WHERE u.role='technician' AND u.active=true
-         GROUP BY u.id ORDER BY open_count DESC`, [user.entity_id]);
+         GROUP BY u.id ORDER BY open_count DESC`, [entityIdsOf(user)]);
       workload = w2.rows;
     } else {
       const w = await query(
@@ -154,14 +158,16 @@ router.get('/noc', async (req, res) => {
        WHERE a.next_maintenance_date IS NOT NULL
          AND a.next_maintenance_date <= CURRENT_DATE
          AND a.status NOT IN ('DISPOSED', 'LOST')
+         AND ($1::text[] IS NULL OR a.entity_id::text = ANY($1::text[]))
        ORDER BY a.next_maintenance_date ASC
-       LIMIT 20`);
+       LIMIT 20`, [entityIdsOf(user)]);
     const qMaintCount = await query(
       `SELECT count(*)::int AS c
        FROM assets a
        WHERE a.next_maintenance_date IS NOT NULL
          AND a.next_maintenance_date <= CURRENT_DATE
-         AND a.status NOT IN ('DISPOSED', 'LOST')`);
+         AND a.status NOT IN ('DISPOSED', 'LOST')
+         AND ($1::text[] IS NULL OR a.entity_id::text = ANY($1::text[]))`, [entityIdsOf(user)]);
     const qAnalystStatus = await query(
       `SELECT u.id, u.name, count(t.id) FILTER (WHERE t.status NOT IN (6,7))::int AS open_count, max(t.updated_at) AS last_activity
        FROM users u LEFT JOIN tickets t ON t.assigned_user_id=u.id AND t.status NOT IN (6,7)
@@ -194,4 +200,4 @@ router.get('/noc', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = router;

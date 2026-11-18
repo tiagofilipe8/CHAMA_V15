@@ -4,7 +4,7 @@
 
 Views.dashboard = async function dashboard(el, opts = {}) {
   const user = API.user || {};
-  if (user.role === 'client') { location.hash = '#/tickets'; toast('Painel disponível apenas para Administradores e Técnicos.', 'warning'); return; }
+  if (!Roles.canSeeDashboard(user)) { location.replace('#/tickets'); return; }
   let data, noc;
   try {
     [data, noc] = await Promise.all([
@@ -17,7 +17,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
   }
 
   const c = data.counts || {};
-  const isClient = user.role === 'client';
+  const isClient = !Roles.isStaff(user); // gestor / admin local: painel das próprias empresas
   const v = noc?.volume || {};
   const sla = noc?.sla || {};
   const dist = noc?.distribution || {};
@@ -44,7 +44,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     <div class="stats-row">
       ${statCard('Abertos', v.open_total ?? c.open_total ?? 0, 'bi-journal-text', 'tone-primary', `${v.open_today ?? c.open_today ?? 0} hoje · ${v.closed_today ?? 0} fechados hoje`)}
       ${statCard('Backlog', v.backlog_total ?? c.open_total ?? 0, 'bi-stack', 'tone-amber', backlogByPrio)}
-      ${statCard(isClient ? 'Meus chamados' : 'Meus em aberto', data.my_open ?? 0, 'bi-person-check', 'tone-green', isClient ? '' : 'Atribuídos a mim')}
+      ${statCard(isClient ? 'Chamados abertos' : 'Meus em aberto', data.my_open ?? 0, 'bi-person-check', 'tone-green', isClient ? '' : 'Atribuídos a mim')}
       ${statCard('Fechados', v.closed_total ?? 0, 'bi-check-circle', 'tone-success', `${v.closed_today ?? 0} hoje`)}
     </div>`;
 
@@ -89,7 +89,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
             <div class="small fw-bold mb-1"><i class="bi bi-stopwatch me-1"></i> SLA 1ª Resposta / Resolução</div>
             <div class="small">TMR médio: <b>${sla.tmr_hours ?? 0}h</b> (1ª resposta)</div>
             <div class="small">TMA médio: <b>${sla.tma_hours ?? 0}h</b> (resolução)</div>
-            <div class="small text-muted mt-1">Prazo por entidade (due_at)</div>
+            <div class="small text-muted mt-1">Prazo (SLA) de cada chamado</div>
           </div>
         </div>
       </div>
@@ -104,7 +104,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       <td class="fw-bold">${esc(t.number)}</td>
       <td>${esc(t.title)}</td>
       <td>${badgePriority(t.priority)}</td>
-      <td>${esc(t.entity_name||'')}</td>
+      <td class="multi-empresa">${esc(t.entity_name||'')}</td>
       <td>${esc(t.assigned_name||'—')}</td>
       <td>${t.due_at ? fmt.dateTime(t.due_at) : '—'}</td>
       <td>${badge} ${mins < 0 ? Math.abs(mins)+'m atraso' : mins+'m restantes'}</td>
@@ -118,7 +118,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <span class="badge text-bg-dark">${(sla.radar||[]).length} tickets</span>
       </div>
       <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead><tr><th>ID</th><th>Título</th><th>Prioridade</th><th>Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Prioridade</th><th class="multi-empresa">Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
         <tbody>${radarRows}</tbody>
       </table></div>
     </div>`;
@@ -169,7 +169,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       <td>${badgeStatus(t.status)} ${t.approval_status === 'pending' ? '<span class="badge bd-pending-approval ms-1"><i class="bi bi-check2-circle"></i> aprovação</span>' : ''}</td>
       <td class="ticket-title">${esc(t.title)}</td>
       <td>${t.assigned_name ? `<span class="tech-chip"><i class="bi bi-person-badge"></i> ${esc(t.assigned_name)}</span>` : '<span class="text-muted">— não atribuído —</span>'}</td>
-      <td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.entity_name || '')}</small></td>
+      <td>${esc(t.requester_name || '—')}<br><small class="text-muted multi-empresa">${esc(t.entity_name || '')}</small></td>
       <td>${badgePriority(t.priority)}</td>
       <td class="text-muted small">${fmt.timeAgo(t.updated_at)}</td>
     </tr>`).join('');
@@ -201,12 +201,12 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0">
-          <thead><tr><th>Ativo</th><th>Entidade</th><th>Vencimento</th><th>Atraso</th></tr></thead>
+          <thead><tr><th>Ativo</th><th class="multi-empresa">Entidade</th><th>Vencimento</th><th>Atraso</th></tr></thead>
           <tbody>
             ${(maint.items || []).map(a => `
               <tr class="table-danger asset-row" data-id="${a.id}" style="cursor:pointer">
                 <td><b>${esc(a.name)}</b> ${esc(a.asset_tag || '')}${a.next_maintenance_notes ? `<br><small class="text-muted">${esc(a.next_maintenance_notes)}</small>` : ''}</td>
-                <td>${esc(a.entity_name || '')}</td>
+                <td class="multi-empresa">${esc(a.entity_name || '')}</td>
                 <td>${String(a.next_maintenance_date).slice(0, 10)}</td>
                 <td><span class="badge text-bg-danger">${a.days_overdue} dia(s)</span></td>
               </tr>`).join('')}
@@ -215,7 +215,22 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </div>
     </div>` : '';
 
-  el.innerHTML = header + volumeCards + maintAlert + slaCards + radarCard + distRow + teamRow + table;
+  const calCard = `
+    <div class="card panel-card mt-3">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="bi bi-calendar3 me-1"></i> <strong>Calendário de necessidade</strong>
+          <span class="text-muted small ms-1">o dia em que cada solicitante precisa do chamado resolvido</span></span>
+      </div>
+      <div class="card-body"><div id="dash-cal"></div></div>
+    </div>`;
+
+  el.innerHTML = header + volumeCards + calCard + maintAlert + slaCards + radarCard + distRow + teamRow + table;
+
+  dashboard._calState = dashboard._calState || {};
+  CalendarUI.month(document.getElementById('dash-cal'), {
+    state: dashboard._calState,
+    loadTickets: (from, to) => API.get(`/tickets/calendar?from=${from}&to=${to}`),
+  });
 
   const clock = document.getElementById('dash-clock');
   if (clock) {

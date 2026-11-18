@@ -3,10 +3,23 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const { pool } = require('./db');
 const config = require('./config');
+const { runInventoryMigrations } = require('./migrations_inventory');
+const { ROLE_KEYS, ALL_KEYS, DEFAULTS } = require('./permissions');
 
 async function runSchema(client) {
   const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-  await client.query(sql);
+  // O schema.sql altera a tabela "assets", que e criada pelas migracoes do
+  // inventario. Por isso o schema roda em duas partes, com o inventario no meio
+  // (antes, uma instalacao nova falhava com: relacao "assets" nao existe).
+  const MARK = '-- @@INVENTARIO@@';
+  const cut = sql.indexOf(MARK);
+  if (cut < 0) {
+    await client.query(sql);
+    return;
+  }
+  await client.query(sql.slice(0, cut));
+  await runInventoryMigrations((text, params) => client.query(text, params));
+  await client.query(sql.slice(cut));
 }
 
 async function seed(client) {
@@ -70,30 +83,60 @@ async function seed(client) {
     [aCliente, aGestor, aClienteB, entA, entB]
   )).rows.map((r) => r.id);
 
-  // Categorias (hierarquicas, como no GLPI)
+  // Empresa Demo usa categorias simples; Empresa Beta usa as complexas
+  await client.query(`UPDATE entities SET category_mode = 'simple' WHERE id = $1`, [entA]);
+  await client.query(`UPDATE entities SET category_mode = 'complex' WHERE id = $1`, [entB]);
+
+  // Postos (localizacoes) de demonstracao
+  const insertLoc = async (entityId, name, code, city, state) => (await client.query(
+    `INSERT INTO locations (entity_id, name, code, city, state) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [entityId, name, code, city, state])).rows[0].id;
+  const locX = await insertLoc(entA, 'Posto X', 'PX', 'São Paulo', 'SP');
+  await insertLoc(entA, 'Posto Y', 'PY', 'Campinas', 'SP');
+  const locB = await insertLoc(entB, 'Matriz', 'MTZ', 'Rio de Janeiro', 'RJ');
+  await client.query('UPDATE users SET location_id = $1 WHERE id = ANY($2::bigint[])', [locX, [clienteId, gestorId]]);
+  await client.query('UPDATE users SET location_id = $1 WHERE id = $2', [locB, clienteBId]);
+  // gestor1 tambem acompanha a Empresa Beta
+  await client.query('INSERT INTO user_entities (user_id, entity_id) VALUES ($1, $2)', [gestorId, entB]);
+
+  // Moderador (triagem) e Administrador Local (somente a Empresa Demo)
+  const [aMod, aLocal] = await Promise.all([hash('moderador123'), hash('adminlocal123')]);
+  await client.query(
+    `INSERT INTO users (username, password_hash, name, email, phone, role, client_level, entity_id, active)
+     VALUES ('moderador1', $1, 'Paula Rocha (Moderadora)', 'paula@empresa.ti', '(11) 90000-0003', 'moderator', 1, NULL, TRUE),
+            ('adminlocal1', $2, 'Rafael Costa (Admin Local)', 'rafael@empresademo.com.br', '(11) 98888-3333', 'admin_local', 1, $3, TRUE)`,
+    [aMod, aLocal, entA]);
+
+  // Categorias complexas (hierarquicas, como no GLPI). chama_ensure_category
+  // reaproveita as que o schema.sql ja criou e cria as que faltarem.
   const catIds = {};
-  const insertCat = async (name, parentId = null) => {
-    const r = await client.query(
-      'INSERT INTO categories (name, parent_id) VALUES ($1, $2) RETURNING id', [name, parentId]);
-    return r.rows[0].id;
-  };
-  catIds.Hardware = await insertCat('Hardware');
-  catIds.Software = await insertCat('Software');
-  catIds.Rede = await insertCat('Rede');
-  catIds.Suporte = await insertCat('Suporte');
-  catIds.Desktop = await insertCat('Desktop', catIds.Hardware);
-  catIds.Notebook = await insertCat('Notebook', catIds.Hardware);
-  catIds.Impressora = await insertCat('Impressora', catIds.Hardware);
-  catIds.Periferico = await insertCat('Monitor / Periférico', catIds.Hardware);
-  catIds.Sistemas = await insertCat('Sistemas Corporativos', catIds.Software);
-  catIds.Email = await insertCat('E-mail', catIds.Software);
-  catIds.Licencas = await insertCat('Licenças', catIds.Software);
-  catIds.Internet = await insertCat('Internet', catIds.Rede);
-  catIds.Wifi = await insertCat('Wi-Fi', catIds.Rede);
-  catIds.Vpn = await insertCat('VPN', catIds.Rede);
-  catIds.Acesso = await insertCat('Acesso / Credenciais', catIds.Suporte);
-  catIds.Backup = await insertCat('Backup', catIds.Suporte);
-  catIds.Outros = await insertCat('Outros', catIds.Suporte);
+  const ensureCat = async (...pathParts) =>
+    (await client.query('SELECT chama_ensure_category($1::text[]) AS id', [pathParts])).rows[0].id;
+  catIds.Hardware = await ensureCat('Hardware');
+  catIds.Software = await ensureCat('Software');
+  catIds.Rede = await ensureCat('Rede');
+  catIds.Suporte = await ensureCat('Suporte');
+  catIds.Desktop = await ensureCat('Hardware', 'Desktop');
+  catIds.Notebook = await ensureCat('Hardware', 'Notebook');
+  catIds.Impressora = await ensureCat('Hardware', 'Impressora');
+  catIds.Periferico = await ensureCat('Hardware', 'Monitor / Periférico');
+  catIds.Sistemas = await ensureCat('Software', 'Sistemas Corporativos');
+  catIds.Email = await ensureCat('Software', 'E-mail');
+  catIds.Licencas = await ensureCat('Software', 'Licenças');
+  catIds.Internet = await ensureCat('Rede', 'Problemas de conexão', 'Sem internet');
+  catIds.Wifi = await ensureCat('Rede', 'Problemas de conexão', 'Wi-Fi');
+  catIds.Vpn = await ensureCat('Rede', 'VPN');
+  catIds.Acesso = await ensureCat('Suporte', 'Acesso / Credenciais');
+  catIds.Backup = await ensureCat('Suporte', 'Backup');
+  catIds.Outros = await ensureCat('Suporte', 'Outros');
+
+  // Categoria simples correspondente (para os chamados da Empresa Demo)
+  const simpleOf = async (complexId) => (await client.query(
+    `WITH RECURSIVE up AS (
+       SELECT id, parent_id, 0 AS depth FROM categories WHERE id = $1
+       UNION ALL SELECT c.id, c.parent_id, up.depth + 1 FROM categories c JOIN up ON c.id = up.parent_id)
+     SELECT s.id FROM up JOIN categories s ON s.maps_to_id = up.id AND s.kind = 'simple' AND s.active
+     ORDER BY up.depth LIMIT 1`, [complexId])).rows[0]?.id || null;
 
   // Chamados de exemplo
   const statusNames = { 1: 'novo', 2: 'atribuido', 3: 'andamento', 4: 'pendente', 5: 'resolvido' };
@@ -123,11 +166,16 @@ async function seed(client) {
     seq += 1;
     const tk = await client.query(
       `INSERT INTO tickets (number, title, description, status, priority, category_id,
-                            entity_id, requester_id, assigned_user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+                            entity_id, requester_id, assigned_user_id, created_at, updated_at,
+                            impact_id, location_id, simple_category_id, assigned_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10,
+               (SELECT id FROM impact_levels WHERE priority = $5 ORDER BY sort_order LIMIT 1),
+               $11, $12, CASE WHEN $9::bigint IS NULL THEN NULL ELSE $10::timestamptz END)
        RETURNING id`, [
-        `CH-${created.getFullYear()}-${String(seq).padStart(5, '0')}`,
+        `${created.getFullYear()}-${String(seq).padStart(5, '0')}`,
         s.title, s.desc, s.status, s.prio, s.cat, s.entity, s.req, s.tech, created,
+        s.entity === entA ? locX : locB,
+        s.entity === entA ? await simpleOf(s.cat) : null,
       ]);
     // mensagem de abertura
     await client.query(
@@ -165,8 +213,23 @@ async function seed(client) {
   console.log(`[seed] Tecnico    -> usuario: tecnico1  / senha: tecnico123`);
   console.log(`[seed] Cliente    -> usuario: cliente1  / senha: cliente123`);
   console.log(`[seed] Gestor     -> usuario: gestor1   / senha: gestor123`);
+  console.log(`[seed] Moderador  -> usuario: moderador1  / senha: moderador123`);
+  console.log(`[seed] Admin local-> usuario: adminlocal1 / senha: adminlocal123`);
 
   return true;
+}
+
+// Grava as permissoes padrao de cada perfil. So insere o que ainda nao existe:
+// o que o administrador ja marcou/desmarcou na tela nunca e sobrescrito.
+async function ensurePermissions(client) {
+  for (const r of ROLE_KEYS) {
+    for (const perm of ALL_KEYS) {
+      await client.query(
+        `INSERT INTO role_permissions (role_key, permission, allowed) VALUES ($1, $2, $3)
+         ON CONFLICT (role_key, permission) DO NOTHING`,
+        [r.key, perm, (DEFAULTS[r.key] || []).includes(perm)]);
+    }
+  }
 }
 
 async function main() {
@@ -175,6 +238,10 @@ async function main() {
     console.log('[init] Conectando em %s:%s/%s ...', config.db.host, config.db.port, config.db.name);
     await runSchema(client);
     console.log('[init] Schema aplicado com sucesso.');
+    await ensurePermissions(client);
+    // apaga copias de "Visualizacao de cargos" que ficaram abertas
+    const pv = await client.query("SELECT nspname FROM pg_namespace WHERE nspname ~ '^preview_[0-9]+$'");
+    for (const r of pv.rows) await client.query(`DROP SCHEMA IF EXISTS ${r.nspname} CASCADE`);
     await seed(client);
     console.log('[init] Concluido.');
   } finally {
@@ -186,4 +253,4 @@ async function main() {
 main().catch((err) => {
   console.error('[init] ERRO:', err.message);
   process.exit(1);
-});
+});
