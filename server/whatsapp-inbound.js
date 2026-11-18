@@ -133,7 +133,7 @@ async function setPending(norm, body) {
   await query(
     `UPDATE whatsapp_contacts
         SET status = 'awaiting_id', pending_message = $2, pending_at = now(),
-            attempts = attempts + 1, updated_at = now()
+            attempts = 0, updated_at = now()
       WHERE phone = $1`, [norm, String(body).slice(0, 4000)]);
 }
 
@@ -444,19 +444,23 @@ async function handle(msg) {
     // primeira mensagem: guarda e pede o nome
     if (contact.status === 'new') {
       await setPending(norm, body);
+      console.log(`[whatsapp-inbound] ${norm} novo numero -> pedido de identificacao`);
       await reply(norm, MSG_IDENTIFICACAO);
       return;
     }
 
-    // aguardando identificacao
+    // aguardando identificacao (attempts = nomes errados ate agora)
     const ident = parseIdentification(body);
     if (!ident) {
-      if ((contact.attempts || 0) + 1 >= MAX_TENTATIVAS) {
+      const tentativa = (contact.attempts || 0) + 1;
+      if (tentativa >= MAX_TENTATIVAS) {
         await markBlocked(norm);
+        console.log(`[whatsapp-inbound] ${norm} desistiu apos ${tentativa} tentativas -> bloqueado`);
         await reply(norm, MSG_DESISTENCIA);
         return;
       }
-      await setAttempts(norm, (contact.attempts || 0) + 1);
+      await setAttempts(norm, tentativa);
+      console.log(`[whatsapp-inbound] ${norm} nome nao reconhecido (tentativa ${tentativa}/${MAX_TENTATIVAS})`);
       await reply(norm, MSG_IDENTIFICACAO_REPETE);
       return;
     }
@@ -485,6 +489,7 @@ async function handle(msg) {
   const citado = await chamadoCitado(msg);
   if (citado && String(citado.requester_id) === String(user.id)) {
     await adicionarComentario(citado, user, body);
+    console.log(`[whatsapp-inbound] ${norm} comentario (citado) no chamado ${citado.number}`);
     await reply(norm, MSG_COMENTARIO(citado.number));
     return;
   }
@@ -498,6 +503,7 @@ async function handle(msg) {
     const recente = await chamadoRecente(contact);
     if (recente) {
       await adicionarComentario(recente, user, texto);
+      console.log(`[whatsapp-inbound] ${norm} comentario no chamado ${recente.number}`);
       await reply(norm, MSG_COMENTARIO(recente.number));
       return;
     }
@@ -505,6 +511,7 @@ async function handle(msg) {
 
   const chamado = await abrirChamado({ user, descricao: texto });
   await setLastTicket(norm, chamado.id);
+  console.log(`[whatsapp-inbound] ${norm} chamado ${chamado.number} criado para ${user.name}`);
   await reply(norm, MSG_CHAMADO(chamado));
 }
 
