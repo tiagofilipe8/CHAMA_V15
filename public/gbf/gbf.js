@@ -290,6 +290,7 @@
       ['#/solicitacoes', 'megaphone', 'Solicitações'],
       ['#/atividades', 'kanban', ehGestor() ? 'Atividades' : 'Minhas atividades'],
       ['#/checklists', 'ui-checks', 'Checklists'],
+      ['#/tutoriais', 'mortarboard', 'Tutoriais'],
       ['grp', 'Orcim'],
       ['#/orcim', 'speedometer2', 'Visão Orcim'],
       ['#/demandas', 'inboxes', 'Demandas'],
@@ -377,6 +378,7 @@
       else if (a === 'atividades') { marcarMenu('#/atividades'); await vAtividades(qs, seq); }
       else if (a === 'usuarios' && ehGestor()) { marcarMenu('#/usuarios'); await vUsuarios(seq); }
       else if (a === 'config' && ehGestor()) { marcarMenu('#/config'); await vConfig(seq); }
+      else if (a === 'tutoriais') { marcarMenu('#/tutoriais'); await vTutoriais(seq); }
       else if (a === 'conta') { marcarMenu('#/conta'); vConta(); }
       else { location.hash = '#/'; }
     } catch (e) {
@@ -2933,6 +2935,278 @@
     ligarReagendar();
     $$('.ac-box [data-reag], .ac-box a.btn').forEach((b) => b.addEventListener('click', (ev) => ev.stopPropagation()));
     ligarCliques();
+  }
+
+  // ------------------------------------------------------------------
+  // Tutoriais guiados: a tela escurece, o botão certo fica em destaque e um balão explica.
+  // Cada passo pode abrir uma tela (rota), apontar um elemento (alvo) e mostrar um texto.
+  // Se o elemento não existir (ex.: nenhuma visita em andamento), o balão aparece no meio da tela.
+  // ------------------------------------------------------------------
+  const acharTexto = (sel, texto) => () => $$(sel).find((el) => el.textContent.trim().toLowerCase().includes(texto.toLowerCase())) || null;
+  const blocoComTitulo = (texto) => () => {
+    const h = $$('.ac-head h2, .pg-bloco h3, .card-x h3').find((el) => el.textContent.trim().toLowerCase().startsWith(texto.toLowerCase()));
+    return h ? (h.closest('.ac-sec, .pg-bloco, .card-x') || h) : null;
+  };
+  const primeiroPosto = async () => {
+    const postos = await API.get('/postos');
+    return postos.length ? `#/postos/${postos[0].id}/editar` : '#/postos';
+  };
+
+  const TUTORIAIS = [
+    {
+      id: 'checklist', papeis: ['gestor'], icone: 'ui-checks', titulo: 'Criar um checklist que se repete',
+      resumo: 'Monte a lista de tarefas da visita de rotina e defina de quanto em quanto tempo o posto é visitado.',
+      passos: [
+        { titulo: 'Checklist + frequência = visita que se repete', texto: 'O checklist é a lista de tarefas que o técnico confere em cada visita (internet, nobreak, caixas...). Cada posto tem uma frequência (semanal, mensal...). Quando uma visita termina, o sistema já marca a próxima sozinho.' },
+        { alvo: '.side-nav a[href="#/checklists"]', titulo: 'Os checklists ficam aqui', texto: 'No menu, em Dia a dia da TI → Checklists.' },
+        { rota: '#/checklists', alvo: 'a[href="#/checklists/novo"]', titulo: 'Novo checklist', texto: 'Clique aqui para criar um checklist novo. Para mudar um que já existe, clique nele na lista.' },
+        { rota: '#/checklists/novo', alvo: '#ck-nome', titulo: 'Dê um nome', texto: 'Ex.: "Rota padrão do posto". É o nome que aparece para o técnico na visita.' },
+        { alvo: '#ck-add', titulo: 'Adicione as tarefas', texto: 'Uma tarefa por item: "Testar internet", "Checar nobreak", "Computadores de caixa ligando"... Na visita, cada uma é respondida com OK, NÃO OK ou N/A. As setas mudam a ordem.' },
+        { alvo: () => $('#form-ck input[name=posto]')?.closest('.row'), titulo: 'Em quais postos', texto: 'Marque os postos que usam este checklist. Um posto usa um checklist por vez.' },
+        { alvo: '#form-ck button[type=submit]', titulo: 'Salvar', texto: 'Quando terminar, salve. Mudar o checklist depois não altera visitas já feitas.' },
+        { rota: '#/postos', alvo: '.postos-grid .posto-card', titulo: 'Agora a repetição', texto: 'A frequência fica na ficha de cada posto. Vamos abrir a edição de um posto.' },
+        { rota: primeiroPosto, alvo: '#fp-ck', titulo: 'Checklist do posto', texto: 'Escolha qual checklist a visita de rotina deste posto usa.' },
+        { alvo: '#fp-freq', titulo: 'De quanto em quanto tempo', texto: 'Semanal, quinzenal, mensal ou "a cada X dias". Sem recorrência = só visitas pedidas.' },
+        { alvo: '#fp-data', titulo: 'Próxima visita', texto: 'A data (e o horário, ao lado) da próxima visita. Depois de cada visita concluída, o sistema calcula a seguinte pela frequência.' },
+        { alvo: '#form-posto button[type=submit]', titulo: 'Salvar o posto', texto: 'Salve. A visita aparece na Agenda e no "Meu dia" do técnico na data marcada.' },
+      ],
+    },
+    {
+      id: 'solicitar', papeis: ['gestor'], icone: 'calendar-plus', titulo: 'Agendar uma visita (de rotina ou pontual)',
+      resumo: 'Peça uma visita ao técnico para um dia: com as tarefas do checklist ou só um pedido específico.',
+      passos: [
+        { titulo: 'Solicitar visita', texto: 'Quando você quer que o técnico vá a um posto num dia, abra uma solicitação de visita. Ele recebe o aviso e faz a visita pelo próprio pedido.' },
+        { alvo: '.side-nav a[href="#/solicitacoes"]', titulo: 'Solicitações', texto: 'No menu, em Dia a dia da TI → Solicitações.' },
+        { rota: '#/solicitacoes', alvo: 'a[href="#/solicitacoes/nova"]', titulo: 'Solicitar visita', texto: 'Clique aqui para pedir uma visita.' },
+        { rota: '#/solicitacoes/nova', alvo: '#sl-posto', titulo: 'Posto', texto: 'Escolha o posto. As tarefas do checklist dele já aparecem embaixo.' },
+        { alvo: '#sl-data', titulo: 'Data desejada', texto: 'O dia em que você quer a visita. É neste dia que ela aparece no calendário.' },
+        { alvo: '#sl-prio', titulo: 'Urgência', texto: 'Requisição, Operação prejudicada, Parada iminente ou Operação parada — a mesma escala da Orcim. A cor no calendário segue a urgência.' },
+        { alvo: '.sl-tipos', titulo: 'De rotina ou pontual', texto: 'De rotina: as tarefas do checklist do posto. Pontual: só um pedido específico, como "instalar leitor no caixa 3".' },
+        { alvo: '#sl-tarefas', titulo: 'Tarefas', texto: 'Desmarque o que não precisa. Para pegar tarefas de outro checklist, use "Pegar tarefas do checklist".' },
+        { alvo: '#sl-nova', titulo: 'Outra tarefa', texto: 'Escreva aqui e clique em Adicionar (ou Enter) para incluir algo que não está no checklist.' },
+        { alvo: '#sl-desc', titulo: 'Observação', texto: 'Algum recado para o técnico, ex.: "o gerente disse que o caixa 3 trava".' },
+        { alvo: '#form-sol button[type=submit]', titulo: 'Enviar para a TI', texto: 'Enviou: o técnico é avisado no sino e a visita entra no calendário. Quando ele concluir, você recebe o aviso com o resultado de cada tarefa.' },
+      ],
+    },
+    {
+      id: 'acompanhar', papeis: ['gestor'], icone: 'binoculars', titulo: 'Acompanhar o dia a dia',
+      resumo: 'O que olhar todo dia: pendências, visitas de hoje, resultados e avisos.',
+      passos: [
+        { rota: '#/', alvo: blocoComTitulo('Precisa de você'), titulo: 'Precisa de você', texto: 'Tudo o que está atrasado ou com problema, do mais grave para o menos grave, com a ação ao lado (Reagendar, Criar atividade, Abrir).' },
+        { alvo: blocoComTitulo('Hoje'), titulo: 'Hoje', texto: 'As visitas do dia: feitas, em andamento (com quantas tarefas faltam) e previstas.' },
+        { alvo: () => $$('.ac-sec')[2] || null, titulo: 'Resultado do período', texto: 'Visitas, atividades e solicitações do período, comparadas com o período anterior. Troque o período nos botões lá em cima.' },
+        { alvo: blocoComTitulo('Postos'), titulo: 'Postos', texto: 'Cada posto com uma bolinha: vermelho = visita atrasada, amarelo = item NÃO OK sem atividade, verde = em dia.' },
+        { alvo: '#btn-sino', titulo: 'Avisos', texto: 'O sino avisa quando uma visita pedida é concluída e quando alguém reagenda (com o motivo).' },
+      ],
+    },
+    {
+      id: 'resultados', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados e o calendário',
+      resumo: 'Painel do gestor: problemas encontrados, visitas feitas, Orcim, postos e o calendário por urgência.',
+      passos: [
+        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'TI do Beija-Flor (nosso trabalho), Orcim (chamados), Por posto e Calendário.' },
+        { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... Escolha o período nos botões de cima.' },
+        { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
+        { alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período para guardar ou enviar.' },
+        { rota: '#/painel?aba=calendario', alvo: '.cal-grade', titulo: 'Calendário', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica algo atrasado.' },
+        { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, amarelo = parada iminente, azul = operação prejudicada, cinza = requisição.' },
+        { alvo: '.cal-dia', titulo: 'O dia escolhido', texto: 'Clique num dia para ver aqui tudo o que foi pedido nele, do mais urgente ao menos urgente.' },
+      ],
+    },
+    {
+      id: 'reagendar', papeis: ['gestor', 'tecnico'], icone: 'calendar2-week', titulo: 'Reagendar com motivo',
+      resumo: 'Mudar a data de uma visita, solicitação ou atividade e avisar os outros.',
+      passos: [
+        { titulo: 'Reagendar', texto: 'Gestor e técnico podem mudar a data de uma visita, de uma solicitação ou de uma atividade. O motivo é obrigatório e vai para os outros pelo sino.' },
+        { rota: '#/agenda', alvo: '[data-reag]', titulo: 'Botão Reagendar', texto: 'Aparece na agenda, no "Meu dia", na ficha do posto e na solicitação. Clique, escolha a nova data e escreva o motivo.' },
+        { alvo: '.ag-item.arrastavel, .arrastavel', titulo: 'Ou arraste', texto: 'Na agenda, dá para arrastar o item para outro dia (no celular: segure e arraste). A janela do motivo abre do mesmo jeito.' },
+        { alvo: '#btn-sino', titulo: 'Quem fica sabendo', texto: 'Todos os gestores e técnicos recebem: "Reagendado: Visita ao Posto Centro — mudou de 20/11 para 22/11. Motivo: ...". Na solicitação fica o histórico.' },
+      ],
+    },
+    {
+      id: 'usuarios', papeis: ['gestor'], icone: 'people', titulo: 'Cadastrar gestores e técnicos',
+      resumo: 'Dê acesso ao Pedro, à Silvani e aos técnicos.',
+      passos: [
+        { rota: '#/usuarios', alvo: '#form-user', titulo: 'Novo usuário', texto: 'Crie o acesso com usuário e senha inicial. A pessoa troca a senha no primeiro login.' },
+        { alvo: 'table.table-x', titulo: 'Gestor ou técnico', texto: 'Gestor: pede visitas, cria checklists e vê o painel. Técnico: faz as visitas e as atividades. Todos os gestores veem a mesma coisa.' },
+      ],
+    },
+    {
+      id: 'visita', papeis: ['tecnico', 'gestor'], icone: 'clipboard-check', titulo: 'Fazer uma visita (técnico)',
+      resumo: 'Do "Meu dia" até concluir a visita com os comentários.',
+      passos: [
+        { rota: '#/hoje', alvo: blocoComTitulo('Visitas de hoje'), titulo: 'Visitas de hoje', texto: 'As visitas de rotina do dia (e as atrasadas). Cada uma tem o botão INICIAR VISITA.' },
+        { alvo: blocoComTitulo('Visitas pedidas'), titulo: 'Visitas pedidas pelo gestor', texto: 'As solicitações de visita. O botão INICIAR VISITA já traz as tarefas que o gestor pediu.' },
+        { alvo: '[data-visita-sol], [data-iniciar]', titulo: 'Iniciar visita', texto: 'Clique ao chegar no posto. A hora de início já vem preenchida.' },
+        { titulo: 'Durante a visita', texto: 'Para cada tarefa, toque em OK, NÃO OK ou N/A. Toque em "+ observação" para escrever o que viu, ex.: "nobreak apitando, bateria fraca". Cada toque já fica salvo.' },
+        { titulo: 'Concluir', texto: 'No fim, escreva os comentários gerais, as pendências (se houver) e fotos se quiser. Toque em CONCLUIR VISITA: o gestor é avisado, a solicitação se fecha e os problemas vão para o painel.' },
+      ],
+    },
+  ];
+
+  const tourFeitos = () => { try { return JSON.parse(store.get('gbf_tutoriais_feitos') || '[]'); } catch { return []; } };
+  const tourEstado = { t: null, i: 0, el: null, raf: 0, abriuMenu: false };
+
+  function tourDom() {
+    let raiz = $('#tour');
+    if (!raiz) {
+      raiz = document.createElement('div');
+      raiz.id = 'tour';
+      raiz.innerHTML = `<div class="tour-fundo"></div><div class="tour-foco"></div>
+        <div class="tour-pop" role="dialog" aria-modal="true" aria-labelledby="tour-tit" aria-describedby="tour-txt">
+          <div class="tour-passo" id="tour-passo"></div>
+          <h4 id="tour-tit"></h4><p id="tour-txt"></p>
+          <div class="tour-acoes">
+            <button type="button" class="btn btn-sm btn-link text-secondary px-0" id="tour-sair">Sair</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="tour-volta">Voltar</button>
+            <button type="button" class="btn btn-sm btn-brand" id="tour-vai">Próximo</button>
+          </div></div>`;
+      document.body.appendChild(raiz);
+      $('#tour-sair').addEventListener('click', () => tourFechar());
+      $('#tour-volta').addEventListener('click', () => tourIr(tourEstado.i - 1));
+      $('#tour-vai').addEventListener('click', () => tourIr(tourEstado.i + 1));
+      document.addEventListener('keydown', (ev) => {
+        if (!tourEstado.t) return;
+        if (ev.key === 'Escape') tourFechar();
+        else if (ev.key === 'ArrowRight') tourIr(tourEstado.i + 1);
+        else if (ev.key === 'ArrowLeft' && tourEstado.i > 0) tourIr(tourEstado.i - 1);
+      });
+      window.addEventListener('resize', tourPosicionar);
+      window.addEventListener('scroll', tourPosicionar, true);
+      $('#side')?.addEventListener('transitionend', tourPosicionar);
+    }
+    return raiz;
+  }
+
+  async function tourAlvo(passo) {
+    if (!passo.alvo) return null;
+    const achar = () => {
+      const el = typeof passo.alvo === 'function' ? passo.alvo() : $(passo.alvo);
+      return el && el.getClientRects().length ? el : null;
+    };
+    for (let t = 0; t < 40; t += 1) { // espera a tela carregar (até ~6 s)
+      const el = achar();
+      if (el) return el;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return null;
+  }
+
+  async function tourIr(i) {
+    const t = tourEstado.t;
+    if (!t) return;
+    if (i >= t.passos.length) {
+      const feitos = new Set(tourFeitos());
+      feitos.add(t.id);
+      store.set('gbf_tutoriais_feitos', JSON.stringify([...feitos]));
+      tourFechar();
+      toast(`Tutorial concluído: ${t.titulo}`);
+      return;
+    }
+    if (i < 0) return;
+    tourEstado.i = i;
+    const passo = t.passos[i];
+    const raiz = tourDom();
+    raiz.classList.add('on', 'carregando');
+    if (tourEstado.abriuMenu) { $('#side')?.classList.remove('open'); tourEstado.abriuMenu = false; }
+    if (passo.rota) {
+      const destino = typeof passo.rota === 'function' ? await passo.rota() : passo.rota;
+      if (location.hash !== destino) location.hash = destino;
+    }
+    if (tourEstado.t !== t || tourEstado.i !== i) return; // usuário saiu ou mudou de passo enquanto carregava
+    let el = await tourAlvo(passo);
+    if (tourEstado.t !== t || tourEstado.i !== i) return;
+    // item do menu lateral no celular: abre o menu para mostrar
+    if (el && el.closest('#side') && window.matchMedia('(max-width: 991px)').matches) {
+      $('#side')?.classList.add('open');
+      tourEstado.abriuMenu = true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (el && !el.closest('#side')) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    if (el && !el.getClientRects().length) el = null;
+    tourEstado.el = el;
+    $('#tour-passo').textContent = `${t.titulo} · ${i + 1} de ${t.passos.length}`;
+    $('#tour-tit').textContent = passo.titulo;
+    $('#tour-txt').textContent = passo.texto;
+    $('#tour-volta').classList.toggle('invisible', i === 0);
+    $('#tour-vai').textContent = i === t.passos.length - 1 ? 'Concluir' : 'Próximo';
+    raiz.classList.toggle('sem-alvo', !el);
+    raiz.classList.remove('carregando');
+    tourPosicionar();
+    // o menu do celular e a rolagem têm animação: reposiciona quando terminam
+    setTimeout(tourPosicionar, 300);
+    setTimeout(tourPosicionar, 700);
+    $('#tour-vai').focus({ preventScroll: true });
+  }
+
+  function tourPosicionar() {
+    if (!tourEstado.t) return;
+    cancelAnimationFrame(tourEstado.raf);
+    tourEstado.raf = requestAnimationFrame(() => {
+      const foco = $('#tour .tour-foco');
+      const pop = $('#tour .tour-pop');
+      const el = tourEstado.el;
+      const vw = window.innerWidth; const vh = window.innerHeight;
+      const celular = vw < 600;
+      pop.style.maxWidth = celular ? `${vw - 24}px` : '360px';
+      if (!el || !document.body.contains(el)) {
+        foco.style.cssText = 'opacity:0';
+        pop.style.left = `${Math.max(12, (vw - pop.offsetWidth) / 2)}px`;
+        pop.style.top = `${Math.max(12, (vh - pop.offsetHeight) / 2)}px`;
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      const m = 6;
+      foco.style.cssText = `opacity:1;left:${r.left - m}px;top:${r.top - m}px;width:${r.width + m * 2}px;height:${r.height + m * 2}px`;
+      const pw = pop.offsetWidth; const ph = pop.offsetHeight;
+      let top; let left;
+      if (celular) {
+        left = 12;
+        top = r.bottom + m + 12 + ph < vh ? r.bottom + m + 12 : Math.max(12, r.top - m - 12 - ph);
+        if (top < 12 || top + ph > vh - 12) top = vh - ph - 12;
+      } else if (r.bottom + m + 14 + ph < vh) { top = r.bottom + m + 14; left = r.left; }
+      else if (r.top - m - 14 - ph > 0) { top = r.top - m - 14 - ph; left = r.left; }
+      else if (r.right + m + 14 + pw < vw) { left = r.right + m + 14; top = r.top; }
+      else { left = r.left - m - 14 - pw; top = r.top; }
+      left = Math.min(Math.max(12, left), vw - pw - 12);
+      top = Math.min(Math.max(12, top), vh - ph - 12);
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+    });
+  }
+
+  function tourComecar(id) {
+    const t = TUTORIAIS.find((x) => x.id === id);
+    if (!t) return;
+    tourEstado.t = t;
+    tourIr(0);
+  }
+
+  function tourFechar() {
+    tourEstado.t = null;
+    tourEstado.el = null;
+    if (tourEstado.abriuMenu) { $('#side')?.classList.remove('open'); tourEstado.abriuMenu = false; }
+    $('#tour')?.classList.remove('on', 'sem-alvo', 'carregando');
+  }
+
+  async function vTutoriais(seq) {
+    titulo('Tutoriais');
+    if (seq !== renderSeq) return;
+    const papel = ehGestor() ? 'gestor' : 'tecnico';
+    const feitos = new Set(tourFeitos());
+    const lista = TUTORIAIS.filter((t) => t.papeis.includes(papel));
+    view().innerHTML = `
+      <div class="small-muted mb-3">Passo a passo guiado: a tela escurece, o lugar certo fica em destaque e um balão explica.
+        Você pode sair quando quiser (Esc) e usar as setas do teclado para avançar.</div>
+      <div class="tut-grade">${lista.map((t) => `<div class="tut-card">
+        <div class="tut-ic"><i class="bi bi-${t.icone}"></i></div>
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-semibold">${esc(t.titulo)} ${feitos.has(t.id) ? tag('tag-green', 'feito', 'check2') : ''}</div>
+          <div class="small-muted">${esc(t.resumo)}</div>
+          <div class="small-muted mt-1">${t.passos.length} passos</div>
+        </div>
+        <button type="button" class="btn btn-sm ${feitos.has(t.id) ? 'btn-outline-secondary' : 'btn-brand'}" data-tour="${t.id}">${feitos.has(t.id) ? 'Rever' : 'Começar'}</button>
+      </div>`).join('')}</div>`;
+    $$('[data-tour]').forEach((b) => b.addEventListener('click', () => tourComecar(b.dataset.tour)));
   }
 
   // ------------------------------------------------------------------
