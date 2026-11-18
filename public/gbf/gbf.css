@@ -521,3 +521,22 @@ html[data-bs-theme="dark"] .pg-api { background: rgba(245,158,11,.18); color: #f
   .cal-num { min-width: 16px; height: 16px; font-size: .66rem; padding: 0 3px; }
 }
 html[data-bs-theme="dark"] .cal-atr { color: #f87171; }
+
+/* Solicitação de visita: lista de tarefas para marcar */
+.sl-tarefas { border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px; max-height: 340px; overflow-y: auto; background: var(--card); }
+.sl-tarefa { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line-soft); cursor: pointer; margin: 0; }
+.sl-tarefa:first-child { border-top: 0; }
+.sl-tarefa .form-check-input { margin-top: 3px; flex-shrink: 0; }
+/* Painel do gestor: problemas encontrados nas visitas, com o comentário */
+.pg-prob { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 7px 0; border-top: 1px solid var(--line-soft); font-size: .84rem; cursor: pointer; }
+.pg-prob:hover .pg-prob-t b { color: var(--brand); }
+.pg-prob-t b { color: #b91c1c; font-weight: 600; }
+.pg-prob-n { grid-column: 1 / -1; color: var(--muted); white-space: pre-wrap; }
+html[data-bs-theme="dark"] .pg-prob-t b { color: #f87171; }
+/* Solicitação de visita: de rotina ou pontual */
+.sl-tipos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.sl-tipo { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; margin: 0; background: var(--card); }
+.sl-tipo:has(input:checked) { border-color: var(--brand); background: var(--brand-50); }
+.sl-tipo input { margin-top: 4px; accent-color: var(--brand); }
+.sl-tipo b { display: block; }
+.sl-tipo small { display: block; color: var(--muted); }

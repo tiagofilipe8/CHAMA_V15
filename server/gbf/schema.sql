@@ -217,32 +217,38 @@ ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS central_user_id BIGINT UNIQUE;
 -- Posto do Dia a dia = localização da Central (cadastro único em Administração > Localizações)
 ALTER TABLE gbf_locations ADD COLUMN IF NOT EXISTS central_location_id BIGINT UNIQUE;
 
--- Pedidos de material feitos pelo gestor (aba Materiais do Painel do gestor).
--- Ficam no Painel, fora das tabelas da Central, porque a cópia da Orcim não pode apagá-los.
--- Os itens usam a lista de Administração > Materiais (tabela materials), mas guardam nome e
--- unidade no pedido: renomear ou apagar um material não muda pedidos antigos.
-CREATE TABLE IF NOT EXISTS gbf_material_requests (
-    id            BIGSERIAL PRIMARY KEY,
-    location_id   BIGINT      REFERENCES gbf_locations(id) ON DELETE SET NULL,
-    needed_by     DATE,
-    priority      SMALLINT    NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 4),
-    notes         TEXT,
-    status        TEXT        NOT NULL DEFAULT 'aguardando'
-                  CHECK (status IN ('aguardando','separando','entregue','cancelado')),
-    requested_by  BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
-    handled_by    BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
-    started_at    TIMESTAMPTZ,
-    delivered_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_gbf_material_requests_status ON gbf_material_requests(status, created_at DESC);
-CREATE TABLE IF NOT EXISTS gbf_material_request_items (
+
+-- Solicitação de visita: o gestor escolhe o posto, a data desejada, a urgência e as tarefas
+-- (tiradas dos checklists). Quando a TI inicia a visita pela solicitação, as tarefas viram o
+-- checklist da visita; ao concluir a visita, a solicitação se fecha sozinha.
+ALTER TABLE gbf_requests ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'geral';
+ALTER TABLE gbf_requests DROP CONSTRAINT IF EXISTS gbf_requests_kind_check;
+ALTER TABLE gbf_requests ADD CONSTRAINT gbf_requests_kind_check CHECK (kind IN ('geral','visita'));
+ALTER TABLE gbf_requests ADD COLUMN IF NOT EXISTS visit_id BIGINT REFERENCES gbf_visits(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS gbf_request_items (
     id          BIGSERIAL PRIMARY KEY,
-    request_id  BIGINT      NOT NULL REFERENCES gbf_material_requests(id) ON DELETE CASCADE,
-    material_id BIGINT,
-    name        TEXT        NOT NULL,
-    unit        TEXT,
-    quantity    INTEGER     NOT NULL CHECK (quantity > 0)
+    request_id  BIGINT  NOT NULL REFERENCES gbf_requests(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL DEFAULT 0,
+    label       TEXT    NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_gbf_material_items_request ON gbf_material_request_items(request_id);
+CREATE INDEX IF NOT EXISTS idx_gbf_request_items_request ON gbf_request_items(request_id, position);
+ALTER TABLE gbf_visits ADD COLUMN IF NOT EXISTS request_id BIGINT REFERENCES gbf_requests(id) ON DELETE SET NULL;
+
+-- Tipo da solicitação de visita: de rotina (checklist do posto) ou pontual (pedido específico)
+ALTER TABLE gbf_requests ADD COLUMN IF NOT EXISTS visit_type TEXT;
+ALTER TABLE gbf_requests DROP CONSTRAINT IF EXISTS gbf_requests_visit_type_check;
+ALTER TABLE gbf_requests ADD CONSTRAINT gbf_requests_visit_type_check CHECK (visit_type IS NULL OR visit_type IN ('rotina','pontual'));
+
+-- Reagendamentos (visita do posto, solicitação ou atividade), sempre com o motivo.
+-- Quem reagenda avisa os outros pelo sino de notificações.
+CREATE TABLE IF NOT EXISTS gbf_reschedules (
+    id          BIGSERIAL PRIMARY KEY,
+    kind        TEXT        NOT NULL CHECK (kind IN ('posto','solicitacao','atividade')),
+    ref_id      BIGINT      NOT NULL,
+    old_date    DATE,
+    new_date    DATE,
+    reason      TEXT        NOT NULL,
+    user_id     BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_reschedules_ref ON gbf_reschedules(kind, ref_id, created_at DESC);

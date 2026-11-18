@@ -73,15 +73,36 @@ router.get('/', ah(async (req, res) => {
   res.json(rows);
 }));
 
-// Iniciar visita (se já houver uma em andamento no posto, devolve ela)
+// Iniciar visita (se já houver uma em andamento no posto, devolve ela).
+// Com request_id (solicitação de visita do gestor): as tarefas da solicitação viram o checklist.
 router.post('/', ah(async (req, res) => {
   const b = req.body || {};
+  let solic = null;
+  if (b.request_id !== undefined && b.request_id !== null && b.request_id !== '') {
+    if (!/^\d+$/.test(String(b.request_id))) return res.status(422).json({ error: 'Solicitação inválida.' });
+    solic = (await query(`SELECT * FROM gbf_requests WHERE id = $1 AND kind = 'visita'`, [b.request_id])).rows[0];
+    if (!solic) return res.status(404).json({ error: 'Solicitação de visita não encontrada.' });
+    if (!['a_fazer', 'em_andamento'].includes(solic.status)) return res.status(409).json({ error: 'Esta solicitação já foi concluída ou cancelada.' });
+    if (solic.visit_id) {
+      const ja = (await query(`SELECT id FROM gbf_visits WHERE id = $1 AND status = 'em_andamento'`, [solic.visit_id])).rows[0];
+      if (ja) return res.json({ id: ja.id, ja_existia: true });
+    }
+    b.location_id = solic.location_id;
+  }
   if (!/^\d+$/.test(String(b.location_id || ''))) return res.status(422).json({ error: 'Escolha o posto.' });
   const loc = (await query('SELECT * FROM gbf_locations WHERE id = $1', [b.location_id])).rows[0];
   if (!loc) return res.status(404).json({ error: 'Posto não encontrado.' });
   const aberta = (await query(
-    `SELECT id FROM gbf_visits WHERE location_id = $1 AND status = 'em_andamento' ORDER BY started_at DESC LIMIT 1`, [loc.id])).rows[0];
-  if (aberta) return res.json({ id: aberta.id, ja_existia: true });
+    `SELECT id, request_id FROM gbf_visits WHERE location_id = $1 AND status = 'em_andamento' ORDER BY started_at DESC LIMIT 1`, [loc.id])).rows[0];
+  if (aberta) {
+    // já há visita aberta no posto: a solicitação passa a andar junto com ela
+    if (solic && !aberta.request_id) {
+      await query('UPDATE gbf_visits SET request_id = $2, updated_at = now() WHERE id = $1', [aberta.id, solic.id]);
+      await query(`UPDATE gbf_requests SET visit_id = $2, status = 'em_andamento', handled_by = COALESCE(handled_by, $3),
+                     started_at = COALESCE(started_at, now()), updated_at = now() WHERE id = $1`, [solic.id, aberta.id, req.gbfUser.id]);
+    }
+    return res.json({ id: aberta.id, ja_existia: true });
+  }
 
   let inicio = new Date();
   if (b.started_at) {
@@ -93,17 +114,27 @@ router.post('/', ah(async (req, res) => {
     await client.query('BEGIN');
     let nomeChecklist = null;
     let itens = [];
-    if (loc.checklist_id) {
+    if (solic) {
+      nomeChecklist = `Solicitação ${require('./solicitacoes').numero(solic.id)}`;
+      itens = (await client.query(
+        'SELECT label, position FROM gbf_request_items WHERE request_id = $1 ORDER BY position, id', [solic.id])).rows;
+    } else if (loc.checklist_id) {
       nomeChecklist = (await client.query('SELECT name FROM gbf_checklists WHERE id = $1', [loc.checklist_id])).rows[0]?.name || null;
       itens = (await client.query(
         'SELECT label, position FROM gbf_checklist_items WHERE checklist_id = $1 ORDER BY position, id', [loc.checklist_id])).rows;
     }
     const vid = (await client.query(
-      `INSERT INTO gbf_visits (location_id, user_id, scheduled_for, started_at, checklist_name)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [loc.id, req.gbfUser.id, loc.next_visit_date, inicio, nomeChecklist])).rows[0].id;
+      `INSERT INTO gbf_visits (location_id, user_id, scheduled_for, started_at, checklist_name, request_id)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [loc.id, req.gbfUser.id, solic ? (solic.desired_date || loc.next_visit_date) : loc.next_visit_date, inicio, nomeChecklist,
+        solic ? solic.id : null])).rows[0].id;
     for (const [i, it] of itens.entries()) {
       await client.query('INSERT INTO gbf_visit_answers (visit_id, position, item_label) VALUES ($1,$2,$3)', [vid, i, it.label]);
+    }
+    if (solic) {
+      await client.query(
+        `UPDATE gbf_requests SET visit_id = $2, status = 'em_andamento', handled_by = COALESCE(handled_by, $3),
+           started_at = COALESCE(started_at, $4), updated_at = now() WHERE id = $1`, [solic.id, vid, req.gbfUser.id, inicio]);
     }
     await client.query('COMMIT');
     res.status(201).json({ id: vid });
@@ -200,16 +231,25 @@ router.post('/:id/concluir', ah(async (req, res) => {
           b.pending_notes !== undefined ? (String(b.pending_notes).trim() || null) : null]);
     }
     await client.query(`UPDATE gbf_visits SET status = 'concluida', finished_at = now(), updated_at = now() WHERE id = $1`, [v.id]);
-    // Próxima visita = data da conclusão + frequência (só a próxima, sem gerar ocorrências futuras)
-    proxima = (await client.query(
-      `UPDATE gbf_locations SET last_visit_at = now(), visit_notified_date = NULL, updated_at = now(),
-         next_visit_date = CASE frequency
-           WHEN 'semanal'   THEN ${HOJE} + 7
-           WHEN 'quinzenal' THEN ${HOJE} + 15
-           WHEN 'mensal'    THEN (${HOJE} + interval '1 month')::date
-           WHEN 'dias'      THEN ${HOJE} + COALESCE(frequency_days, 30)
-           ELSE NULL END
-       WHERE id = $1 RETURNING next_visit_date::text AS next_visit_date`, [v.location_id])).rows[0]?.next_visit_date || null;
+    // Visita pontual (pedido específico do gestor) não conta como a visita de rotina do posto:
+    // a próxima visita de rotina continua onde estava.
+    const pontual = v.request_id
+      ? (await client.query(`SELECT visit_type = 'pontual' AS p FROM gbf_requests WHERE id = $1`, [v.request_id])).rows[0]?.p
+      : false;
+    if (pontual) {
+      proxima = (await client.query('SELECT next_visit_date::text AS d FROM gbf_locations WHERE id = $1', [v.location_id])).rows[0]?.d || null;
+    } else {
+      // Próxima visita = data da conclusão + frequência (só a próxima, sem gerar ocorrências futuras)
+      proxima = (await client.query(
+        `UPDATE gbf_locations SET last_visit_at = now(), visit_notified_date = NULL, updated_at = now(),
+           next_visit_date = CASE frequency
+             WHEN 'semanal'   THEN ${HOJE} + 7
+             WHEN 'quinzenal' THEN ${HOJE} + 15
+             WHEN 'mensal'    THEN (${HOJE} + interval '1 month')::date
+             WHEN 'dias'      THEN ${HOJE} + COALESCE(frequency_days, 30)
+             ELSE NULL END
+         WHERE id = $1 RETURNING next_visit_date::text AS next_visit_date`, [v.location_id])).rows[0]?.next_visit_date || null;
+    }
     if (pend) {
       await client.query(
         `INSERT INTO gbf_tasks (title, description, assignee_id, created_by, location_id, visit_id, due_at, ticket_id)
@@ -226,12 +266,23 @@ router.post('/:id/concluir', ah(async (req, res) => {
   }
   const naoOk = (await query(
     `SELECT count(*)::int AS n FROM gbf_visit_answers WHERE visit_id = $1 AND answer = 'nao_ok'`, [v.id])).rows[0].n;
+  // Visita feita por solicitação do gestor: a solicitação se fecha junto, com o resumo da visita
+  let solicitacao = null;
+  if (v.request_id) {
+    const notas = b.notes !== undefined ? String(b.notes || '').trim() : (v.notes || '');
+    solicitacao = (await query(
+      `UPDATE gbf_requests SET status = 'concluida', completed_at = now(), updated_at = now(),
+         handled_by = COALESCE(handled_by, $2), visit_id = COALESCE(visit_id, $3),
+         response = COALESCE(NULLIF($4, ''), response)
+       WHERE id = $1 AND status IN ('a_fazer','em_andamento') RETURNING id, requested_by`,
+      [v.request_id, u.id, v.id, [naoOk ? `${naoOk} tarefa(s) com problema` : 'Todas as tarefas OK', notas].filter(Boolean).join(' · ')])).rows[0] || null;
+  }
   await notificar((await usuariosAtivos('gestor')).filter((id) => String(id) !== String(u.id)), {
-    kind: 'visita', title: `Visita concluída: ${v.location_name}`,
+    kind: 'visita', title: `${solicitacao ? 'Visita solicitada concluída' : 'Visita concluída'}: ${v.location_name}`,
     message: `${u.name}${naoOk ? ` · ${naoOk} item(ns) NÃO OK` : ' · tudo OK'}`,
-    link: `#/visitas/${v.id}`,
+    link: solicitacao ? `#/solicitacoes/${solicitacao.id}` : `#/visitas/${v.id}`,
   });
-  res.json({ ok: true, proxima_visita: proxima });
+  res.json({ ok: true, proxima_visita: proxima, solicitacao_id: solicitacao ? solicitacao.id : null });
 }));
 
 router.post('/:id/cancelar', ah(async (req, res) => {
@@ -239,6 +290,11 @@ router.post('/:id/cancelar', ah(async (req, res) => {
   if (!v) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (!podeEditar(req.gbfUser, v)) return res.status(403).json({ error: 'Esta visita não pode mais ser alterada.' });
   await query(`UPDATE gbf_visits SET status = 'cancelada', finished_at = now(), updated_at = now() WHERE id = $1`, [v.id]);
+  // a solicitação volta para "a fazer" (a visita não aconteceu)
+  if (v.request_id) {
+    await query(`UPDATE gbf_requests SET status = 'a_fazer', visit_id = NULL, started_at = NULL, updated_at = now()
+                 WHERE id = $1 AND status = 'em_andamento' AND visit_id = $2`, [v.request_id, v.id]);
+  }
   res.json({ ok: true });
 }));
 

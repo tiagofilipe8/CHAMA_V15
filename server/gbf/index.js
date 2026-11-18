@@ -69,7 +69,7 @@ router.use('/atividades', require('./atividades'));
 router.use('/', require('./postos'));
 router.use('/visitas', require('./visitas'));
 router.use('/solicitacoes', require('./solicitacoes'));
-router.use('/materiais', require('./materiais').router); // Pedidos de material (gestor pede, TI entrega)
+router.use('/reagendar', require('./reagendar')); // reagendar com motivo (avisa pelo sino)
 router.use('/', require('./rotina'));
 
 router.use((req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));

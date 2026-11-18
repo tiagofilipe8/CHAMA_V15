@@ -365,6 +365,24 @@ router.get('/', requireGestor, ah(async (req, res) => {
     postos_visitados: new Set(visitas.rows.map((v) => v.local)).size,
     atividades_abertas_agora: abertasIdade.rows.length,
   });
+  // Tarefas dos checklists das visitas e solicitações de visita do gestor
+  const extraTi = (await query(
+    `SELECT
+       (SELECT count(*)::int FROM gbf_visit_answers a JOIN gbf_visits v ON v.id = a.visit_id
+          WHERE v.status = 'concluida' AND ${ENTRE('v.finished_at')} AND a.answer IN ('ok','nao_ok')) AS tarefas_verificadas,
+       (SELECT count(*)::int FROM gbf_visit_answers a JOIN gbf_visits v ON v.id = a.visit_id
+          WHERE v.status = 'concluida' AND ${ENTRE('v.finished_at')} AND a.answer = 'nao_ok') AS tarefas_problema,
+       (SELECT count(*)::int FROM gbf_requests WHERE kind = 'visita' AND ${ENTRE('created_at')}) AS visitas_pedidas,
+       (SELECT count(*)::int FROM gbf_requests WHERE kind = 'visita' AND status = 'concluida' AND ${ENTRE('completed_at')}) AS visitas_pedidas_feitas,
+       (SELECT count(*)::int FROM gbf_requests WHERE kind = 'visita' AND status = 'concluida' AND ${ENTRE('completed_at')}
+          AND desired_date IS NOT NULL AND (completed_at AT TIME ZONE '${TZ}')::date <= desired_date) AS visitas_pedidas_no_prazo,
+       (SELECT count(*)::int FROM gbf_requests WHERE kind = 'visita' AND status = 'concluida' AND ${ENTRE('completed_at')}
+          AND desired_date IS NOT NULL) AS visitas_pedidas_com_data,
+       (SELECT count(*)::int FROM gbf_requests WHERE kind = 'visita' AND status IN ('a_fazer','em_andamento')
+          AND desired_date < ${HOJE}) AS visitas_pedidas_atrasadas_agora`, p)).rows[0];
+  Object.assign(ti.kpis, extraTi, {
+    visitas_pedidas_no_prazo_pct: pctDe(extraTi.visitas_pedidas_no_prazo, extraTi.visitas_pedidas_com_data),
+  });
   ti.nao_ok_por_item = naoOkItens.rows;
   ti.abertas_por_idade = faixas(abertasIdade.rows, (x) => x.idade,
     [['até 1 dia', 0, 24 * H], ['1 a 3 dias', 24 * H, 72 * H], ['3 a 7 dias', 72 * H, 168 * H], ['mais de 7 dias', 168 * H, null]]);
@@ -457,22 +475,33 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
   }
 
   const STATUS_TI = { a_fazer: 'A fazer', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
+  // TI do Beija-Flor: solicitação de visita no DIA DESEJADO (sem data: no dia em que foi pedida);
+  // solicitação geral (antigas) no dia em que foi pedida. Concluída aparece no mesmo dia, como feita.
+  const DIA_TI = `COALESCE(CASE WHEN r.kind = 'visita' THEN r.desired_date END, (r.created_at AT TIME ZONE '${TZ}')::date)`;
   const ti = await query(
-    `SELECT r.id, r.title, r.priority, r.status, r.desired_date::text AS desejada,
-            ${DIA('r.created_at')} AS dia, ${HORA('r.created_at')} AS hora,
-            l.name AS posto, uh.name AS responsavel
+    `SELECT r.id, r.title, r.priority, r.status, r.kind, r.desired_date::text AS desejada,
+            to_char(${DIA_TI}, 'YYYY-MM-DD') AS dia,
+            CASE WHEN r.kind = 'visita' AND r.desired_date IS NOT NULL THEN '' ELSE ${HORA('r.created_at')} END AS hora,
+            l.name AS posto, uh.name AS responsavel,
+            (SELECT count(*)::int FROM gbf_request_items i WHERE i.request_id = r.id) AS tarefas,
+            (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = r.visit_id AND a.answer = 'nao_ok') AS problemas
      FROM gbf_requests r
      LEFT JOIN gbf_locations l ON l.id = r.location_id
      LEFT JOIN gbf_users uh ON uh.id = r.handled_by
-     WHERE r.status <> 'cancelada' AND r.created_at >= ${INI} AND r.created_at < ${FIM}
+     WHERE r.status <> 'cancelada' AND ${DIA_TI} BETWEEN $1::date AND $2::date
      ORDER BY r.created_at`, [inicio, fim]);
   for (const r of ti.rows) {
     const aberto = ['a_fazer', 'em_andamento'].includes(r.status);
+    const visita = r.kind === 'visita';
     itens.push({
       fonte: 'ti', id: r.id, numero: `S-${String(r.id).padStart(4, '0')}`, titulo: r.title, dia: r.dia, hora: r.hora,
-      prioridade: Number(r.priority) || 1, situacao: STATUS_TI[r.status] || '—', aberto,
+      prioridade: Number(r.priority) || 1,
+      situacao: visita ? ({ a_fazer: 'Visita a fazer', em_andamento: 'Visita em andamento', concluida: 'Visita feita' }[r.status] || '—') : (STATUS_TI[r.status] || '—'),
+      aberto, feito: r.status === 'concluida',
       atrasado: aberto && !!r.desejada && r.desejada < hoje,
-      detalhe: r.posto || '', responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`,
+      detalhe: [r.posto, visita ? `${r.tarefas} tarefa(s)` : null, r.status === 'concluida' && r.problemas ? `${r.problemas} com problema` : null]
+        .filter(Boolean).join(' · '),
+      responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`,
     });
   }
 

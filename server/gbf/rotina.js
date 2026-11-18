@@ -107,9 +107,12 @@ router.get('/hoje', ah(async (req, res) => {
            WHERE t.status NOT IN ('concluida','cancelada') AND t.due_at < now() AND ${fT}
            ORDER BY t.due_at`, pT),
     query(`SELECT r.id, r.title, r.status, r.priority, r.desired_date::text AS desired_date, r.created_at,
-                  l.name AS location_name, ur.name AS requested_by_name
+                  r.kind, r.visit_id, r.location_id, l.name AS location_name, ur.name AS requested_by_name,
+                  (SELECT count(*)::int FROM gbf_request_items i WHERE i.request_id = r.id) AS tarefas,
+                  (r.desired_date IS NOT NULL AND r.desired_date < ${HOJE}) AS atrasada
            FROM gbf_requests r LEFT JOIN gbf_locations l ON l.id = r.location_id LEFT JOIN gbf_users ur ON ur.id = r.requested_by
-           WHERE r.status IN ('a_fazer','em_andamento') ORDER BY (r.status = 'em_andamento'), r.priority DESC, r.created_at`),
+           WHERE r.status IN ('a_fazer','em_andamento')
+           ORDER BY (r.status = 'em_andamento') DESC, r.desired_date NULLS LAST, r.priority DESC, r.created_at`),
     query(`SELECT
              (SELECT count(*)::int FROM gbf_visits WHERE status = 'concluida' AND ${DIA('finished_at')} = ${HOJE}) AS visitas,
              (SELECT count(*)::int FROM gbf_tasks WHERE status = 'concluida' AND ${DIA('completed_at')} = ${HOJE}) AS atividades,
@@ -270,23 +273,6 @@ router.get('/acompanhamento', requireGestorFn, ah(async (req, res) => {
     nivel: 'medio', rotulo: 'Vence hoje', peso: 0,
     titulo: t.title, detalhe: [`Até ${t.hora}`, t.responsavel || 'sem responsável', t.local].filter(Boolean).join(' · '),
     link: `#/atividades/${t.id}`, acao: { texto: 'Abrir', href: `#/atividades/${t.id}` },
-  }));
-  // Pedidos de material passados da data, ou aguardando há mais de 2 dias
-  const materiais = await query(
-    `SELECT m.id, m.needed_by::text AS data, m.status, l.name AS local,
-            (${HOJE} - ${DIA('m.created_at')})::int AS dias,
-            (m.needed_by IS NOT NULL AND m.needed_by < ${HOJE}) AS passou_data,
-            (SELECT string_agg(i.quantity || ' ' || i.name, ', ' ORDER BY i.id) FROM gbf_material_request_items i WHERE i.request_id = m.id) AS itens
-     FROM gbf_material_requests m LEFT JOIN gbf_locations l ON l.id = m.location_id
-     WHERE m.status IN ('aguardando','separando')
-       AND ((m.needed_by IS NOT NULL AND m.needed_by < ${HOJE})
-         OR (m.status = 'aguardando' AND m.created_at < now() - interval '2 days'))`).catch(() => ({ rows: [] }));
-  materiais.rows.forEach((m) => atencao.push({
-    nivel: m.passou_data ? 'alto' : 'medio', rotulo: m.passou_data ? 'Material atrasado' : 'Material parado', peso: m.dias,
-    titulo: `${require('./materiais').numero(m.id)}${m.local ? ` — ${m.local}` : ''}: ${m.itens || 'sem itens'}`,
-    detalhe: m.passou_data ? `Precisava até ${dataBR(m.data)} · ${m.status === 'separando' ? 'separando' : 'ninguém separou ainda'}`
-      : `Pedido há ${m.dias} dia(s) e ninguém separou`,
-    link: '#/materiais', acao: { texto: 'Abrir', href: '#/materiais' },
   }));
   const ordemNivel = { alto: 0, medio: 1 };
   atencao.sort((a, b) => ordemNivel[a.nivel] - ordemNivel[b.nivel] || b.peso - a.peso);
