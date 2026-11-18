@@ -282,7 +282,7 @@
   // ------------------------------------------------------------------
   function montarMenu() {
     const itens = [
-      ...(ehGestor() ? [['grp', 'Gestão'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
+      ...(ehGestor() ? [['grp', 'Gestão'], ['#/painel', 'graph-up-arrow', 'Painel do gestor'], ['#/calendario', 'calendar-week', 'Calendário']] : []),
       ['grp', 'Dia a dia da TI'],
       ehGestor() ? ['#/', 'binoculars', 'Acompanhamento'] : ['#/', 'sun', 'Meu dia'],
       ['#/agenda', 'calendar3', 'Agenda'],
@@ -353,6 +353,7 @@
       if (!a) { marcarMenu('#/'); if (ehGestor()) await vAcompanhamento(qs, seq); else await vHoje(seq); }
       else if (a === 'hoje') { marcarMenu(ehGestor() ? '#/hoje' : '#/'); await vHoje(seq); }
       else if (a === 'painel' && ehGestor()) { marcarMenu('#/painel'); await vPainelGestor(qs, seq); }
+      else if (a === 'calendario' && ehGestor()) { marcarMenu('#/calendario'); await vCalendarioPainel(qs, seq); }
       else if (a === 'orcim') { marcarMenu('#/orcim'); await vVisao(seq); }
       else if (a === 'agenda') { marcarMenu('#/agenda'); await vAgenda(qs, seq); }
       else if (a === 'postos' && b === 'novo') { marcarMenu('#/postos'); await vFormPosto(null, seq); }
@@ -459,43 +460,59 @@
   const nomeEscala = (e) => ({ hora: 'por hora', dia: 'por dia', semana: 'por semana', mes: 'por mês' }[e] || 'por período');
 
   // Colunas por período (agrupadas ou empilhadas). Devolve SVG puro (serve na tela e no PDF).
-  function graficoColunas(serie, series, { escala = 'dia', empilhado = false, altura = 170, largura = 640 } = {}) {
-    if (!serie?.length) return '<div class="small-muted">Sem dados no período.</div>';
-    const W = largura; const H = altura; const base = H - 22; const topo = 14; const esq = 30;
-    const n = serie.length; const larg = (W - esq) / n;
+  // Escala "redonda" (1, 2, 5, 10...), colunas com cantos arredondados, valor em cima quando cabe
+  // e grade tracejada. As classes g-* deixam as cores certas no tema escuro (no PDF valem as cores fixas).
+  function escalaRedonda(v) {
+    if (v <= 4) return Math.max(1, v);
+    const p = 10 ** Math.floor(Math.log10(v));
+    for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+  function graficoColunas(serie, series, { escala = 'dia', empilhado = false, altura = 230, largura = 470 } = {}) {
+    if (!serie?.length) return '<div class="g-vazio">Sem dados no período.</div>';
     const totais = serie.map((s) => (empilhado
       ? series.reduce((a, c) => a + (s[c.campo] || 0), 0)
       : Math.max(...series.map((c) => s[c.campo] || 0))));
-    const max = Math.max(1, ...totais);
+    if (!totais.some(Boolean)) return '<div class="g-vazio"><i class="bi bi-bar-chart"></i> Nada no período.</div>';
+    const W = largura; const H = altura; const esq = 30; const dir = 6; const topo = 20; const base = H - 24;
+    const n = serie.length; const larg = (W - esq - dir) / n;
+    const max = escalaRedonda(Math.max(...totais));
     const y = (v) => base - (v / max) * (base - topo);
     const nGrupo = empilhado ? 1 : series.length;
-    const bw = Math.max(1, (larg * 0.72) / nGrupo);
+    const bwTotal = Math.min(larg * 0.66, 46);
+    const bw = Math.max(2, bwTotal / nGrupo);
+    const raio = Math.min(4, bw / 3);
     let barras = '';
     serie.forEach((s, i) => {
-      const x0 = esq + i * larg + larg * 0.14;
+      const x0 = esq + i * larg + (larg - bwTotal) / 2;
       let acumulado = 0;
+      const vis = series.filter((c) => s[c.campo]);
       series.forEach((c, j) => {
         const v = s[c.campo] || 0;
         if (!v) return;
         const dica = `${rotuloBalde(s.periodo, escala)}: ${v} ${c.nome.toLowerCase()}`;
         if (empilhado) {
-          barras += `<rect x="${x0}" y="${y(acumulado + v)}" width="${bw}" height="${y(acumulado) - y(acumulado + v)}" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
+          const topoSeg = c === vis[vis.length - 1];
+          const h = y(acumulado) - y(acumulado + v);
+          barras += `<rect x="${x0}" y="${y(acumulado + v)}" width="${bwTotal}" height="${h}" rx="${topoSeg ? raio : 0}" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
+          if (topoSeg && h > raio) barras += `<rect x="${x0}" y="${y(acumulado + v) + h - Math.min(raio, h)}" width="${bwTotal}" height="${Math.min(raio, h)}" fill="${c.cor}"/>`;
           acumulado += v;
         } else {
-          barras += `<rect x="${x0 + j * bw}" y="${y(v)}" width="${Math.max(1, bw - 1)}" height="${base - y(v)}" rx="1.5" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
+          barras += `<rect x="${x0 + j * bw}" y="${y(v)}" width="${Math.max(1, bw - 2)}" height="${base - y(v)}" rx="${raio}" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
         }
       });
+      // valor em cima da coluna (só quando há poucas colunas)
+      if (n <= 16 && totais[i]) {
+        barras += `<text class="g-v" x="${x0 + bwTotal / 2}" y="${y(totais[i]) - 5}" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">${totais[i]}</text>`;
+      }
     });
-    // rótulos do eixo X: no máximo ~8, sempre o primeiro e o último
     const passo = Math.max(1, Math.ceil(n / (largura >= 900 ? 12 : 8)));
     const rotulos = serie.map((s, i) => (((i % passo === 0 && n - 1 - i >= passo / 2) || i === n - 1)
-      ? `<text x="${esq + i * larg + larg / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#64748b">${esc(rotuloBalde(s.periodo, escala))}</text>` : '')).join('');
-    const grade = [0, 0.5, 1].map((f) => {
-      const v = Math.round(max * f);
-      return `<line x1="${esq}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0"/>
-        <text x="${esq - 6}" y="${y(v) + 3}" text-anchor="end" font-size="10" fill="#64748b">${v}</text>`;
-    }).join('');
-    const legenda = series.map((c) => `<span><i style="background:${c.cor}"></i>${esc(c.nome)}</span>`).join('');
+      ? `<text class="g-t" x="${esq + i * larg + larg / 2}" y="${H - 7}" text-anchor="middle" font-size="11" fill="#64748b">${esc(rotuloBalde(s.periodo, escala))}</text>` : '')).join('');
+    const marcas = max <= 4 ? Array.from({ length: max + 1 }, (_, k) => k) : [0, max / 2, max];
+    const grade = marcas.map((v) => `<line class="g-l" x1="${esq}" x2="${W - dir}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0" ${v ? 'stroke-dasharray="3 4"' : ''}/>
+        <text class="g-t" x="${esq - 7}" y="${y(v) + 4}" text-anchor="end" font-size="10.5" fill="#64748b">${v}</text>`).join('');
+    const legenda = series.length > 1 || series[0].nome ? series.map((c) => `<span><i style="background:${c.cor}"></i>${esc(c.nome)}</span>`).join('') : '';
     return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((c) => c.nome).join(' e '))} por período" style="width:100%;height:auto">
       ${grade}${barras}${rotulos}</svg><div class="legend">${legenda}</div>`;
   }
@@ -537,6 +554,7 @@
     { campo: 'atividades', nome: 'Atividades', cor: '#6366f1' },
     { campo: 'solicitacoes', nome: 'Solicitações', cor: '#f59e0b' },
   ];
+  // (as cores acima valem para a tela e para o PDF)
 
   // Texto do relatório, escrito a partir dos números do período
   function textoRelatorio(d) {
@@ -619,7 +637,7 @@
   // Painel do gestor: abas compactas. TI do Beija-Flor usa os dados do Painel; Orcim, Por posto e
   // Calendário usam os dados da Orcim (hoje pela cópia da Central; depois pela API da Orcim).
   // Números pequenos numa faixa no topo, listas com barrinha e tabelas; nada de cartão grande.
-  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['calendario', 'Calendário']];
+  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto']];
 
   // variação contra o período anterior: "+6", "−4h"; verde quando melhorou
   function variacao(atual, antes, { menorMelhor = false, tempo = false, pp = false } = {}) {
@@ -640,6 +658,7 @@
       <span class="b"><i style="width:${Math.max(4, Math.round((valor(x) / topo) * 100))}%${cor ? `;background:${typeof cor === 'function' ? cor(x) : cor}` : ''}"></i></span><span class="v">${esc(texto(x))}</span></div>`).join('');
   }
   const blocoPg = (titulo, corpo, nota = '') => `<section class="pg-bloco"><h3>${esc(titulo)}${nota ? `<span>${nota}</span>` : ''}</h3>${corpo}</section>`;
+  const cartaoGrafico = (titulo, corpo, nota = '') => `<section class="pg-bloco pg-card"><h3>${esc(titulo)}${nota ? `<span>${nota}</span>` : ''}</h3>${corpo}</section>`;
   const emBreveApi = '<span class="pg-api">API Orcim</span>';
   const pctTxt = (v) => (v === null || v === undefined ? '—' : `${v}%`);
 
@@ -681,6 +700,7 @@
 
   async function vPainelGestor(qs, seq) {
     titulo('Painel do gestor');
+    if (qs.get('aba') === 'calendario') { location.replace(`#/calendario${qs.get('mes') ? `?mes=${encodeURIComponent(qs.get('mes'))}` : ''}`); return; }
     let aba = qs.get('aba') || store.get('gbf_painel_aba') || 'ti';
     if (!ABAS_PAINEL.some(([k]) => k === aba)) aba = 'ti';
     store.set('gbf_painel_aba', aba);
@@ -696,8 +716,7 @@
       per = { de: de0 <= ate0 ? de0 : ate0, ate: de0 <= ate0 ? ate0 : de0, escala: '' };
     } else per = periodoPainel(tipo, ref);
     const url = (x) => `#/painel?${new URLSearchParams({ aba, per: tipo, ...(tipo === 'livre' ? { de: per.de, ate: per.ate } : { ref }), ...x })}`;
-    const abasHtml = () => `<nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="${k === 'calendario' ? '#/painel?aba=calendario' : url({ aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>`;
-    if (aba === 'calendario') { await vCalendarioPainel(qs, seq, abasHtml()); ligarCliques(); return; }
+    const abasHtml = () => `<nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="${url({ aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>`;
 
     const d = await API.get(`/painel-gestor?${new URLSearchParams({ de: per.de, ate: per.ate, escala: per.escala })}`);
     if (seq !== renderSeq) return;
@@ -707,25 +726,26 @@
 
     const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos }[aba](d);
     view().innerHTML = `
-      <div class="pg-topo">
-        <div class="btn-group btn-group-sm" role="group" aria-label="Ver por">
-          ${TIPOS_PERIODO.map(([k, nome]) => `<a class="btn ${k === tipo ? 'btn-dark' : 'btn-outline-secondary'}" href="${url({ per: k, ...(k === 'livre' ? { de: per.de, ate: per.ate } : { ref: tipo === 'livre' ? hojeSP() : ref }) })}">${nome}</a>`).join('')}
+      ${abasHtml()}
+      <div class="pg-filtro">
+        <div class="pg-seg" role="group" aria-label="Ver por">
+          ${TIPOS_PERIODO.map(([k, nome]) => `<a class="${k === tipo ? 'on' : ''}" aria-current="${k === tipo}" href="${url({ per: k, ...(k === 'livre' ? { de: per.de, ate: per.ate } : { ref: tipo === 'livre' ? hojeSP() : ref }) })}">${nome}</a>`).join('')}
         </div>
         ${tipo === 'livre' ? `
-          <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(per.de)}"></label>
-          <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(per.ate)}"></label>
-          <button class="btn btn-sm btn-outline-secondary" id="pg-aplicar">Aplicar</button>` : `
+          <div class="pg-livre">
+            <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(per.de)}"></label>
+            <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(per.ate)}"></label>
+            <button class="btn btn-sm btn-brand" id="pg-aplicar">Aplicar</button>
+          </div>` : `
           <div class="pg-nav">
-            <a class="btn btn-sm btn-outline-secondary" href="${url({ ref: moverPeriodo(tipo, ref, -1) })}" aria-label="Período anterior"><i class="bi bi-chevron-left"></i></a>
+            <a class="pg-seta" href="${url({ ref: moverPeriodo(tipo, ref, -1) })}" aria-label="Período anterior"><i class="bi bi-chevron-left"></i></a>
             <strong class="pg-nome">${esc(nomePeriodo(tipo, per.de, per.ate))}</strong>
-            <a class="btn btn-sm btn-outline-secondary" href="${url({ ref: moverPeriodo(tipo, ref, 1) })}" aria-label="Próximo período"><i class="bi bi-chevron-right"></i></a>
-            ${contemHoje ? '' : `<a class="btn btn-sm btn-link" href="${url({ ref: hojeSP() })}">Hoje</a>`}
+            <a class="pg-seta" href="${url({ ref: moverPeriodo(tipo, ref, 1) })}" aria-label="Próximo período"><i class="bi bi-chevron-right"></i></a>
+            ${contemHoje ? '' : `<a class="pg-hoje" href="${url({ ref: hojeSP() })}">Hoje</a>`}
           </div>`}
-        <button class="btn btn-sm btn-outline-secondary ms-auto" id="pg-pdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+        <button class="btn btn-sm btn-outline-secondary pg-pdf" id="pg-pdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
       </div>
-      <div class="small-muted mb-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · gráficos ${nomeEscala(d.periodo.escala)} · comparado com ${fmtIso(d.periodo.anterior.de)} a ${fmtIso(d.periodo.anterior.ate)}.
-        "Agora" é a situação neste momento.</div>
-      ${abasHtml()}
+      <div class="pg-compara">Gráficos ${nomeEscala(d.periodo.escala)} · números comparados com ${fmtIso(d.periodo.anterior.de)} a ${fmtIso(d.periodo.anterior.ate)} · "agora" é a situação neste momento</div>
       <div id="pg-conteudo">${conteudo}</div>`;
 
     $('#pg-aplicar')?.addEventListener('click', () => {
@@ -749,8 +769,8 @@
     { l: 'Em aberto agora', v: k.atividades_abertas_agora, sub: k.atividades_atrasadas_agora ? `${k.atividades_atrasadas_agora} atrasada(s)` : 'atividades', href: '#/atividades' },
   ])}
       <div class="pg-duas">
-        ${blocoPg(`Entregas da TI ${nomeEscala(d.periodo.escala)}`, graficoColunas(d.ti.serie, CORES_TI, { escala: d.periodo.escala, empilhado: true, altura: 180 }))}
-        ${blocoPg(`Itens com problema ${nomeEscala(d.periodo.escala)}`, graficoColunas(d.ti.serie, [{ campo: 'nao_ok', nome: 'Itens NÃO OK nas visitas', cor: '#dc2626' }], { escala: d.periodo.escala, altura: 180 }))}
+        ${cartaoGrafico('Entregas da TI', graficoColunas(d.ti.serie, CORES_TI, { escala: d.periodo.escala, empilhado: true }), nomeEscala(d.periodo.escala))}
+        ${cartaoGrafico('Itens com problema nas visitas', graficoColunas(d.ti.serie, [{ campo: 'nao_ok', nome: 'Itens NÃO OK', cor: '#ef4444' }], { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
       </div>
       ${blocoPg('Problemas encontrados nas visitas', d.ti.nao_ok.length ? d.ti.nao_ok.slice(0, 12).map((n) => `<div class="pg-prob" data-href="#/visitas/${n.visit_id}">
           <span class="pg-prob-t"><b>${esc(n.item_label)}</b> — ${esc(n.local)}</span>
@@ -782,7 +802,7 @@
     { l: '1ª resposta', v: dur(k.tempo_medio_primeira_resposta), var: variacao(k.tempo_medio_primeira_resposta, a.tempo_medio_primeira_resposta, { menorMelhor: true, tempo: true }) },
     { l: 'Em aberto agora', v: k.abertas_agora, sub: k.atrasadas_agora ? `${k.atrasadas_agora} atrasado(s)` : '', href: '#/demandas?situacao=abertas' },
   ])}
-      ${blocoPg(`Chamados abertos × resolvidos ${nomeEscala(d.periodo.escala)}`, graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: d.periodo.escala, altura: 170, largura: 900 }))}
+      ${cartaoGrafico('Chamados abertos × resolvidos', graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: d.periodo.escala, altura: 190, largura: 900 }), nomeEscala(d.periodo.escala))}
       <div class="pg-duas">
         ${blocoPg('Problemas mais recorrentes', listaBarras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' }), `${emBreveApi} hoje: categorias da Central`)}
         ${blocoPg('Equipamentos mais solicitados', d.orcim.equipamentos ? listaBarras(d.orcim.equipamentos)
@@ -814,10 +834,10 @@
     const semChamados = d.postos.every((p) => p.chamados === null);
     const porNome = (campo) => d.postos.map((p) => ({ nome: p.nome, total: p[campo] || 0 })).sort((a, b) => b.total - a.total);
     return `<div class="pg-duas">
-      ${blocoPg('Visitas por posto', listaBarras(porNome('visitas'), { max: 10, vazio: 'Nenhuma visita no período.' }))}
-      ${blocoPg('Itens com problema por posto', listaBarras(porNome('nao_ok'), { max: 10, cor: '#dc2626', vazio: 'Nenhum item NÃO OK no período.' }))}
+      ${cartaoGrafico('Visitas por posto', listaBarras(porNome('visitas'), { max: 10, vazio: 'Nenhuma visita no período.' }))}
+      ${cartaoGrafico('Itens com problema por posto', listaBarras(porNome('nao_ok'), { max: 10, cor: '#ef4444', vazio: 'Nenhum item NÃO OK no período.' }))}
       </div>
-      ${semChamados ? '' : blocoPg('Chamados da Orcim por posto', listaBarras(porNome('chamados'), { max: 10, cor: '#534AB7', vazio: 'Nenhum chamado no período.' }))}` + blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+      ${semChamados ? '' : cartaoGrafico('Chamados da Orcim por posto', listaBarras(porNome('chamados'), { max: 10, cor: '#534AB7', vazio: 'Nenhum chamado no período.' }))}` + blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
       <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th></tr></thead>
       <tbody>${d.postos.map((p) => `<tr data-href="#/postos/${p.id}" class="clicavel">
         <td class="text-nowrap"><span class="ac-dot ${cor[p.situacao]} d-inline-block me-2"></span>${esc(p.nome)}${p.dias_atraso ? ` <span class="small text-danger">${p.dias_atraso} d</span>` : ''}</td>
@@ -845,14 +865,15 @@
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   };
 
-  async function vCalendarioPainel(qs, seq, abasHtml) {
+  async function vCalendarioPainel(qs, seq, abasHtml = '') {
+    titulo('Calendário');
     const mes = /^\d{4}-\d{2}$/.test(qs.get('mes') || '') ? qs.get('mes') : hojeSP().slice(0, 7);
     const c = await API.get(`/painel-gestor/calendario?mes=${mes}`);
     if (seq !== renderSeq) return;
     const filtro = calFiltro();
     let diaSel = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('dia') || '') ? qs.get('dia') : (c.hoje.slice(0, 7) === c.mes ? c.hoje : c.primeiro);
     const [ano, mesNum] = c.mes.split('-').map(Number);
-    const irMes = (m) => `#/painel?aba=calendario&mes=${m}`;
+    const irMes = (m) => `#/calendario?mes=${m}`;
 
     const visiveis = () => c.itens.filter((i) => filtro[i.fonte] && (!filtro.abertos || i.aberto));
     const porDia = () => {
@@ -906,7 +927,7 @@
       }).join('');
       $$('#cal-dias [data-dia]').forEach((b) => b.addEventListener('click', () => {
         diaSel = b.dataset.dia;
-        history.replaceState(null, '', `#/painel?aba=calendario&mes=${c.mes}&dia=${diaSel}`);
+        history.replaceState(null, '', `#/calendario?mes=${c.mes}&dia=${diaSel}`);
         pintar();
         if (window.matchMedia('(max-width: 900px)').matches) $('#cal-dia').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }));
@@ -990,7 +1011,7 @@
     </tbody></table></div>
     <div style="flex:0 0 130px;text-align:center">${medidor(o.prazo_cumprido_pct, 'Dentro do prazo')}<div class="muted">dentro do prazo</div></div>
   </div>
-  <div class="grafico-box"><h3>Chamados abertos × resolvidos ${tituloEscala}</h3>${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_, altura: 190 })}</div>
+  <div class="grafico-box"><h3>Chamados abertos × resolvidos ${tituloEscala}</h3>${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_, altura: 190, largura: 900 })}</div>
   <div class="grafico-box"><h3>Chamados abertos por categoria</h3>${graficoBarrasSvg(d.orcim.por_categoria)}</div>
   <div class="grafico-box"><h3>Resolvidos por técnico da Orcim</h3>${d.orcim.por_tecnico.length
     ? `<table><thead><tr><th>Técnico</th><th class="num">Resolvidos</th><th class="num">Tempo médio</th></tr></thead><tbody>${d.orcim.por_tecnico.map((x) => `<tr><td>${esc(x.nome)}</td><td class="num">${x.total}</td><td class="num">${dur(x.tempo_medio)}</td></tr>`).join('')}</tbody></table>`
@@ -1007,7 +1028,7 @@
     ${linha('Atividades atrasadas (agora)', t.atividades_atrasadas_agora)}
     ${linha('Solicitações em aberto (agora)', t.solicitacoes_abertas_agora)}
   </tbody></table>
-  <div class="grafico-box"><h3>Entregas da TI ${tituloEscala}</h3>${graficoColunas(d.ti.serie, CORES_TI, { escala: esc_, empilhado: true, altura: 190 })}</div>
+  <div class="grafico-box"><h3>Entregas da TI ${tituloEscala}</h3>${graficoColunas(d.ti.serie, CORES_TI, { escala: esc_, empilhado: true, altura: 190, largura: 900 })}</div>
   <div class="grafico-box"><h3>Visitas por posto</h3>${graficoBarrasSvg(d.ti.por_posto)}</div>
   ${d.ti.por_pessoa.length ? `<div class="grafico-box"><h3>Por pessoa</h3><table><thead><tr><th>Pessoa</th><th class="num">Visitas</th><th class="num">Atividades</th><th class="num">Solicitações</th></tr></thead><tbody>
     ${d.ti.por_pessoa.map((p) => `<tr><td>${esc(p.nome)}</td><td class="num">${p.visitas}</td><td class="num">${p.atividades}</td><td class="num">${p.solicitacoes}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -3063,11 +3084,12 @@
       id: 'resultados', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados e o calendário',
       resumo: 'Painel do gestor: problemas encontrados, visitas feitas, Orcim, postos e o calendário por urgência.',
       passos: [
-        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'TI do Beija-Flor (nosso trabalho), Orcim (chamados), Por posto e Calendário.' },
+        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'TI do Beija-Flor (nosso trabalho), Orcim (chamados) e Por posto.' },
+        { alvo: '.pg-filtro', titulo: 'Período', texto: 'Escolha Dia, Semana, Mês, Ano ou Personalizado e use as setas para ir ao período anterior ou ao seguinte. Os gráficos acompanham.' },
         { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... Escolha o período nos botões de cima.' },
         { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
         { alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período para guardar ou enviar.' },
-        { rota: '#/painel?aba=calendario', alvo: '.cal-grade', titulo: 'Calendário', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica algo atrasado.' },
+        { rota: '#/calendario', alvo: '.cal-grade', titulo: 'Calendário', texto: 'No menu Gestão → Calendário. Em cada dia, um número por urgência, na cor dela. O reloginho indica algo atrasado.' },
         { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, amarelo = parada iminente, azul = operação prejudicada, cinza = requisição.' },
         { alvo: '.cal-dia', titulo: 'O dia escolhido', texto: 'Clique num dia para ver aqui tudo o que foi pedido nele, do mais urgente ao menos urgente.' },
       ],

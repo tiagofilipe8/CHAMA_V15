@@ -566,3 +566,39 @@ html[data-bs-theme="dark"] .pg-prob-t b { color: #f87171; }
 .pg-nome { min-width: 170px; text-align: center; font-size: .92rem; }
 .pg-bloco .grafico { margin-top: 2px; }
 @media (max-width: 600px) { .pg-topo .btn-group { flex-wrap: wrap; } .pg-nome { min-width: 0; flex: 1; } .pg-nav { flex: 1 1 100%; } }
+
+/* Painel do gestor: filtro logo abaixo das abas */
+.pg-abas { margin-bottom: 10px; }
+.pg-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; }
+.pg-seg { display: inline-flex; background: var(--line-soft); border-radius: 10px; padding: 3px; gap: 2px; }
+.pg-seg a { padding: 5px 13px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: .84rem; font-weight: 500; white-space: nowrap; }
+.pg-seg a:hover { color: var(--ink); }
+.pg-seg a.on { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+.pg-filtro .pg-nav { display: flex; align-items: center; gap: 4px; margin: 0 auto; }
+.pg-seta { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink); text-decoration: none; border: 1px solid var(--line); }
+.pg-seta:hover { background: var(--line-soft); color: var(--ink); }
+.pg-filtro .pg-nome { min-width: 190px; text-align: center; font-size: .95rem; }
+.pg-hoje { font-size: .8rem; margin-left: 4px; color: var(--brand); text-decoration: none; font-weight: 600; }
+.pg-livre { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 auto; }
+.pg-livre input[type="date"] { width: 140px; }
+.pg-pdf { margin-left: auto; }
+.pg-compara { font-size: .74rem; color: var(--muted); margin: 0 2px 14px; }
+/* Gráficos em cartão */
+.pg-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 10px; }
+.pg-card h3 { margin-bottom: 8px; }
+.pg-card .legend { justify-content: center; margin-top: 2px; }
+.pg-card .legend i { border-radius: 50%; width: 9px; height: 9px; }
+.g-vazio { color: var(--muted); font-size: .85rem; padding: 28px 0; text-align: center; }
+.g-vazio i { margin-right: 4px; }
+html[data-bs-theme="dark"] .g-t { fill: #94a3b8; }
+html[data-bs-theme="dark"] .g-v { fill: #e2e8f0; }
+html[data-bs-theme="dark"] .g-l { stroke: #2b3947; }
+@media (max-width: 760px) {
+  .pg-filtro .pg-nav, .pg-livre { margin: 0; flex: 1 1 100%; justify-content: space-between; }
+  .pg-filtro .pg-nome { min-width: 0; flex: 1; }
+  .pg-seg { flex: 1 1 100%; overflow-x: auto; }
+  .pg-seg a { flex: 1; text-align: center; padding: 5px 8px; }
+  .pg-pdf { margin-left: 0; }
+}
