@@ -79,15 +79,24 @@ function normalizePhone(raw) {
 }
 
 // Numero de quem enviou. Aceita @c.us e, quando o WhatsApp devolve o ID
-// vinculado (@lid), tenta recuperar o numero pelos campos alternatorios.
-function phoneFromMessage(msg) {
+// vinculado (@lid), tenta recuperar o numero pelos campos alternatorios e,
+// se nao achar, pede a traducao lid -> telefone para o proprio cliente.
+async function phoneFromMessage(msg) {
   const from = String(msg.from || '');
   if (from.endsWith('@c.us')) return normalizePhone(from.slice(0, -5));
   if (from.endsWith('@lid')) {
     const d = (msg && msg._data) || {};
-    const alt = d.sender_pn || d.senderAlt || d.sender_alt || d.author_pn;
+    const alt = d.sender_pn || d.senderAlt || d.sender_alt || d.author_pn
+      || d.peer_pn || d.from_pn;
     const candidato = alt || (msg.sender && msg.sender.id && msg.sender.id.user);
-    return candidato ? normalizePhone(candidato) : null;
+    const direto = candidato ? normalizePhone(candidato) : null;
+    if (direto) return direto;
+
+    try {
+      const pn = await whatsapp.getPhoneFromLid(from);
+      if (pn) return normalizePhone(String(pn).replace(/@c\.us$/, ''));
+    } catch { /* segue sem numero */ }
+    return null;
   }
   return null;
 }
@@ -174,8 +183,23 @@ async function reply(norm, texto) {
 }
 
 // ------------------------------ identificacao ------------------------------
+// Palavras que comecam frase/interacao e nunca sao nome proprio.
+const STOP_NOME = new Set([
+  'sobre','ola','oi','bom','boa','dia','tarde','noite','tudo','bem',
+  'preciso','falta','faltando','erro','mensagem','teste','sim','nao','não',
+  'ok','obrigado','obrigada','ajuda','favor','por','com','sem','para','pra',
+  'de','do','da','dos','das','em','no','na','meu','minha','meus','minhas',
+  'o','a','os','as','um','uma','uns','umas','é','eh','sou','aqui','esse','essa',
+  'isso','isto','ref','referente','quanto','quando','onde','quem','qual','como',
+  'seria','gostaria','teria','duvida','dúvida','pergunta','informacao','informação',
+  'status','retorno','solucao','solução','problema','atendimento','suporte',
+  'central','cliente','empresa','usuario','usuário','segue','conforme',
+  'prezado','prezada','pessoal','galera','equipe','somos','estou','estamos',
+]);
+
 // Aceita "Nome", "Nome - Empresa" ou "Nome, Empresa". O nome precisa ter ao
-// menos dois parese, sem numeros e sem cara de frase/problema.
+// menos dois parese, sem numeros e sem cara de frase/problema. Maiuscula nao
+// e obrigatoria: "tiago filipe" e aceito e vira "Tiago Filipe".
 function parseIdentification(texto) {
   const t = String(texto || '').replace(/\s+/g, ' ').trim();
   if (t.length < 5 || t.length > 120) return null;
@@ -189,16 +213,26 @@ function parseIdentification(texto) {
   const palavras = nome.split(/\s+/).filter(Boolean);
   if (palavras.length < 2 || palavras.length > 5) return null;
   if (nome.length < 5 || nome.length > 80) return null;
-  if (!/^[A-ZÀ-Þ]/.test(nome)) return null; // nome comeca com maiuscula
   if (!/^[A-Za-zÀ-ÿ'’.\- ]+$/.test(nome)) return null;
   if (palavras.some((p) => p.length < 2)) return null;
+  if (STOP_NOME.has(palavras[0].toLowerCase())) return null;
 
   // Frase de problema costuma trazer estes termos; nome, nao.
-  const problema = /\b(nao|não|sem|erro|falha|problema|preciso|parou|parada|travou|trava|lenta|lento|urgente|socorro|ajuda|impressora|internet|computador|notebook|monitor|sistema|arquivo|e-mail|email)\b/i;
+  const problema = /\b(nao|não|sem|erro|falha|problema|preciso|parou|parada|travou|trava|quebrou|quebrado|lenta|lento|urgente|socorro|ajuda|impressora|impressao|internet|computador|notebook|monitor|tela|cpu|sistema|arquivo|e-mail|email|rede|senha|login|acesso|bloqueado|devagar|carregando|instalar|atualizar|configurar)\b/i;
   if (problema.test(nome)) return null;
 
+  // nome vira com a inicial maiuscula (preposicoes comuns ficam minusculas)
+  const MINUSCULAS = new Set(['da', 'de', 'do', 'das', 'dos', 'e', 'di', 'du']);
+  const capitalizado = palavras
+    .map((p, i) => {
+      const baixa = p.toLowerCase();
+      if (i > 0 && MINUSCULAS.has(baixa)) return baixa;
+      return p[0].toUpperCase() + p.slice(1);
+    })
+    .join(' ');
+
   return {
-    nome: palavras.join(' '),
+    nome: capitalizado,
     empresa: resto ? resto.slice(0, 80) : null,
   };
 }
@@ -372,7 +406,7 @@ async function handle(msg) {
   const from = String(msg.from || '');
   if (!from.endsWith('@c.us') && !from.endsWith('@lid')) return; // grupos/status
 
-  const norm = phoneFromMessage(msg);
+  const norm = await phoneFromMessage(msg);
   if (!norm) {
     console.log(`[whatsapp-inbound] numero nao reconhecido em: ${from}`);
     return;

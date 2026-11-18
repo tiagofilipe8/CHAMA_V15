@@ -123,6 +123,22 @@ async function readyTimeout(ms = 20000) {
   return isReady();
 }
 
+// Converte um ID vinculado (@lid) no numero de telefone (@c.us).
+// O WhatsApp passou a enviar mensagens de alguns contatos apenas com o lid;
+// sem esta traducao nao da para saber quem e. Retorna null quando o numero
+// nao esta disponivel (privacidade do contato).
+async function getPhoneFromLid(lid) {
+  if (!client || state !== 'ready') return null;
+  try {
+    const rows = await client.getContactLidAndPhone([lid]);
+    const pn = rows && rows[0] && rows[0].pn;
+    return pn || null;
+  } catch (err) {
+    console.log('[whatsapp] falha ao traduzir lid:', err && err.message);
+    return null;
+  }
+}
+
 function getStatus() {
   return {
     state,
@@ -195,7 +211,10 @@ async function sendTextMessage(toPhone, body) {
       targetId = contact.id._serialized;
     }
   } catch (e) { console.log(`[whatsapp] getContactById ${targetId} falhou: ${e.message && e.message.slice(0,60)}`); }
-  try { await client.openChat(targetId); } catch (e) { console.log(`[whatsapp] openChat ${targetId} falhou: ${e.message && e.message.slice(0,60)}`); }
+  // openChat so existe em versoes mais novas da biblioteca; nao e obrigatorio
+  if (typeof client.openChat === 'function') {
+    try { await client.openChat(targetId); } catch (e) { console.log(`[whatsapp] openChat ${targetId} falhou: ${e.message && e.message.slice(0,60)}`); }
+  }
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -228,6 +247,7 @@ module.exports = {
   disconnect,
   sendTextMessage,
   normalizePhone,
+  getPhoneFromLid,
   isReady,
   isConfigured,
 };
