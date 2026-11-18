@@ -23,6 +23,11 @@ Views.ticketDetail = function ticketDetail(id) {
     const canClientApprove = t.approval_status === 'pending' && !!can.approve;
     const support = !!can.estimate; // pode alterar previsao/prazo
     const canEdit = !!can.edit;
+    // Chamado do WhatsApp ainda na empresa padrao: o tecnico que vai resolver
+    // tambem precisa atribuir empresa (obrigatorio antes de resolver).
+    const empresaWaPadrao = !!t.via_whatsapp
+      && String(t.entity_name || '').trim() === 'WhatsApp - não identificado';
+    const podeAtribuirEmpresa = triage || (empresaWaPadrao && !!can.resolve);
 
     // ---------------- Barra de acoes ----------------
     const actions = [];
@@ -111,9 +116,10 @@ Views.ticketDetail = function ticketDetail(id) {
           </div>
           <h5 class="mt-1 mb-0">${esc(t.title)}</h5>
           <small class="text-muted"><span class="multi-empresa">${esc(t.entity_name || '')} · </span>${t.location_name ? esc(t.location_name) + ' · ' : ''}${esc(t.display_category || '')}</small>
+          ${empresaWaPadrao ? `<div class="mt-1"><span class="badge text-bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Empresa não atribuída — obrigatório antes de resolver</span></div>` : ''}
         </div>
         <div class="d-flex gap-2">
-          ${triage ? `<button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-entity" title="Atribuir este chamado a uma empresa existente"><i class="bi bi-building-add"></i> Atribuir empresa</button>` : ''}
+          ${podeAtribuirEmpresa ? `<button class="btn btn-sm ${empresaWaPadrao && !triage ? 'btn-warning' : 'btn-outline-primary'}" data-bs-toggle="modal" data-bs-target="#modal-entity" title="Atribuir este chamado a uma empresa existente${empresaWaPadrao ? ' (obrigatório antes de resolver)' : ''}"><i class="bi bi-building-add"></i> Atribuir empresa${empresaWaPadrao ? ' *' : ''}</button>` : ''}
           <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
         </div>
       </div>
@@ -387,7 +393,7 @@ Views.ticketDetail = function ticketDetail(id) {
       return `
         ${statusModal()}
         ${editModal()}
-        ${triage ? entityModal() : ''}
+        ${podeAtribuirEmpresa ? entityModal() : ''}
 `;
     }
 
@@ -397,7 +403,7 @@ Views.ticketDetail = function ticketDetail(id) {
           <div class="modal-header"><h6>Atribuir empresa · ${esc(t.number)}</h6>
             <button class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
-            <label class="form-label small">Empresa existente</label>
+            <label class="form-label small">Empresa existente${empresaWaPadrao ? ' <span class="text-danger">*</span> <span class="text-muted">(obrigatória antes de resolver)</span>' : ''}</label>
             <select class="form-select" id="ent-select"><option value="">Carregando...</option></select>
             <div class="form-text">O chamado passa a pertencer à empresa escolhida. Localização e equipamento
               só permanecem quando também pertencerem a ela.</div>
@@ -493,11 +499,12 @@ Views.ticketDetail = function ticketDetail(id) {
         }
       });
 
-      // empresa (so para quem tem triagem)
+      // empresa (triagem, ou tecnico que vai resolver chamado do WhatsApp sem empresa)
       const entSel = el.querySelector('#ent-select');
       if (entSel) {
         API.get('/entities').then((ents) => {
-          const ativas = ents.filter((e) => e.active !== false);
+          const ativas = ents.filter((e) => e.active !== false
+            && !(empresaWaPadrao && String(e.name || '').trim() === 'WhatsApp - não identificado'));
           entSel.innerHTML = ativas.map((e) =>
             `<option value="${e.id}" ${String(e.id) === String(t.entity_id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
         }).catch(() => { entSel.innerHTML = '<option value="">Erro ao carregar as empresas</option>'; });

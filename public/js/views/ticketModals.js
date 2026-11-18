@@ -56,13 +56,34 @@ const TicketModals = (() => {
   }
 
   // ---------------- Resolver (formulario de encerramento) ----------------
+  const EMPRESA_PADRAO_WHATSAPP = 'WhatsApp - não identificado';
   function resolve(t, opts = {}) {
+    // Chamado do WhatsApp ainda na empresa padrao: atribuir empresa e obrigatorio.
+    const precisaEmpresa = !!t.via_whatsapp
+      && String(t.entity_name || '').trim() === EMPRESA_PADRAO_WHATSAPP;
     const html = `<div class="modal fade" tabindex="-1">
       <div class="modal-dialog modal-lg"><div class="modal-content">
         <div class="modal-header"><h6><i class="bi bi-check2-circle me-1"></i> Resolver chamado · ${esc(t.number)}</h6>
           <button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
           <div class="small text-muted mb-2">${esc(t.title || '')}</div>
+          ${precisaEmpresa ? `
+          <div class="alert alert-warning mb-3" data-f="empresa-box">
+            <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+              <div><i class="bi bi-building-add me-1"></i><b>Empresa obrigatória</b>
+                <div class="small">Este chamado veio pelo WhatsApp e ainda está em “${esc(EMPRESA_PADRAO_WHATSAPP)}”.
+                  Atribua a empresa antes de resolver.</div>
+              </div>
+              <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" data-f="toggle-empresa">
+                <i class="bi bi-building-add"></i> Atribuir empresa</button>
+            </div>
+            <div class="mt-2 d-none" data-f="empresa-panel">
+              <label class="form-label small">Empresa existente <span class="text-danger">*</span></label>
+              <select class="form-select form-select-sm" data-f="empresa"><option value="">Carregando...</option></select>
+              <div class="form-text">Localização e equipamento só permanecem se também pertencerem à empresa escolhida.</div>
+              <button type="button" class="btn btn-primary btn-sm mt-2" data-f="salvar-empresa">Atribuir</button>
+            </div>
+          </div>` : ''}
           <div class="mb-3"><label class="form-label">1. O que aconteceu e o que foi feito? <span class="text-danger">*</span></label>
             <textarea class="form-control" data-f="notes" rows="4" placeholder="Ex.: O cabo de rede estava solto atrás do computador. Reconectei e testei a internet."></textarea>
             <div class="form-text">O solicitante vê este texto.</div></div>
@@ -114,7 +135,39 @@ const TicketModals = (() => {
         f('cause-help').textContent = causeSel.selectedOptions[0]?.dataset.help || '';
       });
 
+      // Empresa obrigatoria para chamados do WhatsApp ainda sem empresa real
+      let empresaOk = !precisaEmpresa;
+      if (precisaEmpresa) {
+        const empSel = f('empresa');
+        API.get('/entities').then((ents) => {
+          const ativas = ents.filter((e) => e.active !== false
+            && String(e.name || '').trim() !== EMPRESA_PADRAO_WHATSAPP);
+          empSel.innerHTML = '<option value="">— escolha a empresa —</option>' +
+            ativas.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+        }).catch(() => { empSel.innerHTML = '<option value="">Erro ao carregar as empresas</option>'; });
+        f('toggle-empresa').addEventListener('click', () => f('empresa-panel').classList.toggle('d-none'));
+        f('salvar-empresa').addEventListener('click', async () => {
+          const novo = parseInt(empSel.value, 10);
+          if (!novo) { toast('Escolha a empresa do chamado.', 'warning'); return; }
+          try {
+            await API.patch(`/tickets/${t.id}`, { entity_id: novo });
+            t.entity_id = novo;
+            t.entity_name = empSel.selectedOptions[0].textContent;
+            empresaOk = true;
+            const box = f('empresa-box');
+            box.className = 'alert alert-success mb-3';
+            box.innerHTML = `<i class="bi bi-check-circle me-1"></i>Empresa atribuída: <b>${esc(t.entity_name)}</b>. Agora você pode resolver.`;
+            toast('Empresa atribuída.', 'success');
+          } catch (e) { showError(e); }
+        });
+      }
+
       f('save').addEventListener('click', async () => {
+        if (!empresaOk) {
+          toast('Atribua a empresa antes de resolver este chamado do WhatsApp.', 'warning');
+          f('empresa-panel')?.classList.remove('d-none');
+          return;
+        }
         const body = {
           status: 5,
           resolution_notes: f('notes').value.trim(),
@@ -138,7 +191,10 @@ const TicketModals = (() => {
             toast('Solução registrada. O solicitante vai aprovar para fechar o chamado.', 'success');
           }
           finish(true);
-        } catch (e) { showError(e); }
+        } catch (e) {
+          showError(e);
+          if (e.data?.entity_required) f('empresa-panel')?.classList.remove('d-none');
+        }
       });
     }, opts);
   }

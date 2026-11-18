@@ -25,6 +25,27 @@ router.use((req, res, next) => {
 });
 router.use(requireAuth);
 
+// Empresa temporaria usada pelos chamados abertos pelo WhatsApp. Enquanto o
+// chamado estiver nela, o encerramento exige que a empresa seja atribuida.
+const EMPRESA_PADRAO_WHATSAPP = 'WhatsApp - não identificado';
+
+function empresaPadraoWhatsApp(ticket) {
+  return !!ticket && !!ticket.via_whatsapp
+    && String(ticket.entity_name || '').trim() === EMPRESA_PADRAO_WHATSAPP;
+}
+
+// Chamado do WhatsApp ainda sem empresa real nao pode ser resolvido/fechado.
+function exigeEmpresaNoEncerramento(ticket) {
+  return empresaPadraoWhatsApp(ticket);
+}
+
+// Quem pode trocar a empresa: triagem, ou o tecnico que assumiu um chamado
+// do WhatsApp ainda na empresa padrao (obrigatorio antes de resolver).
+function podeAtribuirEmpresa(ticket, user) {
+  return canTriage(user, ticket)
+    || (empresaPadraoWhatsApp(ticket) && canWork(user, ticket));
+}
+
 // Storage para anexos de chamados
 const attStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -573,12 +594,16 @@ router.patch('/:id', async (req, res) => {
   // Usado pelo botao "Atribuir empresa" da barra superior do chamado.
   let entAlvo = ticket.entity_id;
   if (entity_id !== undefined) {
-    if (!triage) {
+    if (!podeAtribuirEmpresa(ticket, user)) {
       return res.status(403).json({ error: 'Somente a equipe de triagem pode mudar a empresa do chamado.' });
     }
     const ent = await query('SELECT id, name FROM entities WHERE id = $1 AND active',
       [parseInt(entity_id, 10)]);
     if (!ent.rows.length) return res.status(422).json({ error: 'Empresa inválida.' });
+    if (exigeEmpresaNoEncerramento(ticket)
+        && String(ent.rows[0].name).trim() === EMPRESA_PADRAO_WHATSAPP) {
+      return res.status(422).json({ error: 'Escolha uma empresa real para este chamado do WhatsApp.' });
+    }
     if (String(ent.rows[0].id) !== String(ticket.entity_id)) {
       add('entity_id = ?', ent.rows[0].id);
       changes.push(['entity', ticket.entity_name, ent.rows[0].name]);
@@ -831,6 +856,14 @@ router.post('/:id/status', async (req, res) => {
     }
   }
 
+  // Chamado do WhatsApp sem empresa real: atribuir empresa antes de resolver.
+  if ([5, 6].includes(toStatus) && exigeEmpresaNoEncerramento(ticket)) {
+    return res.status(422).json({
+      error: 'Este chamado veio pelo WhatsApp e ainda está sem empresa. Atribua uma empresa antes de resolver.',
+      entity_required: true,
+    });
+  }
+
   const settings = await settingsStore.getAll();
 
   // Quem nao pode resolver direto -> solicita aprovacao do solicitante (modelo GLPI)
@@ -891,6 +924,12 @@ router.post('/:id/approval', async (req, res) => {
   if (ticket.approval_status === 'pending') {
     return res.status(422).json({ error: 'Já existe aprovação pendente.' });
   }
+  if (exigeEmpresaNoEncerramento(ticket)) {
+    return res.status(422).json({
+      error: 'Este chamado veio pelo WhatsApp e ainda está sem empresa. Atribua uma empresa antes de resolver.',
+      entity_required: true,
+    });
+  }
   const resolution = await readResolution(req.body);
   if (resolution.error) return res.status(422).json({ error: resolution.error, resolution_form: true });
   const solution = resolution.notes;
@@ -928,6 +967,12 @@ router.post('/:id/approval/respond', async (req, res) => {
   const decision = req.body?.decision;
   if (!['approved', 'rejected'].includes(decision)) {
     return res.status(422).json({ error: 'Decisão inválida.' });
+  }
+  if (decision === 'approved' && exigeEmpresaNoEncerramento(ticket)) {
+    return res.status(422).json({
+      error: 'Este chamado veio pelo WhatsApp e ainda está sem empresa. A equipe precisa atribuir uma empresa antes de fechar.',
+      entity_required: true,
+    });
   }
   const note = String(req.body?.comment || '').trim();
 

@@ -102,6 +102,18 @@ No topo da tela do chamado, quem tem a permissão de triagem vê o botão
 chamado para a empresa escolhida (aparece no histórico como *Empresa*). Localização
 e equipamento só permanecem se também pertencerem à nova empresa.
 
+**Chamados do WhatsApp — empresa obrigatória antes de resolver.** Enquanto o
+chamado estiver em *"WhatsApp - não identificado"*:
+
+- o botão **"Atribuir empresa"** também aparece para o **técnico que assumiu** o
+  chamado (mesmo sem permissão de triagem) e dentro do formulário
+  **"Resolver chamado"**, com aviso de obrigatoriedade;
+- o servidor **bloqueia** resolver, fechar ou enviar/aprovar a solução enquanto a
+  empresa não for atribuída (erro `entity_required`);
+- a empresa padrão não pode ser escolhida de novo — é preciso escolher uma empresa
+  real. Chamados do WhatsApp abertos por usuário já cadastrado (que nascem na
+  própria empresa) não passam por essa exigência.
+
 Para ligar: em **Configurações → WhatsApp**, escaneie o QR. Desligue o recebimento com
 `WHATSAPP_INBOUND=0` no `.env` (o envio continua); desligue tudo com `WHATSAPP_DISABLED=1`.
 
