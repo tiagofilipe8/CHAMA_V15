@@ -15,20 +15,23 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Garantir PostgreSQL no ar
+      # A aplicacao e o PostgreSQL sao iniciados pela tarefa agendada
+      # "Central de Atendimento OS" (Agendador do Windows). Assim os processos
+      # ficam fora da arvore do job e NAO sao encerrados na limpeza do runner.
+      - name: Garantir infraestrutura (PostgreSQL + aplicacao)
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          schtasks /Run /TN 'Central de Atendimento OS'
           $bin = 'C:\ORCIM\runtime\pgsql\bin'
-          & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
-          if ($LASTEXITCODE -ne 0) {
-            & "$bin\pg_ctl.exe" -D 'C:\ORCIM\runtime\pgdata' -l 'C:\ORCIM\runtime\postgres.log' -o '-h 127.0.0.1 -p 5432' start
-            foreach ($i in 1..30) {
-              Start-Sleep -Seconds 1
-              & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
-              if ($LASTEXITCODE -eq 0) { break }
-            }
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 1
+            & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
+            if ($LASTEXITCODE -eq 0) { break }
           }
+          & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL nao subiu' }
+          Write-Host 'PostgreSQL aceitando conexoes.'
 
       - name: Atualizar codigo da aplicacao
         shell: powershell
@@ -75,7 +78,16 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\ORCIM\runtime\start-os.ps1'
+          Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue |
+            ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+          Start-Sleep -Seconds 2
+
+          foreach ($i in 1..5) {
+            schtasks /Run /TN 'Central de Atendimento OS'
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 3
+          }
+          Write-Host 'Aplicacao reiniciada via Agendador de Tarefas.'
 
       - name: Healthcheck
         shell: powershell
