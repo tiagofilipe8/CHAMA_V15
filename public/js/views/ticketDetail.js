@@ -112,7 +112,10 @@ Views.ticketDetail = function ticketDetail(id) {
           <h5 class="mt-1 mb-0">${esc(t.title)}</h5>
           <small class="text-muted"><span class="multi-empresa">${esc(t.entity_name || '')} · </span>${t.location_name ? esc(t.location_name) + ' · ' : ''}${esc(t.display_category || '')}</small>
         </div>
-        <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
+        <div class="d-flex gap-2">
+          ${triage ? `<button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-entity" title="Atribuir este chamado a uma empresa existente"><i class="bi bi-building-add"></i> Atribuir empresa</button>` : ''}
+          <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
+        </div>
       </div>
 
       ${actionBar}
@@ -384,7 +387,26 @@ Views.ticketDetail = function ticketDetail(id) {
       return `
         ${statusModal()}
         ${editModal()}
+        ${triage ? entityModal() : ''}
 `;
+    }
+
+    function entityModal() {
+      return `<div class="modal fade" id="modal-entity" tabindex="-1">
+        <div class="modal-dialog"><div class="modal-content">
+          <div class="modal-header"><h6>Atribuir empresa · ${esc(t.number)}</h6>
+            <button class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <label class="form-label small">Empresa existente</label>
+            <select class="form-select" id="ent-select"><option value="">Carregando...</option></select>
+            <div class="form-text">O chamado passa a pertencer à empresa escolhida. Localização e equipamento
+              só permanecem quando também pertencerem a ela.</div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button class="btn btn-primary" id="btn-save-entity">Atribuir</button>
+          </div>
+        </div></div></div>`;
     }
 
     function statusModal() {
@@ -466,6 +488,32 @@ Views.ticketDetail = function ticketDetail(id) {
           });
           hideModal('modal-status');
           toast('Status atualizado.', 'success'); afterReload();
+        } catch (e) {
+          showError(e);
+        }
+      });
+
+      // empresa (so para quem tem triagem)
+      const entSel = el.querySelector('#ent-select');
+      if (entSel) {
+        API.get('/entities').then((ents) => {
+          const ativas = ents.filter((e) => e.active !== false);
+          entSel.innerHTML = ativas.map((e) =>
+            `<option value="${e.id}" ${String(e.id) === String(t.entity_id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+        }).catch(() => { entSel.innerHTML = '<option value="">Erro ao carregar as empresas</option>'; });
+      }
+      el.querySelector('#btn-save-entity')?.addEventListener('click', async () => {
+        const novo = entSel?.value ? parseInt(entSel.value, 10) : null;
+        if (!novo) return;
+        if (String(novo) === String(t.entity_id)) {
+          hideModal('modal-entity');
+          toast('O chamado já está nesta empresa.', 'info');
+          return;
+        }
+        try {
+          await API.patch(`/tickets/${t.id}`, { entity_id: novo });
+          hideModal('modal-entity');
+          toast('Empresa do chamado atualizada.', 'success'); afterReload();
         } catch (e) {
           showError(e);
         }

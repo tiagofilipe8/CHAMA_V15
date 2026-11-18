@@ -74,9 +74,8 @@ O **assunto** do chamado passa a ser o **início da descrição** (sem prefixos)
 | Primeira mensagem | Responde pedindo o nome completo (nada é aberto ainda) |
 | Resposta inválida em qualquer passo | Repete o pedido daquele passo; após 3 tentativas desiste (`blocked`) |
 | Contato `blocked` | Só volta a responder quando mandar um nome válido |
-| Mensagem seguinte (em até 24 h) | Vira **comentário** do último chamado aberto por aqui |
-| Mensagem citando a nossa confirmação | Vira comentário do chamado **citado** |
-| Mensagem começando com **`NOVO`** | Sempre abre outro chamado |
+| Mensagem após o chamado aberto | **Não entra no chamado** — responde avisando e manda usar o sistema |
+| Mensagem começando com **`NOVO`** | Sempre abre **outro** chamado (a mensagem vira a descrição) |
 | Telefone da **equipe interna** (admin/técnico) | Responde pedindo para usar o sistema; não abre chamado |
 
 Padrões do chamado aberto por WhatsApp: empresa **"WhatsApp - não identificado"**
@@ -84,6 +83,13 @@ Padrões do chamado aberto por WhatsApp: empresa **"WhatsApp - não identificado
 **"Outros"**, urgência **"Operação prejudicada"** e data de necessidade = hoje.
 Quem já é cadastrado abre na **própria empresa**. A empresa digitada na coleta fica
 gravada como texto na descrição (`Empresa informada pelo solicitante: ...`).
+
+### Atribuir empresa (triagem)
+
+No topo da tela do chamado, quem tem a permissão de triagem vê o botão
+**"Atribuir empresa"**: abre um modal com a lista de empresas existentes e move o
+chamado para a empresa escolhida (aparece no histórico como *Empresa*). Localização
+e equipamento só permanecem se também pertencerem à nova empresa.
 
 Para ligar: em **Configurações → WhatsApp**, escaneie o QR. Desligue o recebimento com
 `WHATSAPP_INBOUND=0` no `.env` (o envio continua); desligue tudo com `WHATSAPP_DISABLED=1`.

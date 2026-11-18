@@ -5,10 +5,10 @@
 // depois de ter todos os dados, nesta ordem:
 //   1) Nome completo  2) Empresa  3) Descricao do chamado
 // Se a resposta do nome ja trouber a empresa ("Joao Silva - Empresa X"),
-// o passo de empresa e pulado. Depois de ativo, a conversa continua:
-//   * Mensagem seguinte (em ate 24 h) -> comentario do ultimo chamado aberto
-//     por aqui (ou do chamado citado em resposta).
-//   * Comecar com "NOVO" -> abre outro chamado.
+// o passo de empresa e pulado. Depois de ativo:
+//   * Comecar com "NOVO ..." -> abre OUTRO chamado (com a mensagem como descricao).
+//   * Qualquer outra mensagem -> NAO entra no chamado; a central responde
+//     avisando e mandando usar o sistema ou abrir outro com "NOVO".
 //
 // Empresa: o chamado SEMPRE cai na empresa padrao "WhatsApp - nao
 // identificado" (ou na propria empresa de quem ja e cadastrado); a empresa
@@ -29,7 +29,6 @@ const notify = require('./services/notify');
 const EMPRESA_PADRAO = 'WhatsApp - não identificado';
 const MAX_TENTATIVAS = 3;
 const INTERNO = new Set(['admin', 'technician', 'moderator']);
-const JANELA_COMENTARIO_H = 24; // horas em que a conversa continua no mesmo chamado
 
 // ------------------------------- mensagens -------------------------------
 const MSG_NOME = `Olá! Aqui é a Central de Atendimento.
@@ -72,11 +71,17 @@ Número: ${c.number}
 Assunto: ${c.title}
 
 A equipe já foi avisada.
-Para acrescentar informações, responda esta mensagem.
-Para abrir outro chamado, comece a mensagem com "NOVO".`;
+Para abrir outro chamado, comece a mensagem com "NOVO".
+Para acompanhar, use o sistema: ${config.publicUrl}`;
 }
 
-const MSG_COMENTARIO = (numero) => `Registrado no chamado ${numero}.`;
+// Mensagem depois de um chamado ja aberto: nada e registrado.
+function MSG_APOS_CHAMADO(numero) {
+  return `Recebido! Sua mensagem não foi adicionada${numero ? ` ao chamado ${numero}` : ''}.
+
+Para abrir um novo chamado, comece a mensagem com "NOVO" seguido da descrição.
+Para acompanhar os seus chamados, use o sistema: ${config.publicUrl}`;
+}
 
 // ------------------------------- telefones -------------------------------
 function digitsOf(v) {
@@ -398,44 +403,6 @@ async function abrirChamado({ user, descricao, assunto }) {
   return full[0];
 }
 
-async function adicionarComentario(ticket, user, conteudo) {
-  const { rows } = await query(
-    `INSERT INTO ticket_messages (ticket_id, user_id, kind, content)
-     VALUES ($1, $2, 'comment', $3) RETURNING *`,
-    [ticket.id, user.id, String(conteudo).slice(0, 4000)]);
-  const message = { ...rows[0], user: { id: user.id, name: user.name, role: user.role } };
-  const { rows: full } = await query('SELECT * FROM tickets WHERE id = $1', [ticket.id]);
-  await notify.commentAdded(full[0], message).catch((e) =>
-    console.log('[whatsapp-inbound] notify.commentAdded falhou:', e.message));
-}
-
-// Chamado que esta na resposta (as nossas confirmacoes trazem o numero).
-async function chamadoCitado(msg) {
-  if (!msg || !msg.hasQuotedMsg) return null;
-  try {
-    const quoted = await msg.getQuotedMessage();
-    const m = String((quoted && quoted.body) || '').match(/\b\d{4}-\d{5}\b/);
-    if (!m) return null;
-    const { rows } = await query('SELECT id, requester_id, number FROM tickets WHERE number = $1', [m[0]]);
-    return rows[0] || null;
-  } catch {
-    return null;
-  }
-}
-
-// Chamado aberto POR AQUI para este contato e que continua aberto.
-// So anexa ao ultimo chamado que o proprio WhatsApp criou: chamados antigos
-// (abertos pela Central) nao recebem estas mensagens.
-async function chamadoRecente(contact) {
-  if (!contact || !contact.last_ticket_id) return null;
-  const { rows } = await query(
-    `SELECT id, requester_id, number FROM tickets
-      WHERE id = $1 AND status BETWEEN 1 AND 4
-        AND updated_at > now() - make_interval(hours => $2::int)`,
-    [contact.last_ticket_id, JANELA_COMENTARIO_H]);
-  return rows[0] || null;
-}
-
 async function criarUsuario(norm, nome) {
   const { rows } = await query(
     `SELECT id FROM users WHERE username = $1`, [`wa_${norm}`]);
@@ -594,36 +561,27 @@ async function handle(msg) {
     contact.user_id = null;
   }
 
-  // ---------------- contato ativo: conversa continua ----------------
+  // ---------------- contato ativo: nada entra no chamado ----------------
   if (user && contact.status === 'active') {
-    // resposta a uma confirmacao nossa que cita o numero do chamado
-    const citado = await chamadoCitado(msg);
-    if (citado && String(citado.requester_id) === String(user.id)) {
-      await adicionarComentario(citado, user, body);
-      console.log(`[whatsapp-inbound] ${norm} comentario (citado) no chamado ${citado.number}`);
-      await reply(norm, MSG_COMENTARIO(citado.number));
+    // "NOVO ..." abre outro chamado com a mensagem como descricao
+    if (/^novo\b/i.test(body)) {
+      const texto = body.replace(/^novo\s*[:\-–—]?\s*/i, '').trim();
+      if (!texto) { await reply(norm, MSG_TEXTO); return; }
+      const chamado = await abrirChamado({ user, descricao: texto, assunto: texto });
+      await setLastTicket(norm, chamado.id);
+      console.log(`[whatsapp-inbound] ${norm} chamado ${chamado.number} criado para ${user.name}`);
+      await reply(norm, MSG_CHAMADO(chamado));
       return;
     }
 
-    // "NOVO ..." abre outro chamado mesmo com conversa recente
-    const ehNovo = /^novo\b/i.test(body);
-    const texto = ehNovo ? body.replace(/^novo\s*[:\-–—]?\s*/i, '').trim() : body;
-    if (!texto) { await reply(norm, MSG_TEXTO); return; }
-
-    if (!ehNovo) {
-      const recente = await chamadoRecente(contact);
-      if (recente) {
-        await adicionarComentario(recente, user, texto);
-        console.log(`[whatsapp-inbound] ${norm} comentario no chamado ${recente.number}`);
-        await reply(norm, MSG_COMENTARIO(recente.number));
-        return;
-      }
+    // qualquer outra mensagem: NAO vira comentario (nem citando a confirmacao)
+    let numero = null;
+    if (contact.last_ticket_id) {
+      const r = await query('SELECT number FROM tickets WHERE id = $1', [contact.last_ticket_id]);
+      numero = r.rows.length ? r.rows[0].number : null;
     }
-
-    const chamado = await abrirChamado({ user, descricao: texto, assunto: texto });
-    await setLastTicket(norm, chamado.id);
-    console.log(`[whatsapp-inbound] ${norm} chamado ${chamado.number} criado para ${user.name}`);
-    await reply(norm, MSG_CHAMADO(chamado));
+    console.log(`[whatsapp-inbound] ${norm} mensagem fora do chamado (nao registrada${numero ? `, ultimo=${numero}` : ''})`);
+    await reply(norm, MSG_APOS_CHAMADO(numero));
     return;
   }
 

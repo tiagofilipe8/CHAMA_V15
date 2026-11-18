@@ -40,6 +40,7 @@ const LABELS = {
   history: {
     created: 'Chamado criado', status: 'Status alterado', reopened: 'Chamado reaberto',
     technician: 'Técnico', moderator: 'Moderador', category: 'Categoria', impact: 'Urgência',
+    entity: 'Empresa',
     priority: 'Prioridade', location: 'Localização', needed_by: 'Data de necessidade',
     estimated_at: 'Previsão de atendimento', due_at: 'Prazo (SLA)', asset: 'Equipamento',
     title: 'Título', description: 'Descrição alterada', watcher_added: 'Observador adicionado',

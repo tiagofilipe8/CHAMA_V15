@@ -525,7 +525,7 @@ router.patch('/:id', async (req, res) => {
 
   const {
     title, description, priority, category_id, simple_category_id, due_at, asset_id,
-    impact_id, location_id, needed_by, estimated_at,
+    impact_id, location_id, needed_by, estimated_at, entity_id,
   } = req.body || {};
   const fields = [];
   const params = [req.params.id];
@@ -569,9 +569,43 @@ router.patch('/:id', async (req, res) => {
       changes.push(['priority', notify.PRIORITY_LABELS[ticket.priority], notify.PRIORITY_LABELS[p]]);
     }
   }
+  // ---------------------- empresa do chamado (triagem) ----------------------
+  // Usado pelo botao "Atribuir empresa" da barra superior do chamado.
+  let entAlvo = ticket.entity_id;
+  if (entity_id !== undefined) {
+    if (!triage) {
+      return res.status(403).json({ error: 'Somente a equipe de triagem pode mudar a empresa do chamado.' });
+    }
+    const ent = await query('SELECT id, name FROM entities WHERE id = $1 AND active',
+      [parseInt(entity_id, 10)]);
+    if (!ent.rows.length) return res.status(422).json({ error: 'Empresa inválida.' });
+    if (String(ent.rows[0].id) !== String(ticket.entity_id)) {
+      add('entity_id = ?', ent.rows[0].id);
+      changes.push(['entity', ticket.entity_name, ent.rows[0].name]);
+      entAlvo = ent.rows[0].id;
+      // localizacao e equipamento so permanecem se pertencerem a nova empresa
+      if (ticket.location_id) {
+        const loc = await query(
+          'SELECT id FROM locations WHERE id = $1 AND entity_id = $2 AND active',
+          [ticket.location_id, entAlvo]);
+        if (!loc.rows.length) {
+          add('location_id = ?', null);
+          changes.push(['location', ticket.location_name, null]);
+        }
+      }
+      if (ticket.asset_id) {
+        const a = await query('SELECT id FROM assets WHERE id = $1 AND entity_id = $2',
+          [ticket.asset_id, entAlvo]);
+        if (!a.rows.length) {
+          add('asset_id = ?', null);
+          changes.push(['asset', ticket.asset_name, null]);
+        }
+      }
+    }
+  }
   if (location_id !== undefined) {
     if (location_id) {
-      const loc = await resolveLocation(location_id, ticket.entity_id);
+      const loc = await resolveLocation(location_id, entAlvo);
       if (loc.error) return res.status(422).json({ error: loc.error });
       if (String(location_id) !== String(ticket.location_id)) {
         add('location_id = ?', location_id);
@@ -612,7 +646,7 @@ router.patch('/:id', async (req, res) => {
     if (asset_id) {
       const a = await query('SELECT id, entity_id, name FROM assets WHERE id=$1', [asset_id]);
       if (!a.rows.length) return res.status(422).json({ error: 'Ativo não encontrado' });
-      if (String(a.rows[0].entity_id) !== String(ticket.entity_id)) return res.status(422).json({ error: 'Ativo não pertence à entidade do chamado' });
+      if (String(a.rows[0].entity_id) !== String(entAlvo)) return res.status(422).json({ error: 'Ativo não pertence à entidade do chamado' });
       if (String(asset_id) !== String(ticket.asset_id)) {
         add('asset_id = ?', asset_id);
         changes.push(['asset', ticket.asset_name, a.rows[0].name]);
