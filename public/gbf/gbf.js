@@ -907,14 +907,14 @@
         <input class="form-control form-control-sm grow" data-f="q" placeholder="Buscar por número, título ou empresa" value="${esc(f.q || '')}">
         ${sel('empresa', filtrosDemandas.empresas.map((e) => [e.id, e.name]), f.empresa, 'Empresa')}
         ${sel('tecnico', [['nenhum', 'Sem técnico'], ...filtrosDemandas.tecnicos.map((t) => [t.id, t.name])], f.tecnico, 'Técnico Orcim')}
-        ${sel('prioridade', [[4, 'Urgente'], [3, 'Alta'], [2, 'Média'], [1, 'Baixa']], f.prioridade, 'Prioridade')}
+        ${sel('prioridade', [[4, 'Operação parada'], [3, 'Parada iminente'], [2, 'Operação prejudicada'], [1, 'Requisição']], f.prioridade, 'Urgência')}
         <input type="date" class="form-control form-control-sm" data-f="de" value="${esc(f.de || '')}" title="Aberta a partir de">
         <input type="date" class="form-control form-control-sm" data-f="ate" value="${esc(f.ate || '')}" title="Aberta até">
       </div>
       <div class="small-muted mb-2">${lista.length} demanda(s)${lista.length >= 300 ? ' — mostrando as primeiras 300, refine os filtros' : ''}</div>
       ${lista.length ? `
       <div class="card-x p-0 hide-mobile"><div class="table-wrap"><table class="table-x">
-        <thead><tr><th>Nº</th><th>Demanda</th><th>Status</th><th>Prioridade</th><th>Técnico Orcim</th><th>Aberta em</th><th>Tempo</th><th>Prazo</th><th>Nossas atividades</th></tr></thead>
+        <thead><tr><th>Nº</th><th>Demanda</th><th>Status</th><th>Urgência</th><th>Técnico Orcim</th><th>Aberta em</th><th>Tempo</th><th>Prazo</th><th>Nossas atividades</th></tr></thead>
         <tbody>${lista.map((d) => `<tr class="click" data-href="#/demandas/${d.id}">
           <td class="num">${esc(d.number || '#' + d.id)}</td>
           <td><div class="fw-semibold">${esc(d.title)}</div><div class="small-muted">${esc(d.entity_name)}${d.category_name ? ' · ' + esc(d.category_name) : ''}</div></td>

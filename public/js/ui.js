@@ -31,7 +31,7 @@ const fmt = {
 
 const LABELS = {
   status: { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' },
-  priority: { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' },
+  priority: { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' }, // urgência (nomes da Orcim)
   role: {
     admin: 'Administrador Mestre', admin_local: 'Administrador Local', moderator: 'Moderador',
     technician: 'Técnico', client: 'Cliente',
@@ -40,7 +40,7 @@ const LABELS = {
   history: {
     created: 'Chamado criado', status: 'Status alterado', reopened: 'Chamado reaberto',
     technician: 'Técnico', moderator: 'Moderador', category: 'Categoria', impact: 'Urgência',
-    priority: 'Prioridade', location: 'Localização', needed_by: 'Data de necessidade',
+    priority: 'Urgência', location: 'Localização', needed_by: 'Data de necessidade',
     estimated_at: 'Previsão de atendimento', due_at: 'Prazo (SLA)', asset: 'Equipamento',
     title: 'Título', description: 'Descrição alterada', watcher_added: 'Observador adicionado',
     watcher_removed: 'Observador removido', solution: 'Solução registrada',
@@ -176,7 +176,7 @@ function fmtDuration(fromIso, toIso) {
 // Urgencia do chamado (nome configuravel) com a cor da prioridade equivalente
 function badgeImpact(t) {
   if (!t.impact_name) return badgePriority(t.priority);
-  return `<span class="badge ${PRIO_BADGE[t.priority] || 'prio-med'}" title="Prioridade ${esc(LABELS.priority[t.priority] || '')}"><i class="bi bi-flag-fill me-1"></i>${esc(t.impact_name)}</span>`;
+  return `<span class="badge ${PRIO_BADGE[t.priority] || 'prio-med'}" title="Urgência"><i class="bi bi-flag-fill me-1"></i>${esc(t.impact_name)}</span>`;
 }
 
 // Valor legivel no historico do chamado (datas em formato brasileiro)

@@ -34,7 +34,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </div>
     </div>`;
 
-  const prioLabel = { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' };
+  const prioLabel = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' };
   const prioTone = { 1: 'secondary', 2: 'info', 3: 'warning', 4: 'danger' };
 
   // 1. Visão Geral e Volume
@@ -118,7 +118,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <span class="badge text-bg-dark">${(sla.radar||[]).length} tickets</span>
       </div>
       <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead><tr><th>ID</th><th>Título</th><th>Prioridade</th><th class="multi-empresa">Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Urgência</th><th class="multi-empresa">Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
         <tbody>${radarRows}</tbody>
       </table></div>
     </div>`;
@@ -137,7 +137,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     <div class="row g-3 mt-1">
       <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por Status</div><div class="card-body small">${byStatus}</div></div></div>
       <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por Categoria</div><div class="card-body small">${byCat}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por Prioridade / Fila</div><div class="card-body small">${byPrio}<hr><div>Não atribuídos: <span class="badge text-bg-warning">${team.unassigned ?? 0}</span></div></div></div></div>
+      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por urgência / fila</div><div class="card-body small">${byPrio}<hr><div>Não atribuídos: <span class="badge text-bg-warning">${team.unassigned ?? 0}</span></div></div></div></div>
     </div>`;
 
   // 4. Equipe
@@ -181,7 +181,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <div class="d-flex align-items-center gap-2"><span class="text-muted small" id="dash-clock"></span><button class="btn btn-sm btn-outline-secondary" id="btn-refresh"><i class="bi bi-arrow-clockwise"></i> Atualizar</button></div>
       </div>
       <div class="table-responsive"><table class="table table-hover align-middle dashboard-table mb-0">
-        <thead><tr><th style="width:120px">ID</th><th style="width:110px">Status</th><th>Título</th><th style="width:180px">Técnico</th><th style="width:180px">Requerente</th><th style="width:110px">Prioridade</th><th style="width:110px">Atualização</th></tr></thead>
+        <thead><tr><th style="width:120px">ID</th><th style="width:110px">Status</th><th>Título</th><th style="width:180px">Técnico</th><th style="width:180px">Requerente</th><th style="width:150px">Urgência</th><th style="width:110px">Atualização</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="7" class="text-center py-5 text-muted">Nenhum chamado em aberto.</td></tr>`}</tbody>
       </table></div>
     </div>`;

@@ -9,7 +9,7 @@ const STATUS_LABELS = {
   1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente',
   5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado',
 };
-const PRIORITY_LABELS = { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' };
+const PRIORITY_LABELS = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' }; // urgência (nomes da Orcim)
 const APPROVAL_LABELS = { none: '—', pending: 'Pendente', approved: 'Aprovado', rejected: 'Reprovado' };
 
 // Templates padrão em pt-BR — o administrador pode sobrescrever em Configurações → Notificações
@@ -17,7 +17,7 @@ const DEFAULT_TEMPLATES = {
   'ticket.created': {
     title: 'Novo chamado recebido',
     subject: '[Novo] {{number}} - {{title}}',
-    message: 'Um novo chamado foi aberto por {{requester_name}} ({{entity_name}}).\nNúmero: {{number}}\nTítulo: {{title}}\nPrioridade: {{priority_label}}\nStatus: {{status_label}}',
+    message: 'Um novo chamado foi aberto por {{requester_name}} ({{entity_name}}).\nNúmero: {{number}}\nTítulo: {{title}}\nUrgência: {{priority_label}}\nStatus: {{status_label}}',
   },
   'ticket.created.confirmation': {
     title: 'Chamado aberto com sucesso',

@@ -1127,7 +1127,7 @@ Views.adminSettings = async function adminSettings(el) {
 
   // ---------------- Modelos de notificação ----------------
   const DEFAULT_TPL = {
-    'ticket.created': { label: 'Chamado criado (equipe)', title: 'Novo chamado recebido', subject: '[Novo] {{number}} - {{title}}', message: 'Um novo chamado foi aberto por {{requester_name}} ({{entity_name}}).\nNúmero: {{number}}\nTítulo: {{title}}\nPrioridade: {{priority_label}}\nStatus: {{status_label}}' },
+    'ticket.created': { label: 'Chamado criado (equipe)', title: 'Novo chamado recebido', subject: '[Novo] {{number}} - {{title}}', message: 'Um novo chamado foi aberto por {{requester_name}} ({{entity_name}}).\nNúmero: {{number}}\nTítulo: {{title}}\nUrgência: {{priority_label}}\nStatus: {{status_label}}' },
     'ticket.created.confirmation': { label: 'Confirmação ao requisitante', title: 'Chamado aberto com sucesso', subject: 'Chamado {{number}} aberto', message: 'Seu chamado foi registrado. Número: {{number}}\nTítulo: {{title}}\nAcompanhe as atualizações pelo sistema ou por e-mail/WhatsApp.' },
     'status.changed': { label: 'Mudança de status (genérico)', title: 'Status do chamado {{number}} alterado para {{status_label}}', subject: '[{{status_label}}] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" teve o status alterado para {{status_label}}.' },
     'status.changed.1': { label: 'Status: Novo', title: 'Chamado {{number}} — Novo', subject: '[Novo] {{number}} - {{title}}', message: 'O chamado {{number}} foi reaberto como *Novo*. Título: "{{title}}"\nAguardando atribuição.' },

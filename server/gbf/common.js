@@ -8,7 +8,8 @@ const STATUS_CENTRAL = {
   1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente',
   5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado',
 };
-const PRIORIDADE_CENTRAL = { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' };
+// Urgência do chamado (mesmos nomes da Orcim); a chave é a prioridade interna
+const PRIORIDADE_CENTRAL = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' };
 
 const STATUS_TAREFA = {
   a_fazer: 'A fazer', em_andamento: 'Em andamento', aguardando: 'Aguardando',
