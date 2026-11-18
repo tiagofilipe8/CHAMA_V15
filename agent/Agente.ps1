@@ -83,20 +83,20 @@ function Get-Prop {
 function Get-AgentConfig {
   $path = if ($ConfigPath) { $ConfigPath } else { Get-DefaultCfg }
   $cfg = Read-JsonFile -Path $path -Fallback @{
-    server_url = 'http://localhost:3000'
+    server_url = 'http://localhost:7070'
     provision_token = ''
     interval_seconds = 900
     inventory_interval_seconds = 3600
   }
   # normaliza campos
   $o = [ordered]@{
-    server_url = [string](Get-Prop $cfg 'server_url' 'http://localhost:3000')
+    server_url = [string](Get-Prop $cfg 'server_url' 'http://localhost:7070')
     provision_token = [string](Get-Prop $cfg 'provision_token' '')
     interval_seconds = [int](Get-Prop $cfg 'interval_seconds' 900)
     inventory_interval_seconds = [int](Get-Prop $cfg 'inventory_interval_seconds' 3600)
   }
   if ($OverrideIntervalSec -gt 0) { $o.interval_seconds = $OverrideIntervalSec }
-  if ([string]::IsNullOrWhiteSpace($o.server_url)) { $o.server_url = 'http://localhost:3000' }
+  if ([string]::IsNullOrWhiteSpace($o.server_url)) { $o.server_url = 'http://localhost:7070' }
   $o.server_url = $o.server_url.TrimEnd('/')
   return [pscustomobject]$o
 }

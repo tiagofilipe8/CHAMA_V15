@@ -21,7 +21,7 @@ Agente Windows sem dependências npm. Coleta via PowerShell/CIM e fala com `/api
 # 1) Gere token na UI: Inventário > detalhe do ativo > Gerar token Agent
 # 2) Instale
 powershell -ExecutionPolicy Bypass -File agent\install.ps1 `
-  -ServerUrl "http://localhost:3000" `
+  -ServerUrl "http://localhost:7070" `
   -ProvisionToken "1-XXXXXX-XXXXXX"
 ```
 
@@ -37,7 +37,7 @@ Restart-Service OrcimInventoryAgent
 
 ```json
 {
-  "server_url": "http://localhost:3000",
+  "server_url": "http://localhost:7070",
   "provision_token": "1-XXXXXX-XXXXXX",
   "interval_seconds": 900,
   "inventory_interval_seconds": 3600

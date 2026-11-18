@@ -20,7 +20,7 @@ Alternativa 100% PowerShell ao `agent.js`. Coleta WMI/CIM e fala com a mesma API
 
 ## Como obter o provision token
 
-1. Abra a UI: `http://localhost:3000`
+1. Abra a UI: `http://localhost:7070`
 2. `Inventario` > `Agentes`
 3. Botao **Provisionar** (entidade alvo)
 4. Copie o token formato `1-XXXXXX-XXXXXX`
@@ -37,7 +37,7 @@ Ou:
 # PowerShell como Administrador
 cd <pasta agent>
 powershell -ExecutionPolicy Bypass -File .\Install-Agente.ps1 `
-  -ServerUrl "http://localhost:3000" `
+  -ServerUrl "http://localhost:7070" `
   -ProvisionToken "1-XXXXXX-XXXXXX"
 ```
 
@@ -48,7 +48,7 @@ Nesse modo o atalho de Startup e removido para evitar dupla execucao.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Install-Agente.ps1 -FilesOnly `
-  -ServerUrl "http://localhost:3000" `
+  -ServerUrl "http://localhost:7070" `
   -ProvisionToken "1-XXXXXX-XXXXXX"
 
 # Testar 1 ciclo agora (sem Admin o caminho e LOCALAPPDATA)
@@ -73,7 +73,7 @@ powershell -ExecutionPolicy Bypass -File .\Agente.ps1 -Once
 
 ```json
 {
-  "server_url": "http://localhost:3000",
+  "server_url": "http://localhost:7070",
   "provision_token": "1-XXXXXX-XXXXXX",
   "interval_seconds": 900,
   "inventory_interval_seconds": 3600

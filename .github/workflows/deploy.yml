@@ -78,8 +78,10 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue |
-            ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+          foreach ($port in 3000,7070) {
+            Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+              ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+          }
           Start-Sleep -Seconds 2
 
           foreach ($i in 1..5) {
@@ -96,7 +98,7 @@ jobs:
           foreach ($i in 1..12) {
             Start-Sleep -Seconds 5
             try {
-              $r = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/healthz' -UseBasicParsing -TimeoutSec 15
+              $r = Invoke-WebRequest -Uri 'http://127.0.0.1:7070/healthz' -UseBasicParsing -TimeoutSec 15
               if ($r.StatusCode -eq 200) { Write-Host "OK: $($r.Content)"; exit 0 }
             } catch { Write-Host "tentativa $i falhou..." }
           }

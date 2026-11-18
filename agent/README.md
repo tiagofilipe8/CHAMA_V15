@@ -6,14 +6,14 @@ Agente Windows que coleta inventário de hardware/software via WMI/CIM e envia p
 
 - Windows 10/11 ou Server 2016+
 - Node.js 18+
-- Acesso de rede até a Central (`http://localhost:3000` ou URL da implantação)
+- Acesso de rede até a Central (`http://localhost:7070` ou URL da implantação)
 - Permissão de Administrador para instalar como serviço
 
 ## Instalação
 
 ```powershell
 # A partir da pasta agent\
-powershell -ExecutionPolicy Bypass -File install.ps1 -ServerUrl "http://localhost:3000" -ProvisionToken "1-XXXXXX-XXXXXX"
+powershell -ExecutionPolicy Bypass -File install.ps1 -ServerUrl "http://localhost:7070" -ProvisionToken "1-XXXXXX-XXXXXX"
 ```
 
 Sem token ainda? Instale só os arquivos e configure depois:
@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -FilesOnly
 
 ```json
 {
-  "server_url": "http://localhost:3000",
+  "server_url": "http://localhost:7070",
   "provision_token": "1-A1B2C3-D4E5F6",
   "interval_seconds": 900,
   "inventory_interval_seconds": 3600

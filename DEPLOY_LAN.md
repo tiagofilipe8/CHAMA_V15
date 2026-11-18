@@ -4,8 +4,8 @@ Sistema publicado nesta máquina e acessível pela rede interna.
 
 ## Acesso
 
-- **URL:** http://192.168.7.150:3000
-- **Healthcheck:** http://192.168.7.150:3000/healthz
+- **URL:** http://192.168.7.150:7070
+- **Healthcheck:** http://192.168.7.150:7070/healthz
 
 ### Contas iniciais (seed)
 
@@ -24,7 +24,7 @@ Módulo à parte (branch `modulo-beijaflor`, que já inclui o `Lucas-Melhorias-U
 próprio em tabelas `gbf_*` criadas automaticamente na subida. **Não altera nenhuma tabela da
 Central** e as integrações externas ficam desligadas sem as variáveis de ambiente.
 
-- **URL:** http://192.168.7.150:3000/gbf/
+- **URL:** http://192.168.7.150:7070/gbf/
 - **API:** `/api/gbf/*`
 - **Primeiro gestor (criado sozinho na primeira subida):**
 
@@ -127,7 +127,7 @@ Para ligar: em **Configurações → WhatsApp**, escaneie o QR. Desligue o receb
 | Runner do GitHub Actions | `C:\ORCIM\runtime\runner` |
 
 - Banco: `os_service` / usuário `os_app` / senha definida em `.env` (`DB_PASSWORD`).
-- Firewall: regra de entrada TCP 3000 liberada para os perfis *Domain* e *Private*.
+- Firewall: regra de entrada TCP 7070 liberada para os perfis *Domain* e *Private*.
 - Inicialização automática: tarefa agendada **`Central de Atendimento OS`** no **início do Windows** (executa como `SISTEMA`, sem precisar de login). Ela sobe o PostgreSQL e a aplicação.
 
 ## Comandos úteis
@@ -140,7 +140,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ORCIM\runtime\start-os.ps
 C:\ORCIM\runtime\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5432
 
 # Parar a aplicação (node)
-Get-NetTCPConnection -LocalPort 3000 -State Listen |
+Get-NetTCPConnection -LocalPort 7070 -State Listen |
   ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 
 # Parar o PostgreSQL

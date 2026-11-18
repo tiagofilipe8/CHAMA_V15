@@ -1,7 +1,7 @@
 @echo off
 REM ============================================================
 REM  CHAMA_V15 - Reiniciar o sistema
-REM  Fecha o que estiver rodando na porta 3000, confere tudo,
+REM  Fecha o que estiver rodando na porta 7070, confere tudo,
 REM  atualiza as dependencias e inicia de novo (start.bat).
 REM ============================================================
 setlocal
@@ -56,8 +56,8 @@ if defined PGREADY (
 
 REM ---------- 4. Fechar o sistema se ja estiver rodando ----------
 echo.
-echo Fechando versao antiga do sistema (porta 3000), se houver...
-powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+echo Fechando versao antiga do sistema (portas 3000/7070), se houver...
+powershell -NoProfile -Command "foreach ($p in 3000,7070) { Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }"
 timeout /t 2 >nul
 
 REM ---------- 5. Instalar/atualizar dependencias ----------
@@ -73,7 +73,7 @@ REM ---------- 6. Iniciar ----------
 echo.
 echo =============================================
 echo  Iniciando... Abra no navegador:
-echo      http://localhost:3000
+echo      http://localhost:7070
 echo  Para PARAR o sistema: feche esta janela.
 echo =============================================
 echo.

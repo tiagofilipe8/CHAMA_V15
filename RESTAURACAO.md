@@ -36,7 +36,7 @@ Ou:
 node server\index.js
 ```
 
-Acesse `http://localhost:3000` — login padrão: `admin / admin123`.
+Acesse `http://localhost:7070` — login padrão: `admin / admin123`.
 
 ### 4. Arquivos enviados
 A pasta `uploads/` (fotos de ativos e anexos de chamados) está incluída no backup. Mantenha a mesma estrutura relativa.
