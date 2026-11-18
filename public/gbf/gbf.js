@@ -1128,7 +1128,9 @@
       <a href="${id ? `#/atividades/${id}` : '#/atividades'}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Voltar</a>
       <form class="card-x mt-2" id="form-at" style="max-width:760px">
         <div class="mb-3"><label class="form-label">O que precisa ser feito *</label>
-          <input class="form-control" name="title" maxlength="200" required value="${esc(t?.title || '')}"></div>
+          <input class="form-control" name="title" maxlength="200" required value="${esc(t?.title || (id ? '' : qs.get('titulo') || ''))}"></div>
+        ${!id && /^\d+$/.test(qs.get('visita') || '') ? `<input type="hidden" name="visit_id" value="${esc(qs.get('visita'))}">
+          <div class="alert alert-light py-2 small">Esta atividade fica ligada à <a href="#/visitas/${esc(qs.get('visita'))}">visita</a> onde o problema apareceu.</div>` : ''}
         <div class="mb-3"><label class="form-label">Detalhes</label>
           <textarea class="form-control" name="description" rows="4">${esc(t?.description || '')}</textarea></div>
         <div class="row g-3 mb-3">
@@ -1155,6 +1157,7 @@
         due_at: deInputLocal(fd.get('due_at')), location: fd.get('location'), ticket_id: fd.get('ticket_id') || null,
         location_id: fd.get('location_id') || null,
       };
+      if (!id && fd.get('visit_id')) body.visit_id = fd.get('visit_id');
       if (ehGestor()) body.assignee_id = fd.get('assignee_id') || null;
       try {
         const r = id ? await API.patch(`/atividades/${id}`, body) : await API.post('/atividades', body);
@@ -2445,52 +2448,149 @@
   }
 
   // --------------------------- Acompanhamento ---------------------------
+  // Ordem da tela: 1) o que precisa do gestor agora, 2) hoje, 3) resultado do período
+  // (comparado ao período anterior), 4) situação dos postos + o que foi feito.
+  const PERIODOS_AC = [['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias'], ['mes', 'Mês']];
+  const COMPARA_AC = { hoje: 'comparado a ontem até esta hora', 7: 'comparado aos 7 dias anteriores', 30: 'comparado aos 30 dias anteriores', mes: 'comparado ao mesmo trecho do mês passado' };
+  const TITULO_AC = { hoje: 'Resultado de hoje', 7: 'Resultado dos últimos 7 dias', 30: 'Resultado dos últimos 30 dias', mes: 'Resultado do mês' };
+  const acFeed = { filtro: 'tudo', tudo: false, itens: [] };
+
+  function deltaAc(atual, antes, { menorMelhor = false } = {}) {
+    const a = Number(atual) || 0;
+    const b = Number(antes) || 0;
+    if (a === b) return '<span class="ac-delta">=</span>';
+    const bom = menorMelhor ? a < b : a > b;
+    return `<span class="ac-delta ${bom ? 'up' : 'down'}" title="antes: ${b}">${a > b ? '+' : '−'}${Math.abs(a - b)}</span>`;
+  }
+
+  function diaFeed(d) {
+    const dia = new Date(d).toLocaleDateString('en-CA', { timeZone: TZ });
+    const hoje = hojeSP();
+    const ontem = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: TZ });
+    if (dia === hoje) return 'Hoje';
+    if (dia === ontem) return 'Ontem';
+    return new Date(d).toLocaleDateString('pt-BR', { timeZone: TZ, weekday: 'short', day: '2-digit', month: '2-digit' });
+  }
+
+  function renderFeedAc() {
+    const el = $('#ac-feed');
+    if (!el) return;
+    const lista = acFeed.itens.filter((f) => acFeed.filtro === 'tudo' || f.tipo === acFeed.filtro);
+    const mostrar = acFeed.tudo ? lista : lista.slice(0, 12);
+    const icone = { visita: 'geo-alt', atividade: 'check2-square', solicitacao: 'megaphone' };
+    let diaAtual = '';
+    el.innerHTML = mostrar.length ? mostrar.map((f) => {
+      const d = diaFeed(f.quando);
+      const cab = d !== diaAtual ? `<div class="ac-feed-dia">${esc(d)}</div>` : '';
+      diaAtual = d;
+      return `${cab}<div class="ac-feed-item ${f.alerta ? 'alerta' : ''}" data-href="${f.link}">
+        <i class="bi bi-${icone[f.tipo]}"></i>
+        <div class="flex-grow-1 min-w-0"><div class="t">${esc(f.titulo)}</div>${f.detalhe ? `<div class="small-muted">${esc(f.detalhe)}</div>` : ''}</div>
+        <div class="small-muted text-nowrap">${new Date(f.quando).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })}${f.quem ? ` · ${esc(f.quem)}` : ''}</div></div>`;
+    }).join('') + (lista.length > mostrar.length ? `<button class="btn btn-link btn-sm px-0 mt-1" id="ac-feed-mais">Ver tudo (${lista.length})</button>` : '')
+      : '<div class="small-muted py-2">Nada concluído neste período.</div>';
+    $$('#ac-feed-filtros [data-f]').forEach((b) => b.classList.toggle('on', b.dataset.f === acFeed.filtro));
+    $('#ac-feed-mais')?.addEventListener('click', () => { acFeed.tudo = true; renderFeedAc(); });
+    $$('#ac-feed [data-href]').forEach((x) => x.addEventListener('click', () => { location.hash = x.dataset.href; }));
+  }
+
   async function vAcompanhamento(qs, seq) {
     titulo('Acompanhamento da TI');
-    const dias = Number(qs.get('dias')) || 7;
-    const [a, h] = await Promise.all([API.get(`/acompanhamento?dias=${dias}`), API.get('/hoje')]);
+    let periodo = qs.get('periodo') || (qs.get('dias') === '30' ? '30' : '7');
+    if (!PERIODOS_AC.some(([k]) => k === periodo)) periodo = '7';
+    const a = await API.get(`/acompanhamento?periodo=${periodo}`);
     if (seq !== renderSeq) return;
     const r = a.resumo;
+    const ant = a.anterior;
+    const h = a.hoje;
+    acFeed.itens = a.feed;
+    acFeed.tudo = false;
+
+    const altos = a.atencao.filter((x) => x.nivel === 'alto').length;
+    const linhaAtencao = (x) => `
+      <div class="ac-row" data-href="${x.link}">
+        ${tag(x.nivel === 'alto' ? 'tag-red' : 'tag-amber', x.rotulo)}
+        <div class="flex-grow-1 min-w-0"><div class="t">${esc(x.titulo)}</div><div class="small-muted">${esc(x.detalhe)}</div></div>
+        ${x.acao.reagendar ? btnReag(x.acao.reagendar) : `<a class="btn btn-sm btn-outline-secondary" href="${x.acao.href}">${esc(x.acao.texto)}</a>`}
+      </div>`;
+
+    const cartaoHoje = [
+      ...h.concluidas.map((v) => ({ hora: v.hora, html: `<div class="ac-hoje-card" data-href="#/visitas/${v.id}">
+        <div class="small-muted">${esc(v.hora)}${v.quem ? ` · ${esc(v.quem)}` : ''}</div><div class="t">${esc(v.local)}</div>
+        ${v.nao_ok ? tag('tag-red', `Concluída · ${v.nao_ok} NÃO OK`) : tag('tag-green', 'Concluída · tudo OK')}</div>` })),
+      ...h.em_andamento.map((v) => ({ hora: v.hora, html: `<div class="ac-hoje-card agora" data-href="#/visitas/${v.id}">
+        <div class="small-muted">Agora${v.quem ? ` · ${esc(v.quem)}` : ''}</div><div class="t">${esc(v.local)}</div>
+        ${tag('tag-blue', `Em andamento ${v.feitos}/${v.itens}`)}</div>` })),
+      ...h.previstas.map((p) => ({ hora: p.hora || '99:99', html: `<div class="ac-hoje-card" data-href="#/postos/${p.id}">
+        <div class="small-muted">${esc(p.hora || 'sem horário')}</div><div class="t">${esc(p.local)}</div>
+        ${tag('tag-gray', 'Prevista')}</div>` })),
+    ].sort((x, y) => x.hora.localeCompare(y.hora));
+    const totalHoje = h.concluidas.length + h.em_andamento.length + h.previstas.length;
+
+    const metr = (lbl, val, delta, sub) => `<div class="ac-metric"><div class="lbl">${esc(lbl)}</div>
+      <div class="val">${esc(val)} ${delta}</div><div class="small-muted">${sub}</div></div>`;
+
+    const COR_POSTO = { atrasado: 'red', atencao: 'amber', andamento: 'blue', ok: 'green', sem_data: 'gray' };
+    const semData = a.postos.filter((p) => p.situacao === 'sem_data').length;
+
     view().innerHTML = `
       <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <div class="small-muted me-auto">O que a TI fez e o que está pendente.</div>
-        <div class="btn-group btn-group-sm">${[7, 30].map((d) => `<a class="btn ${d === dias ? 'btn-dark' : 'btn-outline-secondary'}" href="#/?dias=${d}">${d} dias</a>`).join('')}</div>
+        <div class="small-muted me-auto">O que precisa de você, o dia de hoje e o resultado do período.</div>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Período">${PERIODOS_AC.map(([k, t]) => `<a class="btn ${k === periodo ? 'btn-dark' : 'btn-outline-secondary'}" href="#/?periodo=${k}">${t}</a>`).join('')}</div>
         <a class="btn btn-brand btn-sm" href="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i> Nova solicitação</a>
       </div>
-      <div class="kpis">
-        ${kpi(`Visitas feitas (${dias} d)`, r.visitas, { cls: 'ok', icon: 'geo-alt' })}
-        ${kpi(`Atividades concluídas (${dias} d)`, r.atividades, { cls: 'ok', icon: 'check2-square' })}
-        ${kpi(`Solicitações atendidas (${dias} d)`, r.solicitacoes, { cls: 'ok', icon: 'megaphone', hint: r.tempo_medio_solicitacao ? `média ${dur(r.tempo_medio_solicitacao)} do pedido à conclusão` : '' })}
-        ${kpi('Solicitações em aberto', r.solicitacoes_abertas, { cls: r.solicitacoes_abertas ? 'warn' : '', icon: 'hourglass-split', href: '#/solicitacoes' })}
-        ${kpi('Atividades atrasadas', r.atividades_atrasadas, { cls: r.atividades_atrasadas ? 'bad' : 'ok', icon: 'alarm', href: '#/atividades?situacao=atrasadas' })}
-        ${kpi('Postos com visita atrasada', a.postos_atrasados.length, { cls: a.postos_atrasados.length ? 'bad' : 'ok', icon: 'exclamation-triangle', href: '#/postos' })}
-      </div>
-      ${h.em_andamento.map((v) => `<div class="banner-andamento" data-href="#/visitas/${v.id}"><div><strong>Agora: visita em andamento — ${esc(v.location_name)}</strong>
-        <div class="small">${esc(v.user_name || '')} · desde ${fmtData(v.started_at)} · ${v.faltam ? `faltam ${v.faltam} item(ns)` : 'checklist completo'}</div></div></div>`).join('')}
-      <div class="grid-2">
-        <div class="card-x"><h3><i class="bi bi-activity"></i>O que foi feito</h3>
-          ${a.feed.length ? `<ul class="timeline">${a.feed.map((f) => `<li data-href="${f.link}" class="click-li">
-            <div class="${f.alerta ? 'text-danger' : ''}"><strong>${esc(f.titulo)}</strong></div>
-            ${f.detalhe ? `<div class="small">${esc(f.detalhe)}</div>` : ''}
-            <div class="when">${fmtData(f.quando)}${f.quem ? ` · ${esc(f.quem)}` : ''}</div></li>`).join('')}</ul>` : vazio(`Nada concluído nos últimos ${dias} dias.`, 'hourglass')}
+
+      <section class="ac-sec">
+        <div class="ac-head"><span class="ac-num">1</span><h2>Precisa de você</h2>
+          ${a.atencao.length ? tag(altos ? 'tag-red' : 'tag-amber', String(a.atencao.length)) : ''}
+          <span class="small-muted ms-auto">${a.atencao.length ? 'do mais grave para o menos grave' : ''}</span></div>
+        <div class="ac-box">${a.atencao.length ? a.atencao.map(linhaAtencao).join('')
+          : '<div class="ac-row ac-ok"><i class="bi bi-check2-circle"></i><div>Tudo em dia: nenhuma visita atrasada, item NÃO OK sem atividade, atividade vencida ou solicitação parada.</div></div>'}</div>
+      </section>
+
+      <section class="ac-sec">
+        <div class="ac-head"><span class="ac-num">2</span><h2>Hoje</h2>
+          <span class="small-muted">· ${totalHoje} visita(s) · ${h.concluidas.length} concluída(s) · ${h.atividades} atividade(s) com prazo hoje</span>
+          <a class="small ms-auto" href="#/agenda">ver agenda</a></div>
+        ${cartaoHoje.length ? `<div class="ac-hoje">${cartaoHoje.map((c) => c.html).join('')}</div>`
+          : '<div class="ac-box"><div class="ac-row small-muted">Nenhuma visita para hoje. Visitas atrasadas aparecem em "Precisa de você".</div></div>'}
+      </section>
+
+      <section class="ac-sec">
+        <div class="ac-head"><span class="ac-num">3</span><h2>${TITULO_AC[periodo]}</h2><span class="small-muted ms-auto">${COMPARA_AC[periodo]}</span></div>
+        <div class="ac-metrics">
+          ${metr('Visitas feitas', r.visitas, deltaAc(r.visitas, ant.visitas), `em ${r.postos_visitados} posto(s)`)}
+          ${metr('Atividades concluídas', r.atividades, deltaAc(r.atividades, ant.atividades), r.atividades_com_atraso ? `${r.atividades_com_atraso} com atraso` : 'todas no prazo')}
+          ${metr('Solicitações atendidas', r.solicitacoes, deltaAc(r.solicitacoes, ant.solicitacoes), r.tempo_medio_solicitacao ? `média ${dur(r.tempo_medio_solicitacao)}` : 'sem tempo médio')}
+          ${metr('Itens NÃO OK', r.nao_ok, deltaAc(r.nao_ok, ant.nao_ok, { menorMelhor: true }), r.nao_ok ? `${r.nao_ok_com_atividade} com atividade` : 'nenhum problema')}
+        </div>
+      </section>
+
+      <section class="ac-sec ac-duo">
+        <div>
+          <div class="ac-head"><span class="ac-num">4</span><h2>Postos</h2><a class="small ms-auto" href="#/postos">todos</a></div>
+          <div class="ac-box ac-postos">${a.postos.filter((p) => p.situacao !== 'sem_data').map((p) => `
+            <div class="ac-posto" data-href="#/postos/${p.id}"><span class="ac-dot ${COR_POSTO[p.situacao]}"></span>
+              <span class="flex-grow-1 min-w-0 text-truncate">${esc(p.nome)}</span><span class="small-muted text-nowrap">${esc(p.motivo)}</span></div>`).join('')
+            || '<div class="ac-posto small-muted">Nenhum posto com próxima visita.</div>'}
+            ${semData ? `<div class="ac-posto small-muted" data-href="#/postos">${semData} posto(s) sem próxima visita</div>` : ''}
+          </div>
         </div>
         <div>
-          <div class="card-x mb-3"><h3><i class="bi bi-calendar-day"></i>Hoje <a class="sub" href="#/hoje">ver o dia do técnico</a></h3>
-            <div class="small-muted mb-2">${h.visitas_hoje.length} visita(s) prevista(s) · ${h.atividades_hoje.length} atividade(s) · ${h.concluidas_hoje.visitas} visita(s) já concluída(s)</div>
-            ${h.visitas_hoje.map((p) => `<div class="d-flex justify-content-between py-1 border-bottom" data-href="#/postos/${p.id}"><span>${esc(p.name)}</span>
-              <span>${p.visita_id ? tag('tag-teal', 'em andamento') : p.atrasada ? tag('tag-red', `atrasada · ${dataBR(p.data)}`) : tag('tag-blue', p.hora || 'hoje')}</span></div>`).join('') || '<div class="small-muted">Nenhuma visita prevista.</div>'}
-          </div>
-          <div class="card-x mb-3"><h3 class="text-danger"><i class="bi bi-x-octagon"></i>Itens NÃO OK nas visitas</h3>
-            ${a.nao_ok.length ? a.nao_ok.map((n) => `<div class="py-1 border-bottom" data-href="#/visitas/${n.visit_id}"><strong>${esc(n.item_label)}</strong> — ${esc(n.local)}
-              <div class="small-muted">${fmtData(n.finished_at)}${n.note ? ` · ${esc(n.note)}` : ''}</div></div>`).join('') : '<div class="small-muted">Nenhum item com problema no período.</div>'}
-          </div>
-          <div class="card-x"><h3><i class="bi bi-exclamation-triangle"></i>Postos com visita atrasada</h3>
-            ${a.postos_atrasados.length ? a.postos_atrasados.map((p) => `<div class="d-flex justify-content-between py-1 border-bottom" data-href="#/postos/${p.id}">
-              <span>${esc(p.name)}</span><span class="text-danger small">${p.dias_atraso} dia(s) · ${dataBR(p.data)}</span></div>`).join('') : '<div class="small-muted">Tudo em dia.</div>'}
-            ${r.postos_sem_data ? `<div class="small-muted mt-2">${r.postos_sem_data} posto(s) sem próxima visita definida.</div>` : ''}
-          </div>
+          <div class="ac-head"><h2>O que foi feito</h2>
+            <div class="ac-filtros ms-auto" id="ac-feed-filtros">${[['tudo', 'Tudo'], ['visita', 'Visitas'], ['atividade', 'Atividades'], ['solicitacao', 'Solicitações']]
+              .map(([k, t]) => `<button type="button" data-f="${k}">${t}</button>`).join('')}</div></div>
+          <div class="ac-box ac-feed" id="ac-feed"></div>
         </div>
-      </div>`;
+      </section>`;
+    $$('#ac-feed-filtros [data-f]').forEach((b) => b.addEventListener('click', () => {
+      acFeed.filtro = b.dataset.f;
+      acFeed.tudo = false;
+      renderFeedAc();
+    }));
+    renderFeedAc();
+    ligarReagendar();
+    $$('.ac-box [data-reag], .ac-box a.btn').forEach((b) => b.addEventListener('click', (ev) => ev.stopPropagation()));
     ligarCliques();
   }
 

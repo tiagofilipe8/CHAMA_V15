@@ -127,58 +127,202 @@ router.get('/hoje', ah(async (req, res) => {
 }));
 
 // ---------------------- Acompanhamento (gestor) -----------------------
+// A tela responde, nesta ordem: o que precisa do gestor agora, como está o dia de hoje,
+// como foi o período (comparado ao período anterior de mesmo tamanho) e como estão os postos.
+const PERIODOS = {
+  hoje: `date_trunc('day', now() AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}`,
+  7: `now() - interval '7 days'`,
+  30: `now() - interval '30 days'`,
+  mes: `date_trunc('month', now() AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}`,
+};
+const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+const quandoBR = (d, opts) => new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', ...opts });
+
+async function resumoEntre(de, ate) {
+  const NO = (col) => `${col} >= $1::timestamptz AND ${col} < $2::timestamptz`;
+  const { rows } = await query(`SELECT
+      (SELECT count(*)::int FROM gbf_visits WHERE status = 'concluida' AND ${NO('finished_at')}) AS visitas,
+      (SELECT count(DISTINCT location_id)::int FROM gbf_visits WHERE status = 'concluida' AND ${NO('finished_at')}) AS postos_visitados,
+      (SELECT count(*)::int FROM gbf_tasks WHERE status = 'concluida' AND ${NO('completed_at')}) AS atividades,
+      (SELECT count(*)::int FROM gbf_tasks WHERE status = 'concluida' AND ${NO('completed_at')}
+          AND due_at IS NOT NULL AND completed_at > due_at) AS atividades_com_atraso,
+      (SELECT count(*)::int FROM gbf_requests WHERE status = 'concluida' AND ${NO('completed_at')}) AS solicitacoes,
+      (SELECT avg(EXTRACT(EPOCH FROM (completed_at - created_at)))::int FROM gbf_requests
+          WHERE status = 'concluida' AND ${NO('completed_at')}) AS tempo_medio_solicitacao,
+      (SELECT count(*)::int FROM gbf_visit_answers a JOIN gbf_visits v ON v.id = a.visit_id
+          WHERE a.answer = 'nao_ok' AND v.status = 'concluida' AND ${NO('v.finished_at')}) AS nao_ok,
+      (SELECT count(*)::int FROM gbf_visit_answers a JOIN gbf_visits v ON v.id = a.visit_id
+          WHERE a.answer = 'nao_ok' AND v.status = 'concluida' AND ${NO('v.finished_at')}
+            AND EXISTS (SELECT 1 FROM gbf_tasks t WHERE t.visit_id = v.id)) AS nao_ok_com_atividade`, [de, ate]);
+  return rows[0];
+}
+
 router.get('/acompanhamento', requireGestorFn, ah(async (req, res) => {
-  const dias = Math.min(Math.max(parseInt(req.query.dias, 10) || 7, 1), 90);
-  const p = [dias];
-  const desde = `now() - ($1::int * interval '1 day')`;
-  const [visitas, tarefas, solic, naoOk, postosAtrasados, resumo] = await Promise.all([
-    query(`SELECT v.id, v.finished_at AS quando, l.name AS local, u.name AS quem, v.notes, v.pending_notes,
+  await sincronizar();
+  let periodo = String(req.query.periodo || '');
+  if (!PERIODOS[periodo]) periodo = String(req.query.dias) === '30' ? '30' : '7';
+  const lim = (await query(`SELECT ${PERIODOS[periodo]} AS ini, now() AS fim`)).rows[0];
+  const ini = new Date(lim.ini);
+  const fim = new Date(lim.fim);
+  const iniAnt = new Date(ini.getTime() - (fim.getTime() - ini.getTime()));
+  const desde = '$1::timestamptz';
+
+  const [atual, anterior, visitas, tarefas, solic, postosAtrasados, naoOkSemAtividade, ativAtrasadas, ativHoje,
+    solicParadas, postos, hojeConcluidas, hojeAndamento, hojePrevistas, hojeAtiv] = await Promise.all([
+    resumoEntre(ini, fim),
+    resumoEntre(iniAnt, ini),
+    query(`SELECT v.id, v.finished_at AS quando, l.name AS local, u.name AS quem, v.pending_notes,
                   (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id AND a.answer = 'nao_ok') AS nao_ok,
                   (SELECT count(*)::int FROM gbf_visit_photos f WHERE f.visit_id = v.id) AS fotos
            FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
-           WHERE v.status = 'concluida' AND v.finished_at >= ${desde}`, p),
+           WHERE v.status = 'concluida' AND v.finished_at >= ${desde}`, [ini]),
     query(`SELECT t.id, t.title, t.completed_at AS quando, u.name AS quem, l.name AS local,
                   (t.due_at IS NOT NULL AND t.completed_at > t.due_at) AS com_atraso
            FROM gbf_tasks t LEFT JOIN gbf_users u ON u.id = t.assignee_id LEFT JOIN gbf_locations l ON l.id = t.location_id
-           WHERE t.status = 'concluida' AND t.completed_at >= ${desde}`, p),
-    query(`SELECT r.id, r.title, r.status, r.created_at, r.completed_at, r.response, uh.name AS quem, l.name AS local
+           WHERE t.status = 'concluida' AND t.completed_at >= ${desde}`, [ini]),
+    query(`SELECT r.id, r.title, r.completed_at, r.response, uh.name AS quem, l.name AS local
            FROM gbf_requests r LEFT JOIN gbf_users uh ON uh.id = r.handled_by LEFT JOIN gbf_locations l ON l.id = r.location_id
-           WHERE r.status = 'concluida' AND r.completed_at >= ${desde}`, p),
-    query(`SELECT a.item_label, a.note, v.id AS visit_id, v.finished_at, l.name AS local
-           FROM gbf_visit_answers a JOIN gbf_visits v ON v.id = a.visit_id JOIN gbf_locations l ON l.id = v.location_id
-           WHERE a.answer = 'nao_ok' AND v.status = 'concluida' AND v.finished_at >= ${desde}
-           ORDER BY v.finished_at DESC LIMIT 50`, p),
-    query(`SELECT id, name, next_visit_date::text AS data, (${HOJE} - next_visit_date)::int AS dias_atraso
-           FROM gbf_locations WHERE active AND next_visit_date < ${HOJE} ORDER BY next_visit_date`),
-    query(`SELECT
-             (SELECT count(*)::int FROM gbf_visits WHERE status = 'concluida' AND finished_at >= ${desde}) AS visitas,
-             (SELECT count(*)::int FROM gbf_tasks WHERE status = 'concluida' AND completed_at >= ${desde}) AS atividades,
-             (SELECT count(*)::int FROM gbf_requests WHERE status = 'concluida' AND completed_at >= ${desde}) AS solicitacoes,
-             (SELECT count(*)::int FROM gbf_requests WHERE status IN ('a_fazer','em_andamento')) AS solicitacoes_abertas,
-             (SELECT count(*)::int FROM gbf_tasks WHERE status NOT IN ('concluida','cancelada') AND due_at < now()) AS atividades_atrasadas,
-             (SELECT count(*)::int FROM gbf_locations WHERE active AND next_visit_date IS NULL) AS postos_sem_data,
-             (SELECT avg(EXTRACT(EPOCH FROM (completed_at - created_at)))::int FROM gbf_requests
-                WHERE status = 'concluida' AND completed_at >= ${desde}) AS tempo_medio_solicitacao`, p),
+           WHERE r.status = 'concluida' AND r.completed_at >= ${desde}`, [ini]),
+    // ---- precisa de atenção (situação de agora, não depende do período)
+    query(`SELECT l.id, l.name, l.next_visit_date::text AS data, to_char(l.next_visit_time,'HH24:MI') AS hora,
+                  (${HOJE} - l.next_visit_date)::int AS dias_atraso
+           FROM gbf_locations l WHERE l.active AND l.next_visit_date < ${HOJE}
+             AND NOT EXISTS (SELECT 1 FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento')`),
+    query(`SELECT v.id, v.finished_at, l.id AS location_id, l.name AS local, u.name AS quem,
+                  (${HOJE} - ${DIA('v.finished_at')})::int AS dias,
+                  array_agg(a.item_label ORDER BY a.position) AS itens
+           FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
+           JOIN gbf_visit_answers a ON a.visit_id = v.id AND a.answer = 'nao_ok'
+           WHERE v.status = 'concluida' AND v.finished_at >= now() - interval '30 days'
+             AND NOT EXISTS (SELECT 1 FROM gbf_tasks t WHERE t.visit_id = v.id)
+             AND NOT EXISTS (SELECT 1 FROM gbf_visits v2 WHERE v2.location_id = v.location_id
+                               AND v2.status = 'concluida' AND v2.finished_at > v.finished_at)
+           GROUP BY v.id, l.id, l.name, u.name`),
+    query(`SELECT t.id, t.title, t.due_at, ${DIA('t.due_at')}::text AS data, ${HORA('t.due_at')} AS hora,
+                  EXTRACT(EPOCH FROM (now() - t.due_at))::int AS atraso_s, u.name AS responsavel, l.name AS local
+           FROM gbf_tasks t LEFT JOIN gbf_users u ON u.id = t.assignee_id LEFT JOIN gbf_locations l ON l.id = t.location_id
+           WHERE t.status NOT IN ('concluida','cancelada') AND t.due_at < now()`),
+    query(`SELECT t.id, t.title, ${HORA('t.due_at')} AS hora, u.name AS responsavel, l.name AS local
+           FROM gbf_tasks t LEFT JOIN gbf_users u ON u.id = t.assignee_id LEFT JOIN gbf_locations l ON l.id = t.location_id
+           WHERE t.status NOT IN ('concluida','cancelada') AND t.due_at >= now() AND ${DIA('t.due_at')} = ${HOJE}`),
+    query(`SELECT r.id, r.title, r.desired_date::text AS data, ur.name AS pedido_por, l.name AS local,
+                  (${HOJE} - ${DIA('r.created_at')})::int AS dias,
+                  (r.desired_date IS NOT NULL AND r.desired_date < ${HOJE}) AS passou_data
+           FROM gbf_requests r LEFT JOIN gbf_users ur ON ur.id = r.requested_by LEFT JOIN gbf_locations l ON l.id = r.location_id
+           WHERE (r.status = 'a_fazer' AND r.created_at < now() - interval '2 days')
+              OR (r.status IN ('a_fazer','em_andamento') AND r.desired_date < ${HOJE})`),
+    // ---- postos
+    query(`SELECT l.id, l.name, l.next_visit_date::text AS data, to_char(l.next_visit_time,'HH24:MI') AS hora,
+                  (${HOJE} - l.next_visit_date)::int AS dias_atraso,
+                  EXISTS (SELECT 1 FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento') AS em_andamento,
+                  (SELECT count(*)::int FROM gbf_visit_answers a
+                     WHERE a.answer = 'nao_ok'
+                       AND a.visit_id = (SELECT v3.id FROM gbf_visits v3 WHERE v3.location_id = l.id
+                                          AND v3.status = 'concluida' ORDER BY v3.finished_at DESC LIMIT 1)
+                       AND NOT EXISTS (SELECT 1 FROM gbf_tasks t WHERE t.visit_id = a.visit_id)) AS nao_ok_pendente
+           FROM gbf_locations l WHERE l.active`),
+    // ---- hoje
+    query(`SELECT v.id, ${HORA('v.finished_at')} AS hora, l.name AS local, u.name AS quem,
+                  (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id AND a.answer = 'nao_ok') AS nao_ok
+           FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
+           WHERE v.status = 'concluida' AND ${DIA('v.finished_at')} = ${HOJE} ORDER BY v.finished_at`),
+    query(`SELECT v.id, ${HORA('v.started_at')} AS hora, l.name AS local, u.name AS quem,
+                  (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id) AS itens,
+                  (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id AND a.answer IS NOT NULL) AS feitos
+           FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
+           WHERE v.status = 'em_andamento' ORDER BY v.started_at`),
+    query(`SELECT l.id, l.name AS local, to_char(l.next_visit_time,'HH24:MI') AS hora
+           FROM gbf_locations l WHERE l.active AND l.next_visit_date = ${HOJE}
+             AND NOT EXISTS (SELECT 1 FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento')
+           ORDER BY l.next_visit_time NULLS LAST, l.name`),
+    query(`SELECT count(*)::int AS n FROM gbf_tasks WHERE status <> 'cancelada' AND ${DIA('due_at')} = ${HOJE}`),
   ]);
+
+  // ---- lista única "Precisa de você", da mais grave para a menos grave
+  const atencao = [];
+  postosAtrasados.rows.forEach((p) => atencao.push({
+    nivel: 'alto', rotulo: 'Visita atrasada', peso: p.dias_atraso,
+    titulo: `${p.name} sem visita há ${p.dias_atraso} dia(s)`, detalhe: `Estava prevista para ${dataBR(p.data)}`,
+    link: `#/postos/${p.id}`, acao: { texto: 'Reagendar', reagendar: { tipo: 'posto', id: p.id, data: p.data, hora: p.hora } },
+  }));
+  naoOkSemAtividade.rows.forEach((v) => atencao.push({
+    nivel: 'alto', rotulo: 'NÃO OK', peso: v.dias,
+    titulo: `${v.itens.slice(0, 2).join(', ')}${v.itens.length > 2 ? ` e mais ${v.itens.length - 2}` : ''} — ${v.local}`,
+    detalhe: [`Visita de ${quandoBR(v.finished_at, { day: '2-digit', month: '2-digit' })}`, v.quem, 'sem atividade ligada'].filter(Boolean).join(' · '),
+    link: `#/visitas/${v.id}`,
+    acao: { texto: 'Criar atividade', href: `#/atividades/nova?posto=${v.location_id}&visita=${v.id}&titulo=${encodeURIComponent(`Resolver: ${v.itens[0]} (${v.local})`)}` },
+  }));
+  ativAtrasadas.rows.forEach((t) => atencao.push({
+    nivel: 'alto', rotulo: 'Atividade atrasada', peso: Math.floor(t.atraso_s / 86400),
+    titulo: t.title,
+    detalhe: [`Venceu ${quandoBR(t.due_at, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
+      t.responsavel || 'sem responsável', t.local].filter(Boolean).join(' · '),
+    link: `#/atividades/${t.id}`, acao: { texto: 'Reagendar', reagendar: { tipo: 'atividade', id: t.id, data: t.data, hora: t.hora } },
+  }));
+  solicParadas.rows.forEach((r) => atencao.push({
+    nivel: 'medio', rotulo: r.passou_data ? 'Passou da data' : 'Solicitação parada', peso: r.dias,
+    titulo: r.title,
+    detalhe: [r.passou_data ? `Desejada para ${dataBR(r.data)}` : `Aberta há ${r.dias} dia(s) e ninguém assumiu`,
+      r.pedido_por ? `pedido por ${r.pedido_por}` : null, r.local].filter(Boolean).join(' · '),
+    link: `#/solicitacoes/${r.id}`, acao: { texto: 'Abrir', href: `#/solicitacoes/${r.id}` },
+  }));
+  ativHoje.rows.forEach((t) => atencao.push({
+    nivel: 'medio', rotulo: 'Vence hoje', peso: 0,
+    titulo: t.title, detalhe: [`Até ${t.hora}`, t.responsavel || 'sem responsável', t.local].filter(Boolean).join(' · '),
+    link: `#/atividades/${t.id}`, acao: { texto: 'Abrir', href: `#/atividades/${t.id}` },
+  }));
+  const ordemNivel = { alto: 0, medio: 1 };
+  atencao.sort((a, b) => ordemNivel[a.nivel] - ordemNivel[b.nivel] || b.peso - a.peso);
+
+  // ---- situação de cada posto
+  const listaPostos = postos.rows.map((p) => {
+    const faltam = p.data ? -p.dias_atraso : null;
+    let situacao = 'ok';
+    let motivo = p.data ? `próxima ${dataBR(p.data).slice(0, 5)}${p.hora ? ` ${p.hora}` : ''}` : 'sem próxima visita';
+    if (p.em_andamento) { situacao = 'andamento'; motivo = 'visita em andamento'; } else if (faltam !== null && faltam < 0) {
+      situacao = 'atrasado'; motivo = `${p.dias_atraso} dia(s) de atraso`;
+    } else if (p.nao_ok_pendente) {
+      situacao = 'atencao'; motivo = `${p.nao_ok_pendente} item(ns) NÃO OK`;
+    } else if (faltam === 0) {
+      motivo = `hoje${p.hora ? ` ${p.hora}` : ''}`;
+    } else if (faltam === 1) {
+      motivo = `amanhã${p.hora ? ` ${p.hora}` : ''}`;
+    } else if (!p.data) situacao = 'sem_data';
+    return { id: p.id, nome: p.name, situacao, motivo, atraso: p.data ? p.dias_atraso : null, data: p.data };
+  });
+  const ordemPosto = { atrasado: 0, atencao: 1, andamento: 2, ok: 3, sem_data: 4 };
+  listaPostos.sort((a, b) => ordemPosto[a.situacao] - ordemPosto[b.situacao]
+    || (b.atraso || 0) - (a.atraso || 0) || String(a.data || '9').localeCompare(String(b.data || '9')));
+
+  // ---- o que foi feito no período
   const feed = [
     ...visitas.rows.map((v) => ({
-      tipo: 'visita', quando: v.quando, titulo: `Visita concluída — ${v.local}`, quem: v.quem,
-      detalhe: [v.nao_ok ? `${v.nao_ok} item(ns) NÃO OK` : 'checklist todo OK', v.fotos ? `${v.fotos} foto(s)` : null,
-        v.pending_notes ? `Pendências: ${v.pending_notes}` : null, v.notes].filter(Boolean).join(' · '),
+      tipo: 'visita', quando: v.quando, titulo: `Visita ${v.local}`, quem: v.quem,
+      detalhe: [v.nao_ok ? `${v.nao_ok} item(ns) NÃO OK` : 'tudo OK', v.fotos ? `${v.fotos} foto(s)` : null,
+        v.pending_notes ? `Pendências: ${v.pending_notes}` : null].filter(Boolean).join(' · '),
       alerta: v.nao_ok > 0, link: `#/visitas/${v.id}`,
     })),
     ...tarefas.rows.map((t) => ({
-      tipo: 'atividade', quando: t.quando, titulo: `Atividade concluída — ${t.title}`, quem: t.quem,
+      tipo: 'atividade', quando: t.quando, titulo: t.title, quem: t.quem,
       detalhe: [t.local, t.com_atraso ? 'concluída com atraso' : null].filter(Boolean).join(' · '),
       alerta: t.com_atraso, link: `#/atividades/${t.id}`,
     })),
     ...solic.rows.map((r) => ({
-      tipo: 'solicitacao', quando: r.completed_at, titulo: `Solicitação concluída — ${r.title}`, quem: r.quem,
+      tipo: 'solicitacao', quando: r.completed_at, titulo: r.title, quem: r.quem,
       detalhe: [r.local, r.response].filter(Boolean).join(' · '), link: `#/solicitacoes/${r.id}`,
     })),
   ].sort((a, b) => new Date(b.quando) - new Date(a.quando));
+
   res.json({
-    dias, resumo: resumo.rows[0], feed, nao_ok: naoOk.rows, postos_atrasados: postosAtrasados.rows,
+    periodo, inicio: ini, fim,
+    resumo: atual, anterior,
+    atencao,
+    hoje: {
+      concluidas: hojeConcluidas.rows, em_andamento: hojeAndamento.rows, previstas: hojePrevistas.rows,
+      atividades: hojeAtiv.rows[0].n,
+    },
+    postos: listaPostos,
+    feed,
   });
 }));
 

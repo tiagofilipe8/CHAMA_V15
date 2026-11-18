@@ -153,13 +153,22 @@ router.post('/', ah(async (req, res) => {
   const tk = await validarTicket(b.ticket_id);
   if (tk.erro) return res.status(422).json({ error: tk.erro });
 
+  // Pendência de visita (item NÃO OK): a atividade fica ligada à visita
+  let visitId = null;
+  if (/^\d+$/.test(String(b.visit_id || ''))) {
+    const v = await query('SELECT id FROM gbf_visits WHERE id = $1', [b.visit_id]);
+    if (!v.rows.length) return res.status(422).json({ error: 'Visita não encontrada.' });
+    visitId = v.rows[0].id;
+  }
+
   const { rows } = await query(
-    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [
+    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id, visit_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [
       title.slice(0, 200), String(b.description || '').trim() || null,
       Math.min(Math.max(parseInt(b.priority, 10) || 2, 1), 4),
       assignee, u.id, tk.id, String(b.location || '').trim() || null, b.due_at || null,
       /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null,
+      visitId,
     ]);
   const id = rows[0].id;
   await evento(id, u.id, `${u.name} criou a atividade.`);
