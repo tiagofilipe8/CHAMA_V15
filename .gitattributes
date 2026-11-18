@@ -1,0 +1,3 @@
+# O npm regrava o package-lock.json com LF. Sem esta regra, o git (autocrlf)
+# marca o arquivo como modificado a cada `npm install`, mesmo sem mudanca real.
+package-lock.json text eol=lf
