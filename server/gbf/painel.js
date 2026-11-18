@@ -314,9 +314,9 @@ router.get('/', requireGestor, ah(async (req, res) => {
     chamadosPorPosto = null;
   }
 
-  // ---------------- TI do grupo, postos e materiais ----------------
+  // ---------------- TI do grupo e postos ----------------
   const pAnt = [deAnt, ateAnt];
-  const [tiAnt, tarefasDet, naoOkItens, abertasIdade, pessoas, postosRows, matPedidos, matItens, matAgora] = await Promise.all([
+  const [tiAnt, tarefasDet, naoOkItens, abertasIdade, pessoas, postosRows] = await Promise.all([
     query(`SELECT
              (SELECT count(*)::int FROM gbf_visits WHERE status = 'concluida' AND ${ENTRE('finished_at')}) AS visitas,
              (SELECT count(*)::int FROM gbf_tasks WHERE status = 'concluida' AND ${ENTRE('completed_at')}) AS atividades,
@@ -351,23 +351,8 @@ router.get('/', requireGestor, ah(async (req, res) => {
                                          ORDER BY v3.finished_at DESC LIMIT 1)
                        AND NOT EXISTS (SELECT 1 FROM gbf_tasks t WHERE t.visit_id = a.visit_id)) AS nao_ok_pendente,
                   (SELECT count(*)::int FROM gbf_tasks t WHERE t.location_id = l.id AND t.status NOT IN ('concluida','cancelada')) AS atividades_abertas,
-                  (SELECT count(*)::int FROM gbf_requests r WHERE r.location_id = l.id AND ${ENTRE('r.created_at')}) AS solicitacoes,
-                  (SELECT count(*)::int FROM gbf_material_requests m WHERE m.location_id = l.id AND m.status <> 'cancelado'
-                     AND ${ENTRE('m.created_at')}) AS materiais
+                  (SELECT count(*)::int FROM gbf_requests r WHERE r.location_id = l.id AND ${ENTRE('r.created_at')}) AS solicitacoes
            FROM gbf_locations l WHERE l.active ORDER BY l.name`, p),
-    query(`SELECT m.id, m.status, l.name AS local, m.created_at, m.delivered_at,
-                  (SELECT COALESCE(sum(i.quantity), 0)::int FROM gbf_material_request_items i WHERE i.request_id = m.id) AS qtd
-           FROM gbf_material_requests m LEFT JOIN gbf_locations l ON l.id = m.location_id
-           WHERE m.status <> 'cancelado' AND ${ENTRE('m.created_at')}`, p),
-    query(`SELECT i.name AS nome, i.unit AS unidade, sum(i.quantity)::int AS total
-           FROM gbf_material_request_items i JOIN gbf_material_requests m ON m.id = i.request_id
-           WHERE m.status <> 'cancelado' AND ${ENTRE('m.created_at')}
-           GROUP BY i.name, i.unit ORDER BY total DESC, i.name LIMIT 8`, p),
-    query(`SELECT count(*) FILTER (WHERE status = 'aguardando')::int AS aguardando,
-                  count(*) FILTER (WHERE status = 'separando')::int AS separando,
-                  count(*) FILTER (WHERE needed_by < ${HOJE})::int AS atrasados,
-                  (max(EXTRACT(EPOCH FROM (now() - created_at))) FILTER (WHERE status = 'aguardando'))::int AS aguardando_mais_antigo
-           FROM gbf_material_requests WHERE status IN ('aguardando','separando')`),
   ]);
 
   const td = tarefasDet.rows;
@@ -408,29 +393,90 @@ router.get('/', requireGestor, ah(async (req, res) => {
       mais_repete: topo ? { nome: topo[0], total: topo[1] } : null,
       tempo_medio: c ? media(c.tempos) : null,
       nao_ok: l.nao_ok, nao_ok_pendente: l.nao_ok_pendente, visitas: l.visitas, ultima_visita: l.ultima_visita,
-      atividades_abertas: l.atividades_abertas, solicitacoes: l.solicitacoes, materiais: l.materiais,
+      atividades_abertas: l.atividades_abertas, solicitacoes: l.solicitacoes,
     };
   }).sort((a, b) => (b.chamados || 0) - (a.chamados || 0) || b.nao_ok - a.nao_ok || a.nome.localeCompare(b.nome));
-
-  const mp = matPedidos.rows;
-  const entregues = mp.filter((m) => m.delivered_at);
-  const materiais = {
-    ...matAgora.rows[0],
-    pedidos: mp.length,
-    itens: mp.reduce((s, m) => s + m.qtd, 0),
-    entregues: entregues.length,
-    entrega_media: media(entregues.map((m) => Math.round((new Date(m.delivered_at) - new Date(m.created_at)) / 1000))),
-    mais_pedidos: matItens.rows,
-    por_posto: contar(mp.map((m) => ({ ...m, local: m.local || 'Sem posto' })), 'local'),
-  };
 
   res.json({
     periodo: { de, ate, dias, escala: eixo.escala, gerado_em: new Date().toISOString(), anterior: { de: deAnt, ate: ateAnt } },
     orcim,
     ti,
     postos,
-    materiais,
   });
+}));
+
+// ---------------------------------------------------------------------
+// Calendário: tudo o que foi pedido em cada dia (data em que a solicitação foi feita).
+// GET /api/gbf/painel-gestor/calendario?mes=AAAA-MM
+// Orcim: chamados (hoje pela cópia da Central; depois pela API da Orcim).
+// TI do Beija-Flor: solicitações do gestor para a TI (tabelas do Painel).
+// Devolve a grade inteira do mês (de segunda a domingo), inclusive os dias das pontas.
+// ---------------------------------------------------------------------
+router.get('/calendario', requireGestor, ah(async (req, res) => {
+  const hoje = diaSP(new Date());
+  const mes = /^\d{4}-\d{2}$/.test(String(req.query.mes || '')) ? req.query.mes : hoje.slice(0, 7);
+  const primeiro = `${mes}-01`;
+  const ultimo = somaDias(`${somaDias(primeiro, 32).slice(0, 7)}-01`, -1);
+  const dowPrimeiro = new Date(`${primeiro}T12:00:00Z`).getUTCDay(); // 0 = domingo
+  const inicio = somaDias(primeiro, -((dowPrimeiro + 6) % 7));
+  const dowUltimo = new Date(`${ultimo}T12:00:00Z`).getUTCDay();
+  const fim = somaDias(ultimo, (7 - dowUltimo) % 7);
+  const INI = `($1::date::timestamp AT TIME ZONE '${TZ}')`;
+  const FIM = `(($2::date + 1)::timestamp AT TIME ZONE '${TZ}')`;
+  const DIA = (col) => `to_char(${col} AT TIME ZONE '${TZ}', 'YYYY-MM-DD')`;
+  const HORA = (col) => `to_char(${col} AT TIME ZONE '${TZ}', 'HH24:MI')`;
+
+  const itens = [];
+  let orcimOk = true;
+  try {
+    const pc = [inicio, fim];
+    const escopo = await escopoTickets(pc);
+    const { rows } = await queryCentral(
+      `SELECT t.id, t.number, t.title, t.priority, t.status, t.due_at,
+              ${DIA('t.created_at')} AS dia, ${HORA('t.created_at')} AS hora,
+              e.name AS empresa, c.name AS categoria, ua.name AS responsavel
+       FROM tickets t
+       LEFT JOIN entities e ON e.id = t.entity_id
+       LEFT JOIN categories c ON c.id = t.category_id
+       LEFT JOIN users ua ON ua.id = t.assigned_user_id
+       WHERE ${escopo} AND t.created_at >= ${INI} AND t.created_at < ${FIM}
+       ORDER BY t.created_at`, pc);
+    const agora = Date.now();
+    for (const t of rows) {
+      const aberto = ![5, 6, 7].includes(Number(t.status));
+      itens.push({
+        fonte: 'orcim', id: t.id, numero: t.number || `#${t.id}`, titulo: t.title, dia: t.dia, hora: t.hora,
+        prioridade: Number(t.priority) || 2, situacao: STATUS_CENTRAL[t.status] || '—', aberto,
+        atrasado: aberto && t.due_at && new Date(t.due_at).getTime() < agora,
+        detalhe: [t.categoria, t.empresa].filter(Boolean).join(' · '), responsavel: t.responsavel, link: `#/demandas/${t.id}`,
+      });
+    }
+  } catch (e) {
+    orcimOk = false;
+    console.error('[gbf] calendário (Orcim):', e.message);
+  }
+
+  const STATUS_TI = { a_fazer: 'A fazer', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
+  const ti = await query(
+    `SELECT r.id, r.title, r.priority, r.status, r.desired_date::text AS desejada,
+            ${DIA('r.created_at')} AS dia, ${HORA('r.created_at')} AS hora,
+            l.name AS posto, uh.name AS responsavel
+     FROM gbf_requests r
+     LEFT JOIN gbf_locations l ON l.id = r.location_id
+     LEFT JOIN gbf_users uh ON uh.id = r.handled_by
+     WHERE r.status <> 'cancelada' AND r.created_at >= ${INI} AND r.created_at < ${FIM}
+     ORDER BY r.created_at`, [inicio, fim]);
+  for (const r of ti.rows) {
+    const aberto = ['a_fazer', 'em_andamento'].includes(r.status);
+    itens.push({
+      fonte: 'ti', id: r.id, numero: `S-${String(r.id).padStart(4, '0')}`, titulo: r.title, dia: r.dia, hora: r.hora,
+      prioridade: Number(r.priority) || 1, situacao: STATUS_TI[r.status] || '—', aberto,
+      atrasado: aberto && !!r.desejada && r.desejada < hoje,
+      detalhe: r.posto || '', responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`,
+    });
+  }
+
+  res.json({ mes, primeiro, ultimo, inicio, fim, hoje, orcim_ok: orcimOk, urgencias: PRIORIDADE_CENTRAL, itens });
 }));
 
 module.exports = router;

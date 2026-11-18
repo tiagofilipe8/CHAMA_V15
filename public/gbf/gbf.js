@@ -612,9 +612,10 @@
 
   let ultimoPainel = null;
 
-  // Painel do gestor: 4 abas compactas (TI do Beija-Flor, Orcim, Por posto, Materiais).
+  // Painel do gestor: abas compactas. TI do Beija-Flor usa os dados do Painel; Orcim, Por posto e
+  // Calendário usam os dados da Orcim (hoje pela cópia da Central; depois pela API da Orcim).
   // Números pequenos numa faixa no topo, listas com barrinha e tabelas; nada de cartão grande.
-  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['materiais', 'Materiais']];
+  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['calendario', 'Calendário']];
 
   // variação contra o período anterior: "+6", "−4h"; verde quando melhorou
   function variacao(atual, antes, { menorMelhor = false, tempo = false, pp = false } = {}) {
@@ -646,15 +647,17 @@
     const ate = qs.get('ate') || salvo[1] || pre[1][3];
     let aba = qs.get('aba') || store.get('gbf_painel_aba') || 'ti';
     if (!ABAS_PAINEL.some(([k]) => k === aba)) aba = 'ti';
+    store.set('gbf_painel_aba', aba);
+    const abasHtml = (deA, ateA) => `<nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="#/painel?${new URLSearchParams(k === 'calendario' ? { aba: k } : { de: deA, ate: ateA, aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>`;
+    if (aba === 'calendario') { await vCalendarioPainel(qs, seq, abasHtml(de, ate)); ligarCliques(); return; }
     const d = await API.get(`/painel-gestor?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`);
     if (seq !== renderSeq) return;
     ultimoPainel = d;
     store.set('gbf_painel_periodo', `${d.periodo.de}|${d.periodo.ate}`);
     store.set('gbf_painel_aba', aba);
     const ativo = pre.find((p) => p[2] === d.periodo.de && p[3] === d.periodo.ate)?.[0];
-    const url = (x = {}) => `#/painel?${new URLSearchParams({ de: d.periodo.de, ate: d.periodo.ate, aba, ...x })}`;
 
-    const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos, materiais: abaMateriais }[aba](d);
+    const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos }[aba](d);
     view().innerHTML = `
       <div class="pg-topo">
         <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Períodos prontos">
@@ -667,7 +670,7 @@
       </div>
       <div class="small-muted mb-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · comparado com ${fmtIso(d.periodo.anterior.de)} a ${fmtIso(d.periodo.anterior.ate)}.
         "Agora" é a situação neste momento.</div>
-      <nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="${url({ aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>
+      ${abasHtml(d.periodo.de, d.periodo.ate)}
       <div id="pg-conteudo">${conteudo}</div>`;
 
     const ir = (a, b) => { location.hash = `#/painel?${new URLSearchParams({ de: a, ate: b, aba })}`; };
@@ -681,7 +684,6 @@
       ir(p[2], p[3]);
     }));
     $('#pg-pdf').addEventListener('click', () => exportarPdf(ultimoPainel));
-    if (aba === 'materiais') await ligarMateriais($('#pg-conteudo'), { comFormulario: true });
     ligarCliques();
   }
 
@@ -751,37 +753,131 @@
     const cor = { atrasado: 'red', atencao: 'amber', ok: 'green', sem_data: 'gray' };
     const semChamados = d.postos.every((p) => p.chamados === null);
     return blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
-      <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th><th>Materiais</th></tr></thead>
+      <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th></tr></thead>
       <tbody>${d.postos.map((p) => `<tr data-href="#/postos/${p.id}" class="clicavel">
         <td class="text-nowrap"><span class="ac-dot ${cor[p.situacao]} d-inline-block me-2"></span>${esc(p.nome)}${p.dias_atraso ? ` <span class="small text-danger">${p.dias_atraso} d</span>` : ''}</td>
         <td>${p.chamados ?? '—'}</td><td>${p.mais_repete ? `${esc(p.mais_repete.nome)} (${p.mais_repete.total})` : '—'}</td><td>${dur(p.tempo_medio)}</td>
         <td>${p.nao_ok || '—'}</td><td>${p.visitas}</td><td>${p.ultima_visita ? fmtDia(p.ultima_visita) : '—'}</td>
-        <td>${p.atividades_abertas || '—'}</td><td>${p.materiais || '—'}</td></tr>`).join('')}</tbody></table></div>
+        <td>${p.atividades_abertas || '—'}</td></tr>`).join('')}</tbody></table></div>
       <div class="small-muted mt-2">Bolinha: vermelho = visita atrasada · amarelo = item NÃO OK sem atividade · verde = em dia · cinza = sem próxima visita.
         ${semChamados ? 'A Central ainda não informa o posto de cada chamado; a coluna de chamados aparece quando essa ligação existir.' : 'Chamados ligados ao posto pela localização da Central.'}</div>`
       : vazio('Nenhum posto cadastrado.', 'geo-alt'), 'clique num posto para ver o detalhe');
   }
 
-  function abaMateriais(d) {
-    const m = d.materiais;
-    return `
-      ${faixa([
-    { l: 'Pedidos no período', v: m.pedidos },
-    { l: 'Itens pedidos', v: m.itens },
-    { l: 'Aguardando', v: m.aguardando, sub: m.aguardando_mais_antigo ? `mais antigo ${dur(m.aguardando_mais_antigo)}` : '' },
-    { l: 'Separando', v: m.separando },
-    { l: 'Atrasados', v: m.atrasados, sub: 'passou da data' },
-    { l: 'Entrega média', v: dur(m.entrega_media), sub: m.entregues ? `${m.entregues} entregue(s)` : '' },
-  ])}
-      <div id="mt-area"></div>
-      <div class="pg-duas">
-        ${blocoPg('Mais pedidos', listaBarras(m.mais_pedidos, { texto: (x) => `${x.total}${x.unidade ? ` ${x.unidade}` : ''}`, vazio: 'Nenhum pedido no período.' }), 'quantidade no período')}
-        ${blocoPg('Pedidos por posto', listaBarras(m.por_posto, { cor: '#534AB7', vazio: 'Nenhum pedido no período.' }))}
-      </div>`;
+  // --------------------------- Calendário ---------------------------
+  // Tudo o que foi pedido em cada dia (Orcim + TI do Beija-Flor). Em cada dia, um número por
+  // urgência, na cor da urgência. Clicar no dia mostra a lista daquele dia ao lado.
+  const COR_URG = { 4: 'urg-4', 3: 'urg-3', 2: 'urg-2', 1: 'urg-1' };
+  const MESES_CAL = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const calFiltro = () => {
+    const f = { orcim: true, ti: true, abertos: false };
+    try { Object.assign(f, JSON.parse(store.get('gbf_cal_filtros') || '{}')); } catch { /* padrão */ }
+    return f;
+  };
+  const mesSoma = (mes, n) => {
+    const [a, m] = mes.split('-').map(Number);
+    const d = new Date(Date.UTC(a, m - 1 + n, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
+
+  async function vCalendarioPainel(qs, seq, abasHtml) {
+    const mes = /^\d{4}-\d{2}$/.test(qs.get('mes') || '') ? qs.get('mes') : hojeSP().slice(0, 7);
+    const c = await API.get(`/painel-gestor/calendario?mes=${mes}`);
+    if (seq !== renderSeq) return;
+    const filtro = calFiltro();
+    let diaSel = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('dia') || '') ? qs.get('dia') : (c.hoje.slice(0, 7) === c.mes ? c.hoje : c.primeiro);
+    const [ano, mesNum] = c.mes.split('-').map(Number);
+    const irMes = (m) => `#/painel?aba=calendario&mes=${m}`;
+
+    const visiveis = () => c.itens.filter((i) => filtro[i.fonte] && (!filtro.abertos || i.aberto));
+    const porDia = () => {
+      const m = new Map();
+      for (const i of visiveis()) {
+        if (!m.has(i.dia)) m.set(i.dia, []);
+        m.get(i.dia).push(i);
+      }
+      return m;
+    };
+
+    view().innerHTML = `
+      ${abasHtml}
+      <div class="cal-topo">
+        <a class="btn btn-sm btn-outline-secondary" href="${irMes(mesSoma(c.mes, -1))}" aria-label="Mês anterior"><i class="bi bi-chevron-left"></i></a>
+        <strong class="cal-mes">${MESES_CAL[mesNum - 1].replace(/^./, (x) => x.toUpperCase())} de ${ano}</strong>
+        <a class="btn btn-sm btn-outline-secondary" href="${irMes(mesSoma(c.mes, 1))}" aria-label="Próximo mês"><i class="bi bi-chevron-right"></i></a>
+        ${c.hoje.slice(0, 7) !== c.mes ? `<a class="btn btn-sm btn-link" href="${irMes(c.hoje.slice(0, 7))}">Hoje</a>` : ''}
+        <div class="cal-filtros ms-auto" role="group" aria-label="Mostrar">
+          <button type="button" data-f="orcim">Orcim</button>
+          <button type="button" data-f="ti">TI do Beija-Flor</button>
+          <button type="button" data-f="abertos">Só em aberto</button>
+        </div>
+      </div>
+      <div class="cal-legenda">${[4, 3, 2, 1].map((p) => `<span><i class="cal-num ${COR_URG[p]}">n</i>${esc(c.urgencias[p])}</span>`).join('')}
+        <span class="ms-auto small-muted">Data em que foi pedido. ${c.orcim_ok ? 'Orcim: cópia da Central (depois, API da Orcim).' : 'Não consegui ler os chamados da Orcim agora.'}</span></div>
+      <div class="cal-corpo">
+        <div class="cal-grade" role="grid" aria-label="Calendário de solicitações">
+          ${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((d) => `<div class="cal-sem" role="columnheader">${d}</div>`).join('')}
+          <div id="cal-dias" style="display:contents"></div>
+        </div>
+        <aside class="cal-dia" id="cal-dia" aria-live="polite"></aside>
+      </div>
+      <div class="cal-resumo small-muted" id="cal-resumo"></div>`;
+
+    const pintar = () => {
+      const m = porDia();
+      const dias = [];
+      for (let d = c.inicio; d <= c.fim; d = isoSoma(d, 1)) dias.push(d);
+      $('#cal-dias').innerHTML = dias.map((d) => {
+        const lst = m.get(d) || [];
+        const cont = [4, 3, 2, 1].map((p) => [p, lst.filter((i) => i.prioridade === p).length]).filter(([, n]) => n);
+        const fora = d.slice(0, 7) !== c.mes;
+        const atrasados = lst.filter((i) => i.atrasado).length;
+        return `<button type="button" class="cal-cel${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}" data-dia="${d}"
+          aria-label="${fmtIso(d)}: ${lst.length} solicitação(ões)" aria-pressed="${d === diaSel}">
+          <span class="cal-d">${Number(d.slice(8, 10))}</span>
+          ${atrasados ? `<span class="cal-atr" title="${atrasados} atrasada(s)"><i class="bi bi-alarm"></i>${atrasados}</span>` : ''}
+          <span class="cal-nums">${cont.map(([p, n]) => `<i class="cal-num ${COR_URG[p]}" title="${esc(c.urgencias[p])}">${n}</i>`).join('')}</span>
+        </button>`;
+      }).join('');
+      $$('#cal-dias [data-dia]').forEach((b) => b.addEventListener('click', () => {
+        diaSel = b.dataset.dia;
+        history.replaceState(null, '', `#/painel?aba=calendario&mes=${c.mes}&dia=${diaSel}`);
+        pintar();
+        if (window.matchMedia('(max-width: 900px)').matches) $('#cal-dia').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }));
+
+      const lista = (m.get(diaSel) || []).slice().sort((a, b) => b.prioridade - a.prioridade || Number(b.atrasado) - Number(a.atrasado) || a.hora.localeCompare(b.hora));
+      const dataLonga = new Date(`${diaSel}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
+      $('#cal-dia').innerHTML = `<h3>${esc(dataLonga)}${diaSel === c.hoje ? ' <span class="tag tag-teal">hoje</span>' : ''}</h3>
+        <div class="small-muted mb-2">${lista.length ? `${lista.length} solicitação(ões) · ${lista.filter((i) => i.aberto).length} em aberto` : 'Nada pedido neste dia.'}</div>
+        ${lista.map((i) => `<div class="cal-item" data-href="${i.link}">
+          <i class="cal-num ${COR_URG[i.prioridade]}" title="${esc(c.urgencias[i.prioridade])}"></i>
+          <div class="flex-grow-1 min-w-0">
+            <div class="t">${esc(i.titulo)}</div>
+            <div class="small-muted">${i.fonte === 'orcim' ? 'Orcim' : 'TI'} · ${esc(i.numero)} · ${esc(i.hora)}${i.detalhe ? ` · ${esc(i.detalhe)}` : ''}${i.responsavel ? ` · ${esc(i.responsavel)}` : ''}</div>
+          </div>
+          <div class="text-end text-nowrap">${i.atrasado ? tag('tag-red', 'Atrasado') : ''} ${tag(i.aberto ? 'tag-blue' : 'tag-gray', i.situacao)}</div>
+        </div>`).join('')}`;
+      $$('#cal-dia [data-href]').forEach((x) => x.addEventListener('click', () => { location.hash = x.dataset.href; }));
+
+      const doMes = visiveis().filter((i) => i.dia.slice(0, 7) === c.mes);
+      $('#cal-resumo').innerHTML = `No mês: ${doMes.length} solicitação(ões) · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
+      $$('.cal-filtros [data-f]').forEach((b) => {
+        b.classList.toggle('on', !!filtro[b.dataset.f]);
+        b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
+      });
+    };
+    $$('.cal-filtros [data-f]').forEach((b) => b.addEventListener('click', () => {
+      filtro[b.dataset.f] = !filtro[b.dataset.f];
+      if (!filtro.orcim && !filtro.ti) filtro[b.dataset.f === 'orcim' ? 'ti' : 'orcim'] = true; // sempre mostra pelo menos um
+      store.set('gbf_cal_filtros', JSON.stringify(filtro));
+      pintar();
+    }));
+    pintar();
   }
 
   // ---------------------------- Materiais ----------------------------
-  // Usado na aba Materiais do painel (com formulário) e na tela "Materiais" (TI separa e entrega).
+  // Tela "Materiais" do menu: o gestor pede, a TI separa e entrega.
   const SIT_MATERIAL = { aguardando: 'tag-gray', separando: 'tag-blue', entregue: 'tag-green', cancelado: 'tag-gray' };
 
   function linhaItemMaterial(catalogo) {
