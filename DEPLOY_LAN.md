@@ -51,6 +51,39 @@ Sem essas variáveis, a Central funciona exatamente como antes e o painel lê o 
 
 Documentação completa do módulo: `docs/painel-beija-flor/README.md`.
 
+## Recepção de chamados por WhatsApp
+
+O sistema **abre chamados a partir de mensagens de WhatsApp** (`server/whatsapp-inbound.js`).
+O envio de notificações por WhatsApp continua sendo o mesmo de antes.
+
+### Como funciona
+
+| Situação | O que acontece |
+| --- | --- |
+| Número já cadastrado em **Usuários** (campo telefone) | Abre o chamado na hora e responde com o número |
+| **Número desconhecido** | Responde pedindo o nome completo; a **1ª mensagem vira a descrição** do chamado quando o nome chega |
+| Mensagem seguinte (em até 24 h) | Vira **comentário** do último chamado aberto por aqui |
+| Mensagem citando a nossa confirmação | Vira comentário do chamado **citado** |
+| Mensagem começando com **`NOVO`** | Sempre abre outro chamado |
+| Telefone da **equipe interna** (admin/técnico) | Responde pedindo para usar o sistema; não abre chamado |
+| Nome que não dá para reconhecer | Repete o pedido; após 3 tentativas desiste (`blocked`) |
+
+Padrões do chamado aberto por WhatsApp: empresa **"WhatsApp - não identificado"**
+(criada sozinha; o técnico redireciona para a empresa certa ao assumir), categoria
+**"Outros"**, urgência **"Operação prejudicada"** e data de necessidade = hoje.
+Quem já é cadastrado abre na **própria empresa**.
+
+Para ligar: em **Configurações → WhatsApp**, escaneie o QR. Desligue o recebimento com
+`WHATSAPP_INBOUND=0` no `.env` (o envio continua); desligue tudo com `WHATSAPP_DISABLED=1`.
+
+### Limitações
+
+- Só **texto** (foto/documento sem legenda é ignorado com pedido de texto).
+- Usa WhatsApp Web não oficial (`whatsapp-web.js`): prefira um **número dedicado**
+  (risco de bloqueio da conta). A sessão pode pedir novo escaneamento de vez em quando.
+- Sem conexão, o chamado é criado mesmo assim e a resposta não sai (o log registra).
+- Logs: `C:\ORCIM\runtime\app.out.log` (linhas `[whatsapp-inbound]`).
+
 ## O que foi instalado
 
 | Item | Local |

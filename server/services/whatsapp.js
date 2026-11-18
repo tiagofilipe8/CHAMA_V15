@@ -89,6 +89,14 @@ async function start() {
 
     client.on('message', (msg) => {
       console.log(`[whatsapp] msg de ${msg.from}: ${(msg.body || '').slice(0, 80)}`);
+      // Recepcao de chamados: processa fora do handler para nao travar o
+      // cliente. require() em tempo de execucao evita o ciclo com o inbound.
+      try {
+        const inbound = require('../whatsapp-inbound');
+        inbound.handle(msg).catch((e) => console.error('[whatsapp-inbound]', e && e.message));
+      } catch (e) {
+        console.error('[whatsapp-inbound] modulo indisponivel:', e && e.message);
+      }
     });
 
     console.log('[whatsapp] chamando client.initialize()');

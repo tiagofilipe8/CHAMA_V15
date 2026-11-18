@@ -462,6 +462,30 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 -- Numero do chamado sem o prefixo "CH-" (ex.: CH-2026-00102 -> 2026-00102)
 UPDATE tickets SET number = substr(number, 4) WHERE number LIKE 'CH-%';
 
+-- =====================================================================
+-- Contatos do WhatsApp (recepcao de chamados pelo WhatsApp).
+-- Guarda o estado da identificacao de numeros que ainda nao sao usuarios.
+--   status: new = primeira mensagem / awaiting_id = pediu identificacao
+--           active = identificado (usuario criado) / blocked = desistiu
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS whatsapp_contacts (
+    phone           TEXT PRIMARY KEY,
+    user_id         BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    status          TEXT NOT NULL DEFAULT 'new'
+                    CHECK (status IN ('new','awaiting_id','active','blocked')),
+    pending_message TEXT,
+    pending_at      TIMESTAMPTZ,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_ticket_id  BIGINT REFERENCES tickets(id) ON DELETE SET NULL,
+    last_seen_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wa_contacts_user ON whatsapp_contacts(user_id);
+
+-- Bancos ja criados antes desta coluna
+ALTER TABLE whatsapp_contacts ADD COLUMN IF NOT EXISTS last_ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL;
+
 -- @@INVENTARIO@@  (o init.js cria as tabelas de inventario neste ponto)
 -- Migracao: data programada da proxima manutencao do ativo
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS next_maintenance_date DATE;
