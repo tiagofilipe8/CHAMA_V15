@@ -397,27 +397,16 @@
     if (!lista?.length) return `<div class="small-muted">${esc(vazio)}</div>`;
     const top = lista.slice(0, max);
     const maior = Math.max(...top.map((x) => x.total), 1);
-    return `<div class="bars">${top.map((x) => `
-      <div class="bar-row"><span class="nm" title="${esc(x.nome)}">${esc(x.nome)}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, (x.total / maior) * 100)}%"></div></div>
-        <span class="v">${x.total}</span></div>`).join('')}</div>`;
+    return `<div class="lista-num">${top.map((x, i) => `
+      <div class="ln-row"><span class="ln-pos">${i + 1}</span><span class="ln-nome" title="${esc(x.nome)}">${esc(x.nome)}</span>
+        <span class="ln-v">${x.total}</span></div>`).join('')}</div>`;
   }
 
   function tendencia(serie) {
     if (!serie?.length) return '';
-    const W = 600; const H = 140; const n = serie.length;
-    const max = Math.max(1, ...serie.map((s) => Math.max(s.abertas, s.resolvidas)));
-    const larg = W / n; const b = Math.max(1, larg * 0.36);
-    const rects = serie.map((s, i) => {
-      const x = i * larg + larg * 0.12;
-      const h1 = (s.abertas / max) * (H - 6); const h2 = (s.resolvidas / max) * (H - 6);
-      return `<rect x="${x}" y="${H - h1}" width="${b}" height="${h1}" rx="1.5" fill="#94a3b8"><title>${fmtDia(s.dia)}: ${s.abertas} abertas</title></rect>
-              <rect x="${x + b + 1}" y="${H - h2}" width="${b}" height="${h2}" rx="1.5" fill="#0f766e"><title>${fmtDia(s.dia)}: ${s.resolvidas} resolvidas</title></rect>`;
-    }).join('');
-    return `<svg class="trend" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Abertas e resolvidas por dia">
-      <line x1="0" y1="${H - 0.5}" x2="${W}" y2="${H - 0.5}" stroke="#e2e8f0"/>${rects}</svg>
-      <div class="d-flex justify-content-between small-muted"><span>${fmtDia(serie[0].dia)}</span><span>${fmtDia(serie[n - 1].dia)}</span></div>
-      <div class="legend"><span><i style="background:#94a3b8"></i>Abertas</span><span><i style="background:#0f766e"></i>Resolvidas</span></div>`;
+    return graficoLinhas(serie.map((p) => ({ periodo: p.dia, abertas: p.abertas, resolvidas: p.resolvidas })),
+      [{ campo: 'abertas', nome: 'Abertas', cor: '#94a3b8' }, { campo: 'resolvidas', nome: 'Resolvidas', cor: '#0f766e' }],
+      { escala: 'dia', altura: 200, largura: 640 });
   }
 
   function kpi(lbl, val, { cls = '', hint = '', href = '', icon = '' } = {}) {
@@ -469,72 +458,47 @@
     for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
     return 10 * p;
   }
-  function graficoColunas(serie, series, { escala = 'dia', empilhado = false, altura = 230, largura = 470 } = {}) {
+  // Gráfico de linha (o único tipo de gráfico do site). SVG puro: serve na tela e no PDF.
+  // Uma linha por série, pontos com o valor ao passar o mouse, grade tracejada e escala redonda.
+  function graficoLinhas(serie, series, { escala = 'dia', altura = 220, largura = 520 } = {}) {
     if (!serie?.length) return '<div class="g-vazio">Sem dados no período.</div>';
-    const totais = serie.map((s) => (empilhado
-      ? series.reduce((a, c) => a + (s[c.campo] || 0), 0)
-      : Math.max(...series.map((c) => s[c.campo] || 0))));
-    if (!totais.some(Boolean)) return '<div class="g-vazio"><i class="bi bi-bar-chart"></i> Nada no período.</div>';
-    const W = largura; const H = altura; const esq = 30; const dir = 6; const topo = 20; const base = H - 24;
-    const n = serie.length; const larg = (W - esq - dir) / n;
-    const max = escalaRedonda(Math.max(...totais));
+    const valores = serie.flatMap((p) => series.map((c) => p[c.campo] || 0));
+    if (!valores.some(Boolean)) return '<div class="g-vazio"><i class="bi bi-graph-up"></i> Nada no período.</div>';
+    const W = largura; const H = altura; const esq = 30; const dir = 14; const topo = 16; const base = H - 26;
+    const n = serie.length;
+    const max = escalaRedonda(Math.max(...valores));
+    const x = (i) => (n === 1 ? (esq + W - dir) / 2 : esq + (i * (W - esq - dir)) / (n - 1));
     const y = (v) => base - (v / max) * (base - topo);
-    const nGrupo = empilhado ? 1 : series.length;
-    const bwTotal = Math.min(larg * 0.66, 46);
-    const bw = Math.max(2, bwTotal / nGrupo);
-    const raio = Math.min(4, bw / 3);
-    let barras = '';
-    serie.forEach((s, i) => {
-      const x0 = esq + i * larg + (larg - bwTotal) / 2;
-      let acumulado = 0;
-      const vis = series.filter((c) => s[c.campo]);
-      series.forEach((c, j) => {
-        const v = s[c.campo] || 0;
-        if (!v) return;
-        const dica = `${rotuloBalde(s.periodo, escala)}: ${v} ${c.nome.toLowerCase()}`;
-        if (empilhado) {
-          const topoSeg = c === vis[vis.length - 1];
-          const h = y(acumulado) - y(acumulado + v);
-          barras += `<rect x="${x0}" y="${y(acumulado + v)}" width="${bwTotal}" height="${h}" rx="${topoSeg ? raio : 0}" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
-          if (topoSeg && h > raio) barras += `<rect x="${x0}" y="${y(acumulado + v) + h - Math.min(raio, h)}" width="${bwTotal}" height="${Math.min(raio, h)}" fill="${c.cor}"/>`;
-          acumulado += v;
-        } else {
-          barras += `<rect x="${x0 + j * bw}" y="${y(v)}" width="${Math.max(1, bw - 2)}" height="${base - y(v)}" rx="${raio}" fill="${c.cor}"><title>${esc(dica)}</title></rect>`;
-        }
-      });
-      // valor em cima da coluna (só quando há poucas colunas)
-      if (n <= 16 && totais[i]) {
-        barras += `<text class="g-v" x="${x0 + bwTotal / 2}" y="${y(totais[i]) - 5}" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">${totais[i]}</text>`;
-      }
-    });
-    const passo = Math.max(1, Math.ceil(n / (largura >= 900 ? 12 : 8)));
-    const rotulos = serie.map((s, i) => (((i % passo === 0 && n - 1 - i >= passo / 2) || i === n - 1)
-      ? `<text class="g-t" x="${esq + i * larg + larg / 2}" y="${H - 7}" text-anchor="middle" font-size="11" fill="#64748b">${esc(rotuloBalde(s.periodo, escala))}</text>` : '')).join('');
     const marcas = max <= 4 ? Array.from({ length: max + 1 }, (_, k) => k) : [0, max / 2, max];
     const grade = marcas.map((v) => `<line class="g-l" x1="${esq}" x2="${W - dir}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0" ${v ? 'stroke-dasharray="3 4"' : ''}/>
         <text class="g-t" x="${esq - 7}" y="${y(v) + 4}" text-anchor="end" font-size="10.5" fill="#64748b">${v}</text>`).join('');
-    const legenda = series.length > 1 || series[0].nome ? series.map((c) => `<span><i style="background:${c.cor}"></i>${esc(c.nome)}</span>`).join('') : '';
-    return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((c) => c.nome).join(' e '))} por período" style="width:100%;height:auto">
-      ${grade}${barras}${rotulos}</svg><div class="legend">${legenda}</div>`;
-  }
-
-  // Barras horizontais em SVG (para o PDF; na tela usamos barras())
-  function graficoBarrasSvg(lista, { max = 8, cor = '#0f766e' } = {}) {
-    if (!lista?.length) return '<p class="muted">Nada no período.</p>';
-    const top = lista.slice(0, max);
-    const maior = Math.max(...top.map((x) => x.total), 1);
-    const W = 640; const lh = 22; const H = top.length * lh + 4; const nomeW = 220;
-    const linhas = top.map((x, i) => {
-      const w = Math.max(3, ((x.total / maior) * (W - nomeW - 50)));
-      const nome = String(x.nome).length > 34 ? `${String(x.nome).slice(0, 33)}…` : String(x.nome);
-      return `<text x="0" y="${i * lh + 15}" font-size="11" fill="#0f172a">${esc(nome)}</text>
-        <rect x="${nomeW}" y="${i * lh + 5}" width="${w}" height="12" rx="3" fill="${cor}"/>
-        <text x="${nomeW + w + 6}" y="${i * lh + 15}" font-size="11" fill="#0f172a">${x.total}</text>`;
+    const pontos = n <= 14; // com muitos pontos, só a bolinha do último (o resto fica no traço)
+    const linhas = series.map((c, j) => {
+      const pts = serie.map((p, i) => [x(i), y(p[c.campo] || 0)]);
+      const d = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
+      const area = series.length === 1 ? `<path d="${d} L${pts[pts.length - 1][0].toFixed(1)} ${base} L${pts[0][0].toFixed(1)} ${base} Z" fill="${c.cor}" fill-opacity=".10"/>` : '';
+      const bolinhas = serie.map((p, i) => {
+        const v = p[c.campo] || 0;
+        const dica = `${rotuloBalde(p.periodo, escala)}: ${v} ${c.nome.toLowerCase()}`;
+        const ultimo = i === n - 1;
+        return (pontos || ultimo) ? `<circle class="g-p" cx="${pts[i][0].toFixed(1)}" cy="${pts[i][1].toFixed(1)}" r="${ultimo ? 4 : 3}" fill="${ultimo ? c.cor : '#fff'}" stroke="${c.cor}" stroke-width="2"><title>${esc(dica)}</title></circle>` : '';
+      }).join('');
+      return `${area}<path d="${d}" fill="none" stroke="${c.cor}" stroke-width="${j === 0 ? 2.6 : 2.2}" stroke-linejoin="round" stroke-linecap="round"/>${bolinhas}`;
     }).join('');
-    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Ranking">${linhas}</svg>`;
+    const passo = Math.max(1, Math.ceil(n / (largura >= 800 ? 12 : 7)));
+    const rotulos = serie.map((p, i) => (((i % passo === 0 && n - 1 - i >= passo / 2) || i === n - 1)
+      ? `<text class="g-t" x="${x(i)}" y="${H - 7}" text-anchor="${n > 1 && i === n - 1 ? 'end' : n > 1 && i === 0 ? 'start' : 'middle'}" font-size="11" fill="#64748b">${esc(rotuloBalde(p.periodo, escala))}</text>` : '')).join('');
+    const legenda = series.map((c) => `<span><i style="background:${c.cor}"></i>${esc(c.nome)}</span>`).join('');
+    return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((c) => c.nome).join(' e '))} ${esc(nomeEscala(escala))}" style="width:100%;height:auto">
+      ${grade}${linhas}${rotulos}</svg><div class="legend">${legenda}</div>`;
   }
 
-  // Medidor de % (anel)
+  // Ranking em tabela (para o PDF)
+  function graficoBarrasSvg(lista, { max = 8 } = {}) {
+    if (!lista?.length) return '<p class="muted">Nada no período.</p>';
+    return `<table><tbody>${lista.slice(0, max).map((x) => `<tr><td>${esc(x.nome)}</td><td class="num">${x.total}</td></tr>`).join('')}</tbody></table>`;
+  }
+
   function medidor(valor, rotulo) {
     const r = 44; const c = 2 * Math.PI * r;
     const v = valor === null || valor === undefined ? null : Math.max(0, Math.min(100, valor));
@@ -655,8 +619,9 @@
     const itens = (lista || []).filter((x) => valor(x)).slice(0, max);
     if (!itens.length) return `<div class="small-muted py-1">${esc(vazio)}</div>`;
     const topo = Math.max(...itens.map(valor));
-    return itens.map((x) => `<div class="pg-barra"${link ? ` data-href="${link(x)}"` : ''}><span class="n" title="${esc(x.nome)}">${esc(x.nome)}</span>
-      <span class="b"><i style="width:${Math.max(4, Math.round((valor(x) / topo) * 100))}%${cor ? `;background:${typeof cor === 'function' ? cor(x) : cor}` : ''}"></i></span><span class="v">${esc(texto(x))}</span></div>`).join('');
+    return `<div class="lista-num">${itens.map((x, i) => `<div class="ln-row"${link ? ` data-href="${link(x)}"` : ''}>
+      <span class="ln-pos"${cor ? ` style="background:${typeof cor === 'function' ? (cor(x) || 'var(--brand)') : cor};color:#fff"` : ''}>${i + 1}</span>
+      <span class="ln-nome" title="${esc(x.nome)}">${esc(x.nome)}</span><span class="ln-v">${esc(texto(x))}</span></div>`).join('')}</div>`;
   }
   const blocoPg = (titulo, corpo, nota = '') => `<section class="pg-bloco"><h3>${esc(titulo)}${nota ? `<span>${nota}</span>` : ''}</h3>${corpo}</section>`;
   const cartaoGrafico = (titulo, corpo, nota = '') => `<section class="pg-bloco pg-card"><h3>${esc(titulo)}${nota ? `<span>${nota}</span>` : ''}</h3>${corpo}</section>`;
@@ -770,8 +735,8 @@
     { l: 'Em aberto agora', v: k.atividades_abertas_agora, sub: k.atividades_atrasadas_agora ? `${k.atividades_atrasadas_agora} atrasada(s)` : 'atividades', href: '#/atividades' },
   ])}
       <div class="pg-duas">
-        ${cartaoGrafico('Entregas da TI', graficoColunas(d.ti.serie, CORES_TI, { escala: d.periodo.escala, empilhado: true }), nomeEscala(d.periodo.escala))}
-        ${cartaoGrafico('Itens com problema nas visitas', graficoColunas(d.ti.serie, [{ campo: 'nao_ok', nome: 'Itens NÃO OK', cor: '#ef4444' }], { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
+        ${cartaoGrafico('Entregas da TI', graficoLinhas(d.ti.serie, CORES_TI, { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
+        ${cartaoGrafico('Itens com problema nas visitas', graficoLinhas(d.ti.serie, [{ campo: 'nao_ok', nome: 'Itens NÃO OK', cor: '#ef4444' }], { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
       </div>
       ${blocoPg('Problemas encontrados nas visitas', d.ti.nao_ok.length ? d.ti.nao_ok.slice(0, 12).map((n) => `<div class="pg-prob" data-href="#/visitas/${n.visit_id}">
           <span class="pg-prob-t"><b>${esc(n.item_label)}</b> — ${esc(n.local)}</span>
@@ -803,7 +768,7 @@
     { l: '1ª resposta', v: dur(k.tempo_medio_primeira_resposta), var: variacao(k.tempo_medio_primeira_resposta, a.tempo_medio_primeira_resposta, { menorMelhor: true, tempo: true }) },
     { l: 'Em aberto agora', v: k.abertas_agora, sub: k.atrasadas_agora ? `${k.atrasadas_agora} atrasado(s)` : '', href: '#/demandas?situacao=abertas' },
   ])}
-      ${cartaoGrafico('Chamados abertos × resolvidos', graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: d.periodo.escala, altura: 190, largura: 900 }), nomeEscala(d.periodo.escala))}
+      ${cartaoGrafico('Chamados abertos × resolvidos', graficoLinhas(d.orcim.serie, CORES_ORCIM, { escala: d.periodo.escala, altura: 190, largura: 900 }), nomeEscala(d.periodo.escala))}
       <div class="pg-duas">
         ${blocoPg('Problemas mais recorrentes', listaBarras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' }), `${emBreveApi} hoje: categorias da Central`)}
         ${blocoPg('Equipamentos mais solicitados', d.orcim.equipamentos ? listaBarras(d.orcim.equipamentos)
@@ -1012,7 +977,7 @@
     </tbody></table></div>
     <div style="flex:0 0 130px;text-align:center">${medidor(o.prazo_cumprido_pct, 'Dentro do prazo')}<div class="muted">dentro do prazo</div></div>
   </div>
-  <div class="grafico-box"><h3>Chamados abertos × resolvidos ${tituloEscala}</h3>${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_, altura: 190, largura: 900 })}</div>
+  <div class="grafico-box"><h3>Chamados abertos × resolvidos ${tituloEscala}</h3>${graficoLinhas(d.orcim.serie, CORES_ORCIM, { escala: esc_, altura: 190, largura: 900 })}</div>
   <div class="grafico-box"><h3>Chamados abertos por categoria</h3>${graficoBarrasSvg(d.orcim.por_categoria)}</div>
   <div class="grafico-box"><h3>Resolvidos por técnico da Orcim</h3>${d.orcim.por_tecnico.length
     ? `<table><thead><tr><th>Técnico</th><th class="num">Resolvidos</th><th class="num">Tempo médio</th></tr></thead><tbody>${d.orcim.por_tecnico.map((x) => `<tr><td>${esc(x.nome)}</td><td class="num">${x.total}</td><td class="num">${dur(x.tempo_medio)}</td></tr>`).join('')}</tbody></table>`
@@ -1029,7 +994,7 @@
     ${linha('Atividades atrasadas (agora)', t.atividades_atrasadas_agora)}
     ${linha('Solicitações em aberto (agora)', t.solicitacoes_abertas_agora)}
   </tbody></table>
-  <div class="grafico-box"><h3>Entregas da TI ${tituloEscala}</h3>${graficoColunas(d.ti.serie, CORES_TI, { escala: esc_, empilhado: true, altura: 190, largura: 900 })}</div>
+  <div class="grafico-box"><h3>Entregas da TI ${tituloEscala}</h3>${graficoLinhas(d.ti.serie, CORES_TI, { escala: esc_, altura: 190, largura: 900 })}</div>
   <div class="grafico-box"><h3>Visitas por posto</h3>${graficoBarrasSvg(d.ti.por_posto)}</div>
   ${d.ti.por_pessoa.length ? `<div class="grafico-box"><h3>Por pessoa</h3><table><thead><tr><th>Pessoa</th><th class="num">Visitas</th><th class="num">Atividades</th><th class="num">Solicitações</th></tr></thead><tbody>
     ${d.ti.por_pessoa.map((p) => `<tr><td>${esc(p.nome)}</td><td class="num">${p.visitas}</td><td class="num">${p.atividades}</td><td class="num">${p.solicitacoes}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -2901,7 +2866,7 @@
     const el = $('#ac-feed');
     if (!el) return;
     const lista = acFeed.itens.filter((f) => acFeed.filtro === 'tudo' || f.tipo === acFeed.filtro);
-    const mostrar = acFeed.tudo ? lista : lista.slice(0, 12);
+    const mostrar = acFeed.tudo ? lista : lista.slice(0, 6);
     const icone = { visita: 'geo-alt', atividade: 'check2-square', solicitacao: 'megaphone' };
     let diaAtual = '';
     el.innerHTML = mostrar.length ? mostrar.map((f) => {
@@ -2920,7 +2885,7 @@
   }
 
   async function vAcompanhamento(qs, seq) {
-    titulo('Acompanhamento da TI');
+    titulo('Acompanhamento');
     let periodo = qs.get('periodo') || (qs.get('dias') === '30' ? '30' : '7');
     if (!PERIODOS_AC.some(([k]) => k === periodo)) periodo = '7';
     const a = await API.get(`/acompanhamento?periodo=${periodo}`);
@@ -2930,6 +2895,7 @@
     const h = a.hoje;
     acFeed.itens = a.feed;
     acFeed.tudo = false;
+    acFeed.filtro = 'tudo';
 
     const altos = a.atencao.filter((x) => x.nivel === 'alto').length;
     const linhaAtencao = (x) => `
@@ -2942,7 +2908,7 @@
     const cartaoHoje = [
       ...h.concluidas.map((v) => ({ hora: v.hora, html: `<div class="ac-hoje-card" data-href="#/visitas/${v.id}">
         <div class="small-muted">${esc(v.hora)}${v.quem ? ` · ${esc(v.quem)}` : ''}</div><div class="t">${esc(v.local)}</div>
-        ${v.nao_ok ? tag('tag-red', `Concluída · ${v.nao_ok} NÃO OK`) : tag('tag-green', 'Concluída · tudo OK')}</div>` })),
+        ${v.nao_ok ? tag('tag-red', `${v.nao_ok} com problema`) : tag('tag-green', 'Feita · tudo OK')}</div>` })),
       ...h.em_andamento.map((v) => ({ hora: v.hora, html: `<div class="ac-hoje-card agora" data-href="#/visitas/${v.id}">
         <div class="small-muted">Agora${v.quem ? ` · ${esc(v.quem)}` : ''}</div><div class="t">${esc(v.local)}</div>
         ${tag('tag-blue', `Em andamento ${v.feitos}/${v.itens}`)}</div>` })),
@@ -2950,69 +2916,43 @@
         <div class="small-muted">${esc(p.hora || 'sem horário')}</div><div class="t">${esc(p.local)}</div>
         ${tag('tag-gray', 'Prevista')}</div>` })),
     ].sort((x, y) => x.hora.localeCompare(y.hora));
-    const totalHoje = h.concluidas.length + h.em_andamento.length + h.previstas.length;
-
-    const metr = (lbl, val, delta, sub) => `<div class="ac-metric"><div class="lbl">${esc(lbl)}</div>
-      <div class="val">${esc(val)} ${delta}</div><div class="small-muted">${sub}</div></div>`;
-
-    const COR_POSTO = { atrasado: 'red', atencao: 'amber', andamento: 'blue', ok: 'green', sem_data: 'gray' };
-    const semData = a.postos.filter((p) => p.situacao === 'sem_data').length;
 
     view().innerHTML = `
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <div class="small-muted me-auto">O que precisa de você, o dia de hoje e o resultado do período.</div>
-        <div class="btn-group btn-group-sm" role="group" aria-label="Período">${PERIODOS_AC.map(([k, t]) => `<a class="btn ${k === periodo ? 'btn-dark' : 'btn-outline-secondary'}" href="#/?periodo=${k}">${t}</a>`).join('')}</div>
-        <a class="btn btn-brand btn-sm" href="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i> Nova solicitação</a>
+      <div class="ac-topo">
+        <div class="pg-seg" role="group" aria-label="Período">${PERIODOS_AC.map(([k, t]) => `<a class="${k === periodo ? 'on' : ''}" aria-current="${k === periodo}" href="#/?periodo=${k}">${t}</a>`).join('')}</div>
+        <a class="btn btn-brand btn-sm" href="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i> Solicitar visita</a>
       </div>
 
       <section class="ac-sec">
-        <div class="ac-head"><span class="ac-num">1</span><h2>Precisa de você</h2>
-          ${a.atencao.length ? tag(altos ? 'tag-red' : 'tag-amber', String(a.atencao.length)) : ''}
-          <span class="small-muted ms-auto">${a.atencao.length ? 'do mais grave para o menos grave' : ''}</span></div>
+        <div class="ac-head"><h2>Precisa de você</h2>${a.atencao.length ? tag(altos ? 'tag-red' : 'tag-amber', String(a.atencao.length)) : ''}</div>
         <div class="ac-box">${a.atencao.length ? a.atencao.map(linhaAtencao).join('')
-          : '<div class="ac-row ac-ok"><i class="bi bi-check2-circle"></i><div>Tudo em dia: nenhuma visita atrasada, item NÃO OK sem atividade, atividade vencida ou solicitação parada.</div></div>'}</div>
+    : '<div class="ac-row ac-ok"><i class="bi bi-check2-circle"></i><div>Tudo em dia.</div></div>'}</div>
       </section>
 
       <section class="ac-sec">
-        <div class="ac-head"><span class="ac-num">2</span><h2>Hoje</h2>
-          <span class="small-muted">· ${totalHoje} visita(s) · ${h.concluidas.length} concluída(s) · ${h.atividades} atividade(s) com prazo hoje</span>
-          <a class="small ms-auto" href="#/agenda">ver agenda</a></div>
+        <div class="ac-head"><h2>Hoje</h2><a class="small ms-auto" href="#/agenda">ver agenda</a></div>
         ${cartaoHoje.length ? `<div class="ac-hoje">${cartaoHoje.map((c) => c.html).join('')}</div>`
-          : '<div class="ac-box"><div class="ac-row small-muted">Nenhuma visita para hoje. Visitas atrasadas aparecem em "Precisa de você".</div></div>'}
+    : '<div class="ac-box"><div class="ac-row small-muted">Nenhuma visita para hoje.</div></div>'}
       </section>
 
       <section class="ac-sec">
-        <div class="ac-head"><span class="ac-num">3</span><h2>${TITULO_AC[periodo]}</h2><span class="small-muted ms-auto">${COMPARA_AC[periodo]}</span></div>
-        <div class="ac-metrics">
-          ${metr('Visitas feitas', r.visitas, deltaAc(r.visitas, ant.visitas), `em ${r.postos_visitados} posto(s)`)}
-          ${metr('Atividades concluídas', r.atividades, deltaAc(r.atividades, ant.atividades), r.atividades_com_atraso ? `${r.atividades_com_atraso} com atraso` : 'todas no prazo')}
-          ${metr('Solicitações atendidas', r.solicitacoes, deltaAc(r.solicitacoes, ant.solicitacoes), r.tempo_medio_solicitacao ? `média ${dur(r.tempo_medio_solicitacao)}` : 'sem tempo médio')}
-          ${metr('Itens NÃO OK', r.nao_ok, deltaAc(r.nao_ok, ant.nao_ok, { menorMelhor: true }), r.nao_ok ? `${r.nao_ok_com_atividade} com atividade` : 'nenhum problema')}
-        </div>
+        <div class="ac-head"><h2>${TITULO_AC[periodo]}</h2></div>
+        ${faixa([
+    { l: 'Visitas feitas', v: r.visitas, var: variacao(r.visitas, ant.visitas) },
+    { l: 'Itens com problema', v: r.nao_ok, var: variacao(r.nao_ok, ant.nao_ok, { menorMelhor: true }) },
+    { l: 'Solicitações atendidas', v: r.solicitacoes, var: variacao(r.solicitacoes, ant.solicitacoes) },
+    { l: 'Atividades concluídas', v: r.atividades, var: variacao(r.atividades, ant.atividades) },
+  ])}
+        <div class="pg-card">${graficoLinhas(a.serie, [
+    { campo: 'visitas', nome: 'Visitas feitas', cor: '#0f766e' },
+    { campo: 'nao_ok', nome: 'Itens com problema', cor: '#d7263d' },
+  ], { escala: a.escala, altura: 190, largura: 900 })}</div>
       </section>
 
-      <section class="ac-sec ac-duo">
-        <div>
-          <div class="ac-head"><span class="ac-num">4</span><h2>Postos</h2><a class="small ms-auto" href="#/postos">todos</a></div>
-          <div class="ac-box ac-postos">${a.postos.filter((p) => p.situacao !== 'sem_data').map((p) => `
-            <div class="ac-posto" data-href="#/postos/${p.id}"><span class="ac-dot ${COR_POSTO[p.situacao]}"></span>
-              <span class="flex-grow-1 min-w-0 text-truncate">${esc(p.nome)}</span><span class="small-muted text-nowrap">${esc(p.motivo)}</span></div>`).join('')
-            || '<div class="ac-posto small-muted">Nenhum posto com próxima visita.</div>'}
-            ${semData ? `<div class="ac-posto small-muted" data-href="#/postos">${semData} posto(s) sem próxima visita</div>` : ''}
-          </div>
-        </div>
-        <div>
-          <div class="ac-head"><h2>O que foi feito</h2>
-            <div class="ac-filtros ms-auto" id="ac-feed-filtros">${[['tudo', 'Tudo'], ['visita', 'Visitas'], ['atividade', 'Atividades'], ['solicitacao', 'Solicitações']]
-              .map(([k, t]) => `<button type="button" data-f="${k}">${t}</button>`).join('')}</div></div>
-          <div class="ac-box ac-feed" id="ac-feed"></div>
-        </div>
+      <section class="ac-sec">
+        <div class="ac-head"><h2>Últimos registros</h2></div>
+        <div class="ac-box ac-feed" id="ac-feed"></div>
       </section>`;
-    $$('#ac-feed-filtros [data-f]').forEach((b) => b.addEventListener('click', () => {
-      acFeed.filtro = b.dataset.f;
-      acFeed.tudo = false;
-      renderFeedAc();
-    }));
     renderFeedAc();
     ligarReagendar();
     $$('.ac-box [data-reag], .ac-box a.btn').forEach((b) => b.addEventListener('click', (ev) => ev.stopPropagation()));
@@ -3084,8 +3024,9 @@
       passos: [
         { rota: '#/', alvo: blocoComTitulo('Precisa de você'), titulo: 'Precisa de você', texto: 'Tudo o que está atrasado ou com problema, do mais grave para o menos grave, com a ação ao lado (Reagendar, Criar atividade, Abrir).' },
         { alvo: blocoComTitulo('Hoje'), titulo: 'Hoje', texto: 'As visitas do dia: feitas, em andamento (com quantas tarefas faltam) e previstas.' },
-        { alvo: () => $$('.ac-sec')[2] || null, titulo: 'Resultado do período', texto: 'Visitas, atividades e solicitações do período, comparadas com o período anterior. Troque o período nos botões Hoje, 7 dias, 30 dias e Mês.' },
-        { alvo: blocoComTitulo('Postos'), titulo: 'Postos', texto: 'Cada posto com uma bolinha: vermelho = visita atrasada, amarelo = item NÃO OK sem atividade, verde = em dia.' },
+        { alvo: '.ac-topo .pg-seg', titulo: 'Período', texto: 'Hoje, 7 dias, 30 dias ou o mês: muda os números e o gráfico abaixo.' },
+        { alvo: () => $$('.ac-sec')[2] || null, titulo: 'Como foi o período', texto: 'Quatro números comparados com o período anterior e um gráfico de linha com as visitas feitas e os itens com problema.' },
+        { alvo: blocoComTitulo('Últimos registros'), titulo: 'Últimos registros', texto: 'O que foi feito por último: visitas, atividades e solicitações. Clique para abrir.' },
         { alvo: '#btn-sino', titulo: 'Avisos', texto: 'O sino avisa quando uma visita pedida é concluída e quando alguém reagenda (com o motivo).' },
       ],
     },

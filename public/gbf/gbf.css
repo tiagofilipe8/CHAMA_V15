@@ -612,3 +612,23 @@ html[data-bs-theme="dark"] .tag-urg4 { background: rgba(215,38,61,.22); color: #
 html[data-bs-theme="dark"] .tag-urg3 { background: rgba(236,122,28,.22); color: #fdba74; }
 html[data-bs-theme="dark"] .tag-urg2 { background: rgba(217,164,0,.22); color: #fde047; }
 html[data-bs-theme="dark"] .tag-urg1 { background: rgba(76,125,217,.22); color: #9dbcf5; }
+
+/* Listas numeradas (rankings) no lugar das barras */
+.lista-num { display: flex; flex-direction: column; }
+.ln-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line-soft); font-size: .85rem; }
+.ln-row:first-child { border-top: 0; }
+.ln-row[data-href] { cursor: pointer; }
+.ln-pos { width: 20px; height: 20px; border-radius: 6px; background: var(--line-soft); color: var(--muted); font-size: .7rem; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ln-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ln-v { font-weight: 700; white-space: nowrap; }
+/* Gráfico de linha: bolinhas no tema escuro */
+html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
+/* Acompanhamento simplificado */
+.ac-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+.ac-head h2 { font-size: 1rem; }
+.ac-sec .pg-faixa { margin-bottom: 10px; }
+/* Números menores no site todo (cartões de número) */
+.kpi .val { font-size: 1.3rem; font-weight: 700; }
+.kpis-hoje .kpi .val { font-size: 1.45rem; }
+.kpi { padding: 11px 14px; }

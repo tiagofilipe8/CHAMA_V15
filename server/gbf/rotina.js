@@ -316,8 +316,32 @@ router.get('/acompanhamento', requireGestorFn, ah(async (req, res) => {
     })),
   ].sort((a, b) => new Date(b.quando) - new Date(a.quando));
 
+  // Série para o gráfico de linha: por hora (Hoje) ou por dia (7 dias, 30 dias, Mês)
+  const porHora = periodo === 'hoje';
+  const chaveSP = (d) => {
+    const x = new Date(d);
+    const dia = x.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    if (!porHora) return dia;
+    return `${dia}T${x.toLocaleString('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).slice(0, 2)}`;
+  };
+  const baldes = [];
+  if (porHora) {
+    const dia = new Date(fim).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    for (let h = 0; h < 24; h += 1) baldes.push(`${dia}T${String(h).padStart(2, '0')}`);
+  } else {
+    const ultimo = chaveSP(fim);
+    for (let d = chaveSP(ini); d <= ultimo;) {
+      baldes.push(d);
+      d = new Date(Date.parse(`${d}T12:00:00Z`) + 86400e3).toISOString().slice(0, 10);
+    }
+  }
+  const serie = new Map(baldes.map((b) => [b, { periodo: b, visitas: 0, nao_ok: 0, atividades: 0 }]));
+  visitas.rows.forEach((v) => { const s = serie.get(chaveSP(v.quando)); if (s) { s.visitas += 1; s.nao_ok += v.nao_ok; } });
+  tarefas.rows.forEach((t) => { const s = serie.get(chaveSP(t.quando)); if (s) s.atividades += 1; });
+
   res.json({
     periodo, inicio: ini, fim,
+    serie: [...serie.values()], escala: porHora ? 'hora' : 'dia',
     resumo: atual, anterior,
     atencao,
     hoje: {
