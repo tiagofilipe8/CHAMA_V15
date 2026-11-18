@@ -271,6 +271,23 @@ router.get('/acompanhamento', requireGestorFn, ah(async (req, res) => {
     titulo: t.title, detalhe: [`Até ${t.hora}`, t.responsavel || 'sem responsável', t.local].filter(Boolean).join(' · '),
     link: `#/atividades/${t.id}`, acao: { texto: 'Abrir', href: `#/atividades/${t.id}` },
   }));
+  // Pedidos de material passados da data, ou aguardando há mais de 2 dias
+  const materiais = await query(
+    `SELECT m.id, m.needed_by::text AS data, m.status, l.name AS local,
+            (${HOJE} - ${DIA('m.created_at')})::int AS dias,
+            (m.needed_by IS NOT NULL AND m.needed_by < ${HOJE}) AS passou_data,
+            (SELECT string_agg(i.quantity || ' ' || i.name, ', ' ORDER BY i.id) FROM gbf_material_request_items i WHERE i.request_id = m.id) AS itens
+     FROM gbf_material_requests m LEFT JOIN gbf_locations l ON l.id = m.location_id
+     WHERE m.status IN ('aguardando','separando')
+       AND ((m.needed_by IS NOT NULL AND m.needed_by < ${HOJE})
+         OR (m.status = 'aguardando' AND m.created_at < now() - interval '2 days'))`).catch(() => ({ rows: [] }));
+  materiais.rows.forEach((m) => atencao.push({
+    nivel: m.passou_data ? 'alto' : 'medio', rotulo: m.passou_data ? 'Material atrasado' : 'Material parado', peso: m.dias,
+    titulo: `${require('./materiais').numero(m.id)}${m.local ? ` — ${m.local}` : ''}: ${m.itens || 'sem itens'}`,
+    detalhe: m.passou_data ? `Precisava até ${dataBR(m.data)} · ${m.status === 'separando' ? 'separando' : 'ninguém separou ainda'}`
+      : `Pedido há ${m.dias} dia(s) e ninguém separou`,
+    link: '#/materiais', acao: { texto: 'Abrir', href: '#/materiais' },
+  }));
   const ordemNivel = { alto: 0, medio: 1 };
   atencao.sort((a, b) => ordemNivel[a.nivel] - ordemNivel[b.nivel] || b.peso - a.peso);
 

@@ -216,3 +216,33 @@ CREATE INDEX IF NOT EXISTS idx_gbf_espelho_recebido ON gbf_espelho(tabela, receb
 ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS central_user_id BIGINT UNIQUE;
 -- Posto do Dia a dia = localização da Central (cadastro único em Administração > Localizações)
 ALTER TABLE gbf_locations ADD COLUMN IF NOT EXISTS central_location_id BIGINT UNIQUE;
+
+-- Pedidos de material feitos pelo gestor (aba Materiais do Painel do gestor).
+-- Ficam no Painel, fora das tabelas da Central, porque a cópia da Orcim não pode apagá-los.
+-- Os itens usam a lista de Administração > Materiais (tabela materials), mas guardam nome e
+-- unidade no pedido: renomear ou apagar um material não muda pedidos antigos.
+CREATE TABLE IF NOT EXISTS gbf_material_requests (
+    id            BIGSERIAL PRIMARY KEY,
+    location_id   BIGINT      REFERENCES gbf_locations(id) ON DELETE SET NULL,
+    needed_by     DATE,
+    priority      SMALLINT    NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 4),
+    notes         TEXT,
+    status        TEXT        NOT NULL DEFAULT 'aguardando'
+                  CHECK (status IN ('aguardando','separando','entregue','cancelado')),
+    requested_by  BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    handled_by    BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    started_at    TIMESTAMPTZ,
+    delivered_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_material_requests_status ON gbf_material_requests(status, created_at DESC);
+CREATE TABLE IF NOT EXISTS gbf_material_request_items (
+    id          BIGSERIAL PRIMARY KEY,
+    request_id  BIGINT      NOT NULL REFERENCES gbf_material_requests(id) ON DELETE CASCADE,
+    material_id BIGINT,
+    name        TEXT        NOT NULL,
+    unit        TEXT,
+    quantity    INTEGER     NOT NULL CHECK (quantity > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_material_items_request ON gbf_material_request_items(request_id);

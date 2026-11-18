@@ -288,6 +288,7 @@
       ['#/agenda', 'calendar3', 'Agenda'],
       ['#/postos', 'geo-alt', 'Postos'],
       ['#/solicitacoes', 'megaphone', 'Solicitações'],
+      ['#/materiais', 'box-seam', 'Materiais'],
       ['#/atividades', 'kanban', ehGestor() ? 'Atividades' : 'Minhas atividades'],
       ['#/checklists', 'ui-checks', 'Checklists'],
       ['grp', 'Orcim'],
@@ -365,6 +366,7 @@
       else if (a === 'solicitacoes' && b && partes[2] === 'editar' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(b, qs, seq); }
       else if (a === 'solicitacoes' && b) { marcarMenu('#/solicitacoes'); await vSolicitacao(b, seq); }
       else if (a === 'solicitacoes') { marcarMenu('#/solicitacoes'); await vSolicitacoes(qs, seq); }
+      else if (a === 'materiais') { marcarMenu('#/materiais'); await vMateriais(seq); }
       else if (a === 'demandas' && b) { marcarMenu('#/demandas'); await vDemanda(b, seq); }
       else if (a === 'demandas') { marcarMenu('#/demandas'); await vDemandas(qs, seq); }
       else if (a === 'tudo' && ehGestor() && b && partes[2] !== undefined) { marcarMenu('#/tudo'); await vEspelhoRegistro(decodeURIComponent(b), decodeURIComponent(partes.slice(2).join('/')), seq); }
@@ -610,88 +612,65 @@
 
   let ultimoPainel = null;
 
+  // Painel do gestor: 4 abas compactas (TI do Beija-Flor, Orcim, Por posto, Materiais).
+  // Números pequenos numa faixa no topo, listas com barrinha e tabelas; nada de cartão grande.
+  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['materiais', 'Materiais']];
+
+  // variação contra o período anterior: "+6", "−4h"; verde quando melhorou
+  function variacao(atual, antes, { menorMelhor = false, tempo = false, pp = false } = {}) {
+    if (atual === null || atual === undefined || antes === null || antes === undefined) return '';
+    const dif = atual - antes;
+    if (!dif) return '';
+    const bom = menorMelhor ? dif < 0 : dif > 0;
+    const txt = tempo ? dur(Math.abs(dif)) : pp ? `${Math.abs(dif)} pp` : Math.abs(dif);
+    return `<span class="pg-var ${bom ? 'bom' : 'ruim'}" title="período anterior: ${tempo ? dur(antes) : antes}${pp ? '%' : ''}">${dif > 0 ? '+' : '−'}${txt}</span>`;
+  }
+  const faixa = (itens) => `<div class="pg-faixa">${itens.map((i) => `<div${i.href ? ` data-href="${i.href}" class="clicavel"` : ''}>
+    <span class="l">${esc(i.l)}</span><b>${esc(i.v ?? '—')}</b> ${i.var || ''}${i.sub ? ` <span class="s">${esc(i.sub)}</span>` : ''}</div>`).join('')}</div>`;
+  function listaBarras(lista, { valor = (x) => x.total, texto = (x) => x.total, cor = '', vazio = 'Nada no período.', max = 6, link = null } = {}) {
+    const itens = (lista || []).filter((x) => valor(x)).slice(0, max);
+    if (!itens.length) return `<div class="small-muted py-1">${esc(vazio)}</div>`;
+    const topo = Math.max(...itens.map(valor));
+    return itens.map((x) => `<div class="pg-barra"${link ? ` data-href="${link(x)}"` : ''}><span class="n" title="${esc(x.nome)}">${esc(x.nome)}</span>
+      <span class="b"><i style="width:${Math.max(4, Math.round((valor(x) / topo) * 100))}%${cor ? `;background:${typeof cor === 'function' ? cor(x) : cor}` : ''}"></i></span><span class="v">${esc(texto(x))}</span></div>`).join('');
+  }
+  const blocoPg = (titulo, corpo, nota = '') => `<section class="pg-bloco"><h3>${esc(titulo)}${nota ? `<span>${nota}</span>` : ''}</h3>${corpo}</section>`;
+  const emBreveApi = '<span class="pg-api">API Orcim</span>';
+  const pctTxt = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+
   async function vPainelGestor(qs, seq) {
     titulo('Painel do gestor');
     const salvo = (store.get('gbf_painel_periodo') || '').split('|');
     const pre = presetsPeriodo();
     const de = qs.get('de') || salvo[0] || pre[1][2];
     const ate = qs.get('ate') || salvo[1] || pre[1][3];
+    let aba = qs.get('aba') || store.get('gbf_painel_aba') || 'ti';
+    if (!ABAS_PAINEL.some(([k]) => k === aba)) aba = 'ti';
     const d = await API.get(`/painel-gestor?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`);
     if (seq !== renderSeq) return;
     ultimoPainel = d;
     store.set('gbf_painel_periodo', `${d.periodo.de}|${d.periodo.ate}`);
-    const o = d.orcim.kpis; const t = d.ti.kpis; const esc_ = d.periodo.escala;
+    store.set('gbf_painel_aba', aba);
     const ativo = pre.find((p) => p[2] === d.periodo.de && p[3] === d.periodo.ate)?.[0];
-    const tituloEscala = esc_ === 'dia' ? 'por dia' : esc_ === 'semana' ? 'por semana' : 'por mês';
+    const url = (x = {}) => `#/painel?${new URLSearchParams({ de: d.periodo.de, ate: d.periodo.ate, aba, ...x })}`;
 
+    const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos, materiais: abaMateriais }[aba](d);
     view().innerHTML = `
-      <div class="card-x mb-3">
-        <div class="filters mb-0">
-          <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(d.periodo.de)}"></label>
-          <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(d.periodo.ate)}"></label>
-          <button class="btn btn-sm btn-brand" id="pg-aplicar"><i class="bi bi-funnel"></i> Filtrar</button>
-          <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Períodos prontos">
-            ${pre.map(([k, nome]) => `<button class="btn ${k === ativo ? 'btn-dark' : 'btn-outline-secondary'}" data-preset="${k}">${nome}</button>`).join('')}
-          </div>
-          <button class="btn btn-sm btn-outline-brand ms-auto" id="pg-pdf"><i class="bi bi-file-earmark-pdf"></i> Exportar PDF</button>
+      <div class="pg-topo">
+        <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Períodos prontos">
+          ${pre.map(([k, nome]) => `<button class="btn ${k === ativo ? 'btn-dark' : 'btn-outline-secondary'}" data-preset="${k}">${nome}</button>`).join('')}
         </div>
-        <div class="small-muted mt-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · ${plural(d.periodo.dias, 'dia', 'dias')}.
-          Os números "agora" mostram a situação no momento, independentemente do filtro.</div>
+        <label class="small-muted d-flex align-items-center gap-1">De <input type="date" class="form-control form-control-sm" id="pg-de" value="${esc(d.periodo.de)}"></label>
+        <label class="small-muted d-flex align-items-center gap-1">Até <input type="date" class="form-control form-control-sm" id="pg-ate" value="${esc(d.periodo.ate)}"></label>
+        <button class="btn btn-sm btn-outline-secondary" id="pg-aplicar">Aplicar</button>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" id="pg-pdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
       </div>
+      <div class="small-muted mb-2">${fmtIso(d.periodo.de)} a ${fmtIso(d.periodo.ate)} · comparado com ${fmtIso(d.periodo.anterior.de)} a ${fmtIso(d.periodo.anterior.ate)}.
+        "Agora" é a situação neste momento.</div>
+      <nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="${url({ aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>
+      <div id="pg-conteudo">${conteudo}</div>`;
 
-      <h4 class="secao-painel"><i class="bi bi-building"></i> Orcim — chamados</h4>
-      <div class="kpis">
-        ${kpi('Abertos no período', o.criadas, { icon: 'inbox' })}
-        ${kpi('Resolvidos no período', o.resolvidas, { cls: 'ok', icon: 'check2-circle' })}
-        ${kpi('Dentro do prazo', pct(o.prazo_cumprido_pct), {
-    cls: o.prazo_cumprido_pct === null ? '' : (o.prazo_cumprido_pct >= 85 ? 'ok' : o.prazo_cumprido_pct >= 60 ? 'warn' : 'bad'),
-    hint: o.prazo_base ? `${o.prazo_base} resolvidos com prazo` : 'nenhum resolvido com prazo', icon: 'calendar-check',
-  })}
-        ${kpi('Tempo médio p/ resolver', dur(o.tempo_medio_resolucao), { hint: o.tempo_mediano_resolucao !== null ? `mediana ${dur(o.tempo_mediano_resolucao)}` : '', icon: 'stopwatch' })}
-        ${kpi('Em aberto agora', o.abertas_agora, { href: '#/demandas?situacao=abertas', icon: 'hourglass-split' })}
-        ${kpi('Atrasados agora', o.atrasadas_agora, { cls: o.atrasadas_agora ? 'bad' : 'ok', href: '#/demandas?situacao=atrasadas', icon: 'alarm' })}
-      </div>
-      <div class="grid-2">
-        <div class="card-x"><h3><i class="bi bi-bar-chart"></i>Chamados abertos × resolvidos ${tituloEscala}</h3>
-          ${graficoColunas(d.orcim.serie, CORES_ORCIM, { escala: esc_ })}</div>
-        <div class="card-x"><h3><i class="bi bi-tags"></i>Chamados abertos por categoria</h3>
-          ${barras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' })}
-          <h3 class="mt-3"><i class="bi bi-person-gear"></i>Resolvidos por técnico da Orcim</h3>
-          ${barras(d.orcim.por_tecnico, { vazio: 'Nenhum resolvido no período.' })}</div>
-      </div>
-
-      <h4 class="secao-painel"><i class="bi bi-feather"></i> TI do grupo — dia a dia</h4>
-      <div class="kpis">
-        ${kpi('Visitas feitas', t.visitas, { cls: 'ok', icon: 'geo-alt' })}
-        ${kpi('Atividades concluídas', t.atividades, { hint: t.atividades_com_atraso ? `${t.atividades_com_atraso} com atraso` : '', icon: 'check2-square' })}
-        ${kpi('Solicitações atendidas', t.solicitacoes, { hint: t.tempo_medio_solicitacao !== null ? `média ${dur(t.tempo_medio_solicitacao)}` : '', icon: 'megaphone' })}
-        ${kpi('Itens NÃO OK', t.nao_ok, { cls: t.nao_ok ? 'warn' : 'ok', icon: 'exclamation-diamond' })}
-        ${kpi('Postos atrasados agora', t.postos_atrasados_agora, { cls: t.postos_atrasados_agora ? 'bad' : 'ok', href: '#/postos', icon: 'exclamation-triangle' })}
-        ${kpi('Solicitações em aberto agora', t.solicitacoes_abertas_agora, { cls: t.solicitacoes_abertas_agora ? 'warn' : '', href: '#/solicitacoes', icon: 'hourglass-split' })}
-      </div>
-      <div class="grid-2">
-        <div class="card-x"><h3><i class="bi bi-bar-chart-steps"></i>Entregas da TI ${tituloEscala}</h3>
-          ${graficoColunas(d.ti.serie, CORES_TI, { escala: esc_, empilhado: true })}</div>
-        <div class="card-x"><h3><i class="bi bi-geo"></i>Visitas por posto</h3>
-          ${barras(d.ti.por_posto, { vazio: 'Nenhuma visita no período.' })}
-          <h3 class="mt-3"><i class="bi bi-people"></i>Por pessoa</h3>
-          ${d.ti.por_pessoa.length ? d.ti.por_pessoa.map((p) => `<div class="d-flex justify-content-between gap-2 py-1 border-bottom">
-            <span class="fw-semibold">${esc(p.nome)}</span>
-            <span class="small-muted">${plural(p.visitas, 'visita', 'visitas')} · ${plural(p.atividades, 'atividade', 'atividades')} · ${plural(p.solicitacoes, 'solicitação', 'solicitações')}</span></div>`).join('')
-    : '<div class="small-muted">Nenhuma entrega no período.</div>'}</div>
-      </div>
-
-      <div class="grid-2">
-        <div class="card-x"><h3><i class="bi bi-calendar-check"></i>Prazo cumprido pela Orcim</h3>
-          <div class="d-flex align-items-center gap-3">${medidor(o.prazo_cumprido_pct, 'Dentro do prazo')}
-            <div class="small-muted">${o.prazo_base ? `${o.prazo_base - o.fora_do_prazo} de ${o.prazo_base} chamados resolvidos dentro do prazo no período.` : 'Nenhum chamado com prazo foi resolvido no período.'}</div></div></div>
-        <div class="card-x"><h3><i class="bi bi-flag"></i>Precisa de atenção</h3>${listaAtencao(d)}</div>
-      </div>
-
-      <div class="card-x"><h3><i class="bi bi-journal-text"></i>Resumo escrito do período</h3>
-        ${textoRelatorio(d).map((p) => `<p class="mb-2">${esc(p)}</p>`).join('')}</div>`;
-
-    const ir = (a, b) => { location.hash = `#/painel?de=${a}&ate=${b}`; };
+    const ir = (a, b) => { location.hash = `#/painel?${new URLSearchParams({ de: a, ate: b, aba })}`; };
     $('#pg-aplicar').addEventListener('click', () => {
       const a = $('#pg-de').value; const b = $('#pg-ate').value;
       if (!a || !b) { toast('Escolha as duas datas.', true); return; }
@@ -702,7 +681,237 @@
       ir(p[2], p[3]);
     }));
     $('#pg-pdf').addEventListener('click', () => exportarPdf(ultimoPainel));
+    if (aba === 'materiais') await ligarMateriais($('#pg-conteudo'), { comFormulario: true });
     ligarCliques();
+  }
+
+  function abaTi(d) {
+    const k = d.ti.kpis; const a = d.ti.anterior || {}; const pr = d.ti.planejado_reativo;
+    return `
+      ${faixa([
+    { l: 'Atividades concluídas', v: k.atividades, var: variacao(k.atividades, a.atividades), href: '#/atividades?situacao=concluidas' },
+    { l: 'Tempo médio', v: dur(k.tempo_medio_atividade), var: variacao(k.tempo_medio_atividade, a.tempo_medio_atividade, { menorMelhor: true, tempo: true }) },
+    { l: 'No prazo', v: pctTxt(k.no_prazo_pct), sub: k.no_prazo_base ? `de ${k.no_prazo_base} com prazo` : '' },
+    { l: 'Visitas feitas', v: k.visitas, var: variacao(k.visitas, a.visitas), sub: `${k.postos_visitados} posto(s)` },
+    { l: 'Solicitações', v: k.solicitacoes, var: variacao(k.solicitacoes, a.solicitacoes), sub: k.tempo_medio_solicitacao ? `${dur(k.tempo_medio_solicitacao)} méd.` : '' },
+    { l: 'Em aberto agora', v: k.atividades_abertas_agora, sub: k.atividades_atrasadas_agora ? `${k.atividades_atrasadas_agora} atrasada(s)` : '', href: '#/atividades' },
+  ])}
+      <div class="pg-duas">
+        ${blocoPg('Problemas mais encontrados nas visitas', listaBarras(d.ti.nao_ok_por_item, { vazio: 'Nenhum item NÃO OK no período.' }), 'itens NÃO OK')}
+        ${blocoPg('Atividades abertas por idade', listaBarras(d.ti.abertas_por_idade, {
+    max: 4, vazio: 'Nenhuma atividade em aberto.', cor: (x) => (x.nome.startsWith('mais') ? '#dc2626' : x.nome.startsWith('3') ? '#f59e0b' : ''),
+  }), pr.planejado + pr.reativo ? `planejado ${pr.planejado_pct}% · reativo ${100 - pr.planejado_pct}%` : '')}
+      </div>
+      ${blocoPg('Por técnico', d.ti.tecnicos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+        <thead><tr><th>Técnico</th><th>Visitas</th><th>Atividades</th><th>Solicitações</th><th>Tempo médio</th><th>No prazo</th><th>Em aberto</th></tr></thead>
+        <tbody>${d.ti.tecnicos.map((t) => `<tr><td>${esc(t.nome)}</td><td>${t.visitas}</td><td>${t.atividades}</td><td>${t.solicitacoes}</td>
+          <td>${dur(t.tempo_medio)}</td><td>${pctTxt(t.no_prazo_pct)}</td><td>${t.em_aberto}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="small-muted">Nenhuma entrega no período.</div>')}`;
+  }
+
+  function abaOrcim(d) {
+    const k = d.orcim.kpis; const a = d.orcim.anterior || {};
+    const corUrg = { 4: '#dc2626', 3: '#f59e0b', 2: '', 1: '#94a3b8' };
+    return `
+      ${faixa([
+    { l: 'Abertos', v: k.criadas, var: variacao(k.criadas, a.criadas, { menorMelhor: true }) },
+    { l: 'Resolvidos', v: k.resolvidas, var: variacao(k.resolvidas, a.resolvidas) },
+    { l: 'Tempo médio', v: dur(k.tempo_medio_resolucao), var: variacao(k.tempo_medio_resolucao, a.tempo_medio_resolucao, { menorMelhor: true, tempo: true }), sub: k.tempo_mediano_resolucao !== null ? `mediana ${dur(k.tempo_mediano_resolucao)}` : '' },
+    { l: 'No prazo', v: pctTxt(k.prazo_cumprido_pct), var: variacao(k.prazo_cumprido_pct, a.prazo_cumprido_pct, { pp: true }) },
+    { l: '1ª resposta', v: dur(k.tempo_medio_primeira_resposta), var: variacao(k.tempo_medio_primeira_resposta, a.tempo_medio_primeira_resposta, { menorMelhor: true, tempo: true }) },
+    { l: 'Em aberto agora', v: k.abertas_agora, sub: k.atrasadas_agora ? `${k.atrasadas_agora} atrasado(s)` : '', href: '#/demandas?situacao=abertas' },
+  ])}
+      <div class="pg-duas">
+        ${blocoPg('Problemas mais recorrentes', listaBarras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' }), `${emBreveApi} hoje: categorias da Central`)}
+        ${blocoPg('Equipamentos mais solicitados', d.orcim.equipamentos ? listaBarras(d.orcim.equipamentos)
+    : '<div class="small-muted py-1">Aparece aqui quando a API da Orcim estiver ligada.</div>', emBreveApi)}
+      </div>
+      <div class="pg-duas">
+        ${blocoPg('Tempo médio por categoria', listaBarras(d.orcim.tempo_por_categoria, {
+    valor: (x) => x.tempo_medio, texto: (x) => dur(x.tempo_medio), vazio: 'Nenhum resolvido no período.',
+  }), 'resolvidos no período')}
+        ${blocoPg('Por urgência', listaBarras(d.orcim.por_urgencia, { max: 4, vazio: 'Nenhum chamado no período.', cor: (x) => corUrg[x.prioridade] }))}
+      </div>
+      <div class="pg-duas">
+        ${blocoPg('Em aberto por idade', listaBarras(d.orcim.abertas_por_idade, {
+    max: 4, vazio: 'Nada em aberto.', cor: (x) => (x.nome.startsWith('mais') ? '#dc2626' : x.nome.startsWith('1 a') ? '#f59e0b' : ''),
+  }), 'agora')}
+        ${blocoPg('Atrasados agora', d.orcim.atrasadas.length ? d.orcim.atrasadas.slice(0, 5).map((x) => `<div class="pg-linha" data-href="#/demandas/${x.id}">
+          <span class="text-truncate">${esc(x.number || `#${x.id}`)} — ${esc(x.title)}</span><span class="small-muted text-nowrap">${esc(x.assigned_name || 'sem técnico')}</span></div>`).join('')
+    : '<div class="small-muted py-1">Nenhum chamado atrasado.</div>')}
+      </div>
+      ${blocoPg('Por técnico da Orcim', d.orcim.tecnicos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+        <thead><tr><th>Técnico</th><th>Resolvidos</th><th>Tempo médio</th><th>1ª resposta</th><th>No prazo</th><th>Em aberto</th></tr></thead>
+        <tbody>${d.orcim.tecnicos.map((t) => `<tr><td>${esc(t.nome)}</td><td>${t.resolvidos}</td><td>${dur(t.tempo_medio)}</td><td>${dur(t.primeira_resposta)}</td>
+          <td>${pctTxt(t.no_prazo_pct)}</td><td>${t.em_aberto}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="small-muted">Nenhum chamado no período.</div>')}`;
+  }
+
+  function abaPostos(d) {
+    const cor = { atrasado: 'red', atencao: 'amber', ok: 'green', sem_data: 'gray' };
+    const semChamados = d.postos.every((p) => p.chamados === null);
+    return blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+      <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th><th>Materiais</th></tr></thead>
+      <tbody>${d.postos.map((p) => `<tr data-href="#/postos/${p.id}" class="clicavel">
+        <td class="text-nowrap"><span class="ac-dot ${cor[p.situacao]} d-inline-block me-2"></span>${esc(p.nome)}${p.dias_atraso ? ` <span class="small text-danger">${p.dias_atraso} d</span>` : ''}</td>
+        <td>${p.chamados ?? '—'}</td><td>${p.mais_repete ? `${esc(p.mais_repete.nome)} (${p.mais_repete.total})` : '—'}</td><td>${dur(p.tempo_medio)}</td>
+        <td>${p.nao_ok || '—'}</td><td>${p.visitas}</td><td>${p.ultima_visita ? fmtDia(p.ultima_visita) : '—'}</td>
+        <td>${p.atividades_abertas || '—'}</td><td>${p.materiais || '—'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="small-muted mt-2">Bolinha: vermelho = visita atrasada · amarelo = item NÃO OK sem atividade · verde = em dia · cinza = sem próxima visita.
+        ${semChamados ? 'A Central ainda não informa o posto de cada chamado; a coluna de chamados aparece quando essa ligação existir.' : 'Chamados ligados ao posto pela localização da Central.'}</div>`
+      : vazio('Nenhum posto cadastrado.', 'geo-alt'), 'clique num posto para ver o detalhe');
+  }
+
+  function abaMateriais(d) {
+    const m = d.materiais;
+    return `
+      ${faixa([
+    { l: 'Pedidos no período', v: m.pedidos },
+    { l: 'Itens pedidos', v: m.itens },
+    { l: 'Aguardando', v: m.aguardando, sub: m.aguardando_mais_antigo ? `mais antigo ${dur(m.aguardando_mais_antigo)}` : '' },
+    { l: 'Separando', v: m.separando },
+    { l: 'Atrasados', v: m.atrasados, sub: 'passou da data' },
+    { l: 'Entrega média', v: dur(m.entrega_media), sub: m.entregues ? `${m.entregues} entregue(s)` : '' },
+  ])}
+      <div id="mt-area"></div>
+      <div class="pg-duas">
+        ${blocoPg('Mais pedidos', listaBarras(m.mais_pedidos, { texto: (x) => `${x.total}${x.unidade ? ` ${x.unidade}` : ''}`, vazio: 'Nenhum pedido no período.' }), 'quantidade no período')}
+        ${blocoPg('Pedidos por posto', listaBarras(m.por_posto, { cor: '#534AB7', vazio: 'Nenhum pedido no período.' }))}
+      </div>`;
+  }
+
+  // ---------------------------- Materiais ----------------------------
+  // Usado na aba Materiais do painel (com formulário) e na tela "Materiais" (TI separa e entrega).
+  const SIT_MATERIAL = { aguardando: 'tag-gray', separando: 'tag-blue', entregue: 'tag-green', cancelado: 'tag-gray' };
+
+  function linhaItemMaterial(catalogo) {
+    return `<div class="mt-item">
+      <select class="form-select form-select-sm mt-material" aria-label="Material">
+        <option value="">Escolha o material</option>
+        ${catalogo.map((c) => `<option value="${c.id}" data-unit="${esc(c.unit || '')}">${esc(c.name)}${c.unit ? ` (${esc(c.unit)})` : ''}</option>`).join('')}
+        <option value="outro">Outro item (digitar)</option>
+      </select>
+      <input class="form-control form-control-sm mt-outro d-none" maxlength="120" placeholder="Nome do item" aria-label="Nome do item">
+      <input type="number" min="1" max="9999" value="1" class="form-control form-control-sm mt-qtd" aria-label="Quantidade">
+      <button type="button" class="btn btn-sm btn-link text-secondary mt-tirar" aria-label="Tirar item"><i class="bi bi-x-lg"></i></button>
+    </div>`;
+  }
+
+  async function ligarMateriais(raiz, { comFormulario = false } = {}) {
+    const area = $('#mt-area', raiz) || raiz;
+    const gestor = ehGestor();
+    const [pedidos, catalogo, postos] = await Promise.all([
+      API.get('/materiais/pedidos?situacao=todos&limite=40'),
+      comFormulario && gestor ? API.get('/materiais/catalogo') : [],
+      comFormulario && gestor ? API.get('/postos') : [],
+    ]);
+    const form = comFormulario && gestor ? `
+      <form class="pg-bloco mt-form" id="mt-form" novalidate>
+        <h3><i class="bi bi-box-seam"></i> Novo pedido de material</h3>
+        <div class="row g-2 mb-2">
+          <div class="col-md-5"><label class="form-label small mb-1" for="mt-posto">Para qual posto</label>
+            <select class="form-select form-select-sm" id="mt-posto"><option value="">Sem posto</option>${postos.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="col-md-3"><label class="form-label small mb-1" for="mt-data">Precisa até</label><input type="date" class="form-control form-control-sm" id="mt-data"></div>
+          <div class="col-md-4"><label class="form-label small mb-1" for="mt-urg">Urgência</label>
+            <select class="form-select form-select-sm" id="mt-urg">${[1, 2, 3, 4].map((p) => `<option value="${p}">${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
+        </div>
+        <div class="small-muted mb-1">Itens</div>
+        <div id="mt-itens">${linhaItemMaterial(catalogo)}</div>
+        <button type="button" class="btn btn-sm btn-link px-0" id="mt-mais"><i class="bi bi-plus-lg"></i> Adicionar item</button>
+        <div class="d-flex gap-2 mt-2 flex-wrap">
+          <input class="form-control form-control-sm flex-grow-1" id="mt-obs" maxlength="1000" placeholder="Observação (ex.: entregar ao gerente do posto)" aria-label="Observação" style="min-width:220px">
+          <button class="btn btn-sm btn-brand" type="submit">Enviar pedido</button>
+        </div>
+        <div class="text-danger small mt-2 d-none" id="mt-erro" role="alert"></div>
+      </form>` : '';
+
+    const podeMover = (p) => !['entregue', 'cancelado'].includes(p.status);
+    const lista = pedidos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+      <thead><tr><th>Nº</th><th>Posto</th><th>Itens</th><th>Pedido</th><th>Precisa até</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${pedidos.map((p) => `<tr>
+        <td class="text-nowrap">${esc(p.numero)}</td><td>${esc(p.location_name || '—')}</td>
+        <td>${esc(p.resumo_itens)}${p.notes ? `<div class="small-muted">${esc(p.notes)}</div>` : ''}${p.priority >= 3 ? ` ${tag(p.priority === 4 ? 'tag-red' : 'tag-amber', p.priority_label)}` : ''}</td>
+        <td class="text-nowrap">${fmtDia(p.created_at)}<div class="small-muted">${esc(p.requested_by_name || '')}</div></td>
+        <td class="text-nowrap">${p.needed_by ? fmtIso(p.needed_by) : '—'}</td>
+        <td class="text-nowrap">${p.atrasado ? tag('tag-red', 'Atrasado') : ''} ${tag(SIT_MATERIAL[p.status], p.status_label)}
+          ${p.handled_by_name && p.status !== 'aguardando' ? `<div class="small-muted">${esc(p.handled_by_name)}${p.delivered_at ? ` · ${fmtDia(p.delivered_at)}` : ''}</div>` : ''}</td>
+        <td class="text-end text-nowrap">${podeMover(p) ? `
+          ${p.status === 'aguardando' ? `<button class="btn btn-sm btn-outline-secondary" data-mt="${p.id}" data-st="separando">Separar</button>` : ''}
+          <button class="btn btn-sm btn-outline-success" data-mt="${p.id}" data-st="entregue">Entregue</button>
+          ${gestor ? `<button class="btn btn-sm btn-link text-secondary" data-mt="${p.id}" data-st="cancelado" data-num="${esc(p.numero)}">Cancelar</button>` : ''}` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`
+      : '<div class="small-muted py-1">Nenhum pedido de material ainda.</div>';
+
+    area.innerHTML = `${form}${blocoPg('Pedidos', lista, 'em aberto primeiro · atrasados no topo')}`;
+
+    $$('[data-mt]', area).forEach((b) => b.addEventListener('click', async () => {
+      const mudar = async () => {
+        await API.patch(`/materiais/pedidos/${b.dataset.mt}`, { status: b.dataset.st });
+        toast(b.dataset.st === 'entregue' ? 'Pedido marcado como entregue.' : b.dataset.st === 'separando' ? 'Pedido em separação.' : 'Pedido cancelado.');
+        render();
+      };
+      if (b.dataset.st === 'cancelado') {
+        janela('Cancelar pedido', `<p class="mb-0">Cancelar o pedido ${esc(b.dataset.num)}? A TI deixa de vê-lo como pendente.</p>`, { ok: 'Cancelar pedido', perigo: true, onOk: mudar });
+      } else {
+        try { await mudar(); } catch (e) { toast(e.message, true); }
+      }
+    }));
+
+    const f = $('#mt-form', area);
+    if (!f) return;
+    const ligarItem = (el) => {
+      const sel = $('.mt-material', el);
+      sel.addEventListener('change', () => {
+        $('.mt-outro', el).classList.toggle('d-none', sel.value !== 'outro');
+        if (sel.value === 'outro') $('.mt-outro', el).focus();
+      });
+      $('.mt-tirar', el).addEventListener('click', () => {
+        if ($$('.mt-item', f).length > 1) el.remove();
+        else { sel.value = ''; $('.mt-qtd', el).value = 1; $('.mt-outro', el).classList.add('d-none'); }
+      });
+    };
+    $$('.mt-item', f).forEach(ligarItem);
+    $('#mt-mais', f).addEventListener('click', () => {
+      $('#mt-itens', f).insertAdjacentHTML('beforeend', linhaItemMaterial(catalogo));
+      const novo = $$('.mt-item', f).pop();
+      ligarItem(novo);
+      $('.mt-material', novo).focus();
+    });
+    const erro = $('#mt-erro', f);
+    f.addEventListener('input', () => erro.classList.add('d-none'));
+    f.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const itens = [];
+      for (const el of $$('.mt-item', f)) {
+        const v = $('.mt-material', el).value;
+        const qtd = Number($('.mt-qtd', el).value);
+        const nome = $('.mt-outro', el).value.trim();
+        if (!v) continue;
+        if (v === 'outro' && !nome) { erro.textContent = 'Escreva o nome do item que não está na lista.'; erro.classList.remove('d-none'); $('.mt-outro', el).focus(); return; }
+        if (!Number.isInteger(qtd) || qtd < 1) { erro.textContent = 'A quantidade precisa ser 1 ou mais.'; erro.classList.remove('d-none'); $('.mt-qtd', el).focus(); return; }
+        itens.push(v === 'outro' ? { name: nome, quantity: qtd } : { material_id: v, quantity: qtd });
+      }
+      if (!itens.length) { erro.textContent = 'Escolha pelo menos um material.'; erro.classList.remove('d-none'); return; }
+      try {
+        const r = await API.post('/materiais/pedidos', {
+          location_id: $('#mt-posto', f).value || null, needed_by: $('#mt-data', f).value || null,
+          priority: Number($('#mt-urg', f).value), notes: $('#mt-obs', f).value, itens,
+        });
+        toast(`Pedido ${r.numero} enviado para a TI.`);
+        render();
+      } catch (e) {
+        erro.textContent = e.message;
+        erro.classList.remove('d-none');
+      }
+    });
+  }
+
+  // Tela "Materiais" (menu): a TI vê os pedidos e marca separando / entregue; o gestor também pede por aqui.
+  async function vMateriais(seq) {
+    titulo('Pedidos de material');
+    if (seq !== renderSeq) return;
+    view().innerHTML = `<div class="small-muted mb-3">${ehGestor() ? 'Peça material para um posto; a TI separa e entrega.' : 'Pedidos do gestor: marque quando começar a separar e quando entregar.'}</div><div id="mt-area"></div>`;
+    await ligarMateriais(view(), { comFormulario: true });
   }
 
   // Relatório para imprimir / salvar em PDF (sem bibliotecas: o navegador gera o PDF)
