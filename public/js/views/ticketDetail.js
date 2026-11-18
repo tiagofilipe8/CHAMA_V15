@@ -13,53 +13,53 @@ Views.ticketDetail = function ticketDetail(id) {
       return;
     }
 
-    const isRequester = t.requester_id === user.id;
-    const isManager = user.role === 'client' && (user.client_level || 1) === 2 && t.entity_id === user.entity_id;
-    const canClientApprove = t.approval_status === 'pending' && user.role === 'client';
-    const techCanEdit = user.role === 'technician' && t.assigned_user_id === user.id;
-    const isMyAssigned = user.role === 'technician' && t.assigned_user_id === user.id;
-    const isUnassignedTech = user.role === 'technician' && !t.assigned_user_id;
+    const isRequester = String(t.requester_id) === String(user.id);
+    // O que este usuario pode fazer neste chamado (calculado no servidor
+    // a partir das permissoes do perfil)
+    const can = t.can || {};
+    const triage = !!can.triage;
+    // "Instrucao de gestor": quem tem a permissao e nao faz parte da equipe
+    const isManager = !!can.manager_note && !can.internal_notes && !Roles.isMaster(user);
+    const canClientApprove = t.approval_status === 'pending' && !!can.approve;
+    const support = !!can.estimate; // pode alterar previsao/prazo
+    const canEdit = !!can.edit;
 
     // ---------------- Barra de acoes ----------------
     const actions = [];
-    if (user.role !== 'client') {
-      if (!t.assigned_user_id && user.role === 'technician') {
-        actions.push(`<button class="btn btn-outline-success btn-sm" id="act-take"><i class="bi bi-person-check"></i> Assumir chamado</button>`);
-      }
-      if (user.role === 'admin' || isMyAssigned) {
-        actions.push(`<button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar status</button>`);
-        actions.push(`<button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-approval"><i class="bi bi-check2-square"></i> Solicitar aprovação</button>`);
-      }
-      if (user.role === 'admin') {
-        actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-assign"><i class="bi bi-person-plus"></i> Atribuir técnico</button>`);
-      }
-      if (user.role === 'admin' || isMyAssigned) {
-        actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> Editar</button>`);
-      }
-    } else {
-      if (canClientApprove) {
-        actions.push(`<button class="btn btn-success btn-sm" id="act-approve"><i class="bi bi-check-circle"></i> Aprovar solução</button>`);
-        actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-reject"><i class="bi bi-x-circle"></i> Reprovar</button>`);
-      }
-      if ((isRequester || isManager) && [1, 2, 3, 4].includes(t.status)) {
-        actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-cancel"><i class="bi bi-slash-circle"></i> Cancelar chamado</button>`);
-      }
-      if ((isRequester || isManager) && [5, 6].includes(t.status)) {
-        actions.push(`<button class="btn btn-outline-primary btn-sm" id="act-reopen"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button>`);
-      }
-      if (isRequester && t.status === 1) {
-        actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> Editar</button>`);
-      }
-      if (isManager) {
-        actions.push(`<button class="btn btn-outline-warning btn-sm" id="act-note-focus"><i class="bi bi-chat-square-quote"></i> Instrução</button>`);
-      }
+    if (can.take) {
+      actions.push(`<button class="btn btn-outline-success btn-sm" id="act-take"><i class="bi bi-person-check"></i> Assumir chamado</button>`);
+    }
+    if (can.status) {
+      actions.push(`<button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar status</button>`);
+    }
+    if (can.resolve && ![5, 6, 7].includes(t.status)) {
+      actions.push(`<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-check2-circle"></i> Resolver chamado</button>`);
+    }
+    if (can.assign) {
+      actions.push(`<button class="btn btn-outline-secondary btn-sm" id="act-assign"><i class="bi bi-person-plus"></i> Atribuir técnico</button>`);
+    }
+    if (canEdit) {
+      actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> ${triage ? 'Triagem / editar' : 'Editar'}</button>`);
+    }
+    if (canClientApprove) {
+      actions.push(`<button class="btn btn-success btn-sm" id="act-approve"><i class="bi bi-check-circle"></i> Aprovar solução</button>`);
+      actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-reject"><i class="bi bi-x-circle"></i> Reprovar</button>`);
+    }
+    if (can.cancel && !can.status && [1, 2, 3, 4].includes(t.status)) {
+      actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-cancel"><i class="bi bi-slash-circle"></i> Cancelar chamado</button>`);
+    }
+    if (can.cancel && !can.status && [5, 6].includes(t.status)) {
+      actions.push(`<button class="btn btn-outline-primary btn-sm" id="act-reopen"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button>`);
+    }
+    if (isManager) {
+      actions.push(`<button class="btn btn-outline-warning btn-sm" id="act-note-focus"><i class="bi bi-chat-square-quote"></i> Instrução</button>`);
     }
 
     const actionBar = actions.length
       ? `<div class="d-flex flex-wrap gap-2 mb-3">${actions.join('')}</div>` : '';
 
     // ---------------- Aprovacao pendente (box para o cliente) ----------------
-    const approvalBox = user.role === 'client' && canClientApprove ? `
+    const approvalBox = canClientApprove ? `
       <div class="alert alert-warning d-flex flex-column gap-2 pending-box">
         <div><i class="bi bi-hourglass-split me-1"></i><b>Solução proposta aguardando sua aprovação</b></div>
         <div class="small text-muted">${esc(t.approval_comment || '')}</div>
@@ -82,15 +82,17 @@ Views.ticketDetail = function ticketDetail(id) {
         </li>`;
       }
       const icon = m.kind === 'note' ? 'bi-chat-square-quote' : m.kind === 'approval'
-        ? 'bi-check2-square' : 'bi-chat-dots';
-      const tone = m.kind === 'note' ? 'tl-warning' : m.kind === 'approval' ? 'tl-primary' : 'tl-info';
+        ? 'bi-check2-square' : m.kind === 'internal' ? 'bi-lock' : 'bi-chat-dots';
+      const tone = m.kind === 'note' ? 'tl-warning' : m.kind === 'approval' ? 'tl-primary'
+        : m.kind === 'internal' ? 'tl-secondary' : 'tl-info';
       const badgeCls = { 'tl-warning': 'text-bg-warning', 'tl-primary': 'text-bg-primary', 'tl-info': 'text-bg-info' }[tone] || 'text-bg-secondary';
-      return `<li class="timeline-item ${m.kind === 'system' ? 'system' : ''}">
+      const kindLabel = { note: 'Instrução', approval: 'Aprovação', internal: 'Nota interna (só equipe)' }[m.kind] || 'Mensagem';
+      return `<li class="timeline-item ${m.kind === 'internal' ? 'tl-internal' : ''}">
         <div class="tl-badge ${tone}"><i class="bi ${icon}"></i></div>
         <div class="tl-body">
           <div class="tl-head">
             <strong>${esc(m.author_name)}</strong>
-            <span class="badge ${badgeCls} ms-1">${m.kind === 'note' ? 'Instrução' : m.kind === 'approval' ? 'Aprovação' : 'Comentário'}</span>
+            <span class="badge ${badgeCls} ms-1">${kindLabel}</span>
             <span class="text-muted small ms-auto">${fmt.dateTime(m.created_at)}</span>
           </div>
           <div class="tl-content">${esc(m.content).replace(/\n/g, '<br>')}</div>
@@ -104,11 +106,11 @@ Views.ticketDetail = function ticketDetail(id) {
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <h4 class="mb-0 text-primary">${esc(t.number)}</h4>
             ${badgeStatus(t.status)}
-            ${badgePriority(t.priority)}
+            ${badgeImpact(t)}
             ${t.approval_status !== 'none' ? `<span class="badge bd-approval-${t.approval_status}">${LABELS.approval[t.approval_status]}</span>` : ''}
           </div>
           <h5 class="mt-1 mb-0">${esc(t.title)}</h5>
-          <small class="text-muted">${esc(t.entity_name || '')} · ${esc(t.category_name || '')}</small>
+          <small class="text-muted"><span class="multi-empresa">${esc(t.entity_name || '')} · </span>${t.location_name ? esc(t.location_name) + ' · ' : ''}${esc(t.display_category || '')}</small>
         </div>
         <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
       </div>
@@ -124,6 +126,15 @@ Views.ticketDetail = function ticketDetail(id) {
               <p class="mb-0 ticket-desc">${esc(t.description).replace(/\n/g, '<br>')}</p>
             </div>
           </div>
+          ${(t.materials || []).length ? `
+          <div class="card panel-card mb-3">
+            <div class="card-header"><i class="bi bi-box-seam me-1"></i> Materiais pedidos</div>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Material</th><th class="text-end">Quantidade</th></tr></thead>
+              <tbody>${t.materials.map((m) => `<tr><td>${esc(m.name)}</td>
+                <td class="text-end"><span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span></td></tr>`).join('')}</tbody>
+            </table></div>
+          </div>` : ''}
 
           <div class="card panel-card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -158,6 +169,11 @@ Views.ticketDetail = function ticketDetail(id) {
                   <i class="bi bi-send"></i> ${isManager ? 'Instrução' : 'Enviar'}
                 </button>
               </div>
+              ${can.internal_notes ? `
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="msg-internal">
+                <label class="form-check-label small" for="msg-internal"><i class="bi bi-lock me-1"></i>Nota interna (só a equipe vê; o cliente não vê)</label>
+              </div>` : ''}
             </div>
           </div>
         </div>
@@ -168,22 +184,70 @@ Views.ticketDetail = function ticketDetail(id) {
             <div class="card-body p-0">
               <table class="table table-sm mb-0 info-table">
                 <tbody>
-                  <tr><th>Requerente</th><td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.requester_email || '')}</small></td></tr>
+                  <tr><th>Solicitante</th><td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.requester_email || '')}</small>
+                    ${t.requester_rating_summary && t.requester_rating_summary.count ? `<br><small title="Média das notas dadas pela equipe">${starsHtml(t.requester_rating_summary.avg)} ${String(t.requester_rating_summary.avg).replace('.', ',')} em ${t.requester_rating_summary.count} chamado(s)</small>` : ''}</td></tr>
+                  <tr class="multi-empresa"><th>Empresa</th><td>${esc(t.entity_name || '—')}</td></tr>
+                  <tr><th>Localização</th><td>${t.location_name ? esc(t.location_name) + (t.location_code ? ` <small class="text-muted">(${esc(t.location_code)})</small>` : '') : '<span class="text-muted">—</span>'}</td></tr>
+                  <tr><th>Categoria</th><td>${esc(t.display_category || '—')}${triage && t.simple_category_name ? `<br><small class="text-muted">Na lista simples: ${esc(t.simple_category_icon || '')} ${esc(t.simple_category_name)}</small>` : ''}</td></tr>
+                  <tr><th>Urgência</th><td>${esc(t.impact_name || LABELS.priority[t.priority] || '—')}</td></tr>
+                  <tr><th>Precisa até</th><td>${t.needed_by ? fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00') : '<span class="text-muted">não informado</span>'}</td></tr>
+                  <tr><th>Previsão</th><td>${t.estimated_at ? `<b>${fmt.dateTime(t.estimated_at)}</b>` : '<span class="text-muted">ainda não definida</span>'}</td></tr>
+                  ${t.due_at ? `<tr><th>Prazo (SLA)</th><td>${fmt.dateTime(t.due_at)}</td></tr>` : ''}
                   <tr><th>Técnico</th><td>${t.assigned_name ? esc(t.assigned_name) : '<span class="text-danger">Não atribuído</span>'}</td></tr>
-                  <tr><th>Entidade</th><td>${esc(t.entity_name || '—')}</td></tr>
-                  <tr><th>Ativo</th><td>${t.asset_id ? `<a href="#/inventory/${t.asset_id}">${esc(t.asset_name||'Ativo')} ${t.asset_tag?`(${esc(t.asset_tag)})`:''}</a>` : '<span class="text-muted">—</span>'}</td></tr>
-                  <tr><th>Categoria</th><td>${esc(t.category_name || '—')}</td></tr>
-                  <tr><th>Prioridade</th><td>${esc(LABELS.priority[t.priority] || '—')}</td></tr>
+                  <tr><th>Moderador</th><td>${esc(t.moderator_name || '—')}</td></tr>
+                  <tr><th>Equipamento</th><td>${t.asset_id ? `<a href="#/inventory/${t.asset_id}">${esc(t.asset_name || 'Ativo')} ${t.asset_tag ? `(${esc(t.asset_tag)})` : ''}</a>` : '<span class="text-muted">—</span>'}</td></tr>
                   <tr><th>Abertura</th><td>${fmt.dateTime(t.created_at)}</td></tr>
-                  <tr><th>Últ. atualização</th><td>${fmt.dateTime(t.updated_at)}</td></tr>
-                  ${t.due_at ? `<tr><th>Prazo</th><td>${fmt.dateTime(t.due_at)}</td></tr>` : ''}
+                  <tr><th>Tempo decorrido</th><td>${fmtDuration(t.created_at, t.closed_at || t.resolved_at)}</td></tr>
+                  <tr><th>Atribuído em</th><td>${t.assigned_at ? fmt.dateTime(t.assigned_at) : '—'}</td></tr>
+                  ${t.assigned_at ? `<tr><th>Desde a atribuição</th><td>${fmtDuration(t.assigned_at, t.resolved_at || t.closed_at)}</td></tr>` : ''}
+                  ${t.resolved_at ? `<tr><th>Resolvido em</th><td>${fmt.dateTime(t.resolved_at)}</td></tr>` : ''}
+                  ${t.closed_at ? `<tr><th>Fechado em</th><td>${fmt.dateTime(t.closed_at)}</td></tr>` : ''}
                   <tr><th>Aprovação</th><td>${esc(LABELS.approval[t.approval_status] || '—')}</td></tr>
+                  ${t.resolution_notes ? `<tr class="table-success"><th>O que foi feito</th><td>${esc(t.resolution_notes).replace(/\n/g, '<br>')}${t.resolved_by_name ? `<br><small class="text-muted">por ${esc(t.resolved_by_name)}</small>` : ''}</td></tr>` : ''}
+                  ${t.equipment_action_label ? `<tr><th>Com o equipamento</th><td>${esc(t.equipment_action_label)}</td></tr>` : ''}
+                  ${t.resolution_cause_name ? `<tr><th>Causa <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${esc(t.resolution_cause_name)}</td></tr>` : ''}
+                  ${t.requester_rating !== undefined && t.requester_rating !== null ? `<tr><th>Nota do usuário <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${starsHtml(t.requester_rating)} ${t.requester_rating}/5${t.requester_rating_comment ? `<br><small class="text-muted">${esc(t.requester_rating_comment)}</small>` : ''}</td></tr>` : ''}
                 </tbody>
               </table>
             </div>
           </div>
 
-          ${t.approval_status === 'pending' && user.role !== 'client' ? `
+          <div class="card panel-card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-eye me-1"></i> Observadores <span class="badge text-bg-secondary">${(t.watchers || []).length}</span></span>
+            </div>
+            <ul class="list-group list-group-flush">
+              ${(t.watchers || []).map((w) => `
+                <li class="list-group-item d-flex align-items-center gap-2 small">
+                  <i class="bi bi-person"></i>
+                  <span class="flex-grow-1">${esc(w.name)}${w.location_name ? `<br><small class="text-muted">${esc(w.location_name)}</small>` : ''}</span>
+                  ${can.watchers ? `<button class="btn btn-sm btn-link text-danger p-0 td-rm-watcher" data-id="${w.id}" title="Remover"><i class="bi bi-x-lg"></i></button>` : ''}
+                </li>`).join('') || '<li class="list-group-item small text-muted">Ninguém acompanhando.</li>'}
+            </ul>
+            ${can.watchers ? `
+            <div class="card-body border-top">
+              <div class="input-group input-group-sm">
+                <select class="form-select" id="td-watcher-sel"><option value="">Carregando...</option></select>
+                <button class="btn btn-outline-primary" id="td-add-watcher"><i class="bi bi-plus-lg"></i> Adicionar</button>
+              </div>
+              <div class="form-text">Pessoas da mesma localização aparecem primeiro.</div>
+            </div>` : ''}
+          </div>
+
+          <div class="card panel-card mb-3">
+            <div class="card-header"><i class="bi bi-list-check me-1"></i> Histórico</div>
+            <ul class="list-group list-group-flush small" style="max-height:360px;overflow:auto">
+              ${(t.history || []).slice().reverse().map((h) => `
+                <li class="list-group-item">
+                  <div><b>${esc(LABELS.history[h.action] || h.action)}</b>${
+                    h.action === 'description' || h.action === 'solution' ? ''
+                    : (h.old_value || h.new_value) ? `: ${h.old_value ? `<span class="text-muted text-decoration-line-through">${esc(fmtHistValue(h.action, h.old_value))}</span> → ` : ''}${esc(fmtHistValue(h.action, h.new_value) || '—')}` : ''}</div>
+                  <small class="text-muted">${esc(h.user_name || 'Sistema')} · ${fmt.dateTime(h.created_at)}</small>
+                </li>`).join('') || '<li class="list-group-item text-muted">Sem registros.</li>'}
+            </ul>
+          </div>
+
+          ${t.approval_status === 'pending' && !canClientApprove ? `
           <div class="alert alert-secondary small"><i class="bi bi-hourglass-split me-1"></i>
             Solução proposta aguardando aprovação do cliente.</div>` : ''}
         </div>
@@ -194,10 +258,37 @@ Views.ticketDetail = function ticketDetail(id) {
     wireActions();
     wireModals();
 
+    // links antigos (?resolve=1 / ?assign=1): abre a janela certa
+    const q = new URLSearchParams(location.hash.split('?')[1] || '');
+    if ((q.get('resolve') || q.get('assign')) && !opts.silent) {
+      history.replaceState(null, '', `#/tickets/${t.id}`);
+      if (q.get('resolve') && can.resolve) TicketModals.resolve(t, { onDone: () => afterReload() });
+      else if (q.get('assign') && can.assign) TicketModals.assign(t, { onDone: () => afterReload() });
+    }
+    el.querySelector('#act-resolve')?.addEventListener('click', () => TicketModals.resolve(t, { onDone: () => afterReload() }));
+    el.querySelector('#act-assign')?.addEventListener('click', () => TicketModals.assign(t, { onDone: () => afterReload() }));
+
     // ---------------- acoes ----------------
     function afterReload() { renderDetail(el, { silent: true }); }
 
     function wireActions() {
+      el.querySelectorAll('.td-rm-watcher').forEach((b) => b.addEventListener('click', async () => {
+        try { await API.del(`/tickets/${t.id}/watchers/${b.dataset.id}`); toast('Observador removido.', 'warning'); afterReload(); }
+        catch (e) { showError(e); }
+      }));
+      const wSel = el.querySelector('#td-watcher-sel');
+      if (wSel) {
+        API.get(`/tickets/${t.id}/watcher-candidates`).then((list) => {
+          wSel.innerHTML = '<option value="">— escolha a pessoa —</option>' + list.map((u) =>
+            `<option value="${u.id}">${u.same_location ? '★ ' : ''}${esc(u.name)}${u.location_name ? ` (${esc(u.location_name)})` : ''}${['admin', 'moderator', 'technician'].includes(u.role) ? ' — equipe' : ''}</option>`).join('');
+        }).catch(() => { wSel.innerHTML = '<option value="">—</option>'; });
+        el.querySelector('#td-add-watcher').addEventListener('click', async () => {
+          if (!wSel.value) { toast('Escolha a pessoa.', 'warning'); return; }
+          try { await API.post(`/tickets/${t.id}/watchers`, { user_id: parseInt(wSel.value, 10) }); toast('Observador adicionado.', 'success'); afterReload(); }
+          catch (e) { showError(e); }
+        });
+      }
+
       const attInput = el.querySelector('#td-att-input');
       el.querySelector('#td-add-att')?.addEventListener('click', () => attInput?.click());
       attInput?.addEventListener('change', async () => {
@@ -275,11 +366,12 @@ Views.ticketDetail = function ticketDetail(id) {
       const sendMsg = async () => {
         const text = content.value.trim();
         if (!text) return;
-        const kind = isManager ? 'note' : 'comment';
+        const internal = el.querySelector('#msg-internal')?.checked;
+        const kind = internal ? 'internal' : isManager ? 'note' : 'comment';
         try {
           await API.post(`/tickets/${t.id}/messages`, { content: text, kind });
           content.value = '';
-          toast(isManager ? 'Instrução registrada e notificada.' : 'Comentário enviado.', 'success');
+          toast(kind === 'internal' ? 'Nota interna registrada.' : isManager ? 'Instrução registrada e notificada.' : 'Mensagem enviada.', 'success');
           afterReload();
         } catch (e) { showError(e); }
       };
@@ -291,9 +383,8 @@ Views.ticketDetail = function ticketDetail(id) {
     function modals() {
       return `
         ${statusModal()}
-        ${approvalModal()}
         ${editModal()}
-        ${assignModal()}`;
+`;
     }
 
     function statusModal() {
@@ -303,10 +394,11 @@ Views.ticketDetail = function ticketDetail(id) {
             <button class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <select class="form-select mb-2" id="s-status">
-              ${[2, 3, 4, 5, 6, 7].filter((s) => s !== t.status).map((s) =>
+              ${[2, 3, 4, 6, 7].filter((s) => s !== t.status).map((s) =>
                 `<option value="${s}">${LABELS.status[s]}</option>`).join('')}
             </select>
-            <textarea class="form-control" id="s-comment" rows="3" placeholder="Comentário (obrigatório para marcar como resolvido/fechado)..."></textarea>
+            <textarea class="form-control" id="s-comment" rows="3" placeholder="Comentário (opcional)..."></textarea>
+            <div class="form-text">Para marcar como <b>Resolvido</b>, use o botão "Resolver chamado" (tem um formulário de encerramento).</div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -315,26 +407,15 @@ Views.ticketDetail = function ticketDetail(id) {
         </div></div></div>`;
     }
 
-    function approvalModal() {
-      return `<div class="modal fade" id="modal-approval" tabindex="-1">
-        <div class="modal-dialog"><div class="modal-content">
-          <div class="modal-header"><h6>Solicitar aprovação · ${esc(t.number)}</h6>
-            <button class="btn-close" data-bs-dismiss="modal"></button></div>
-          <div class="modal-body">
-            <p class="small text-muted mb-2">Descreva a solução aplicada. O cliente (gestor) será notificado por e-mail/WhatsApp para aprovar ou reprovar.</p>
-            <textarea class="form-control" id="ap-comment" rows="4" placeholder="Descrição da solução..."></textarea>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button class="btn btn-primary" id="btn-send-approval">Enviar</button>
-          </div>
-        </div></div></div>`;
-    }
-
     function editModal() {
+      const toLocalInput = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      };
       return `<div class="modal fade" id="modal-edit" tabindex="-1">
         <div class="modal-dialog modal-lg"><div class="modal-content">
-          <div class="modal-header"><h6>Editar chamado · ${esc(t.number)}</h6>
+          <div class="modal-header"><h6>${triage ? 'Triagem / editar' : 'Editar'} · ${esc(t.number)}</h6>
             <button class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <div class="mb-2"><label class="form-label small">Título</label>
@@ -343,38 +424,32 @@ Views.ticketDetail = function ticketDetail(id) {
               <textarea class="form-control" id="e-desc" rows="4">${esc(t.description)}</textarea></div>
             <div class="row">
               <div class="col-md-6 mb-2"><label class="form-label small">Categoria</label>
-                <select class="form-select" id="e-cat"></select></div>
-              <div class="col-md-3 mb-2"><label class="form-label small">Prioridade</label>
-                <select class="form-select" id="e-prio">
-                  <option value="1">Baixa</option><option value="2">Média</option>
-                  <option value="3">Alta</option><option value="4">Urgente</option>
-                </select></div>
-              <div class="col-md-3 mb-2"><label class="form-label small">Prazo</label>
-                <input class="form-control" type="datetime-local" id="e-due"></div>
+                <select class="form-select" id="e-cat"><option value="">Carregando...</option></select>
+                ${triage && t.simple_category_name ? `<div class="form-text">Na lista simples: "${esc(t.simple_category_name)}". Aqui você pode detalhar (ex.: Rede › Problemas de conexão › DNS).</div>` : ''}</div>
+              <div class="col-md-6 mb-2"><label class="form-label small">Urgência</label>
+                <select class="form-select" id="e-impact"><option value="">Carregando...</option></select></div>
             </div>
-            <div class="mb-2"><label class="form-label small">Ativo (inventário)</label>
-              <select class="form-select" id="e-asset"><option value="">— sem ativo —</option></select>
-              <div class="form-text">Equipamento vinculado a esta OS (filtrado pela entidade)</div>
+            <div class="row">
+              <div class="col-md-6 mb-2"><label class="form-label small">Localização</label>
+                <select class="form-select" id="e-location"><option value="">Carregando...</option></select></div>
+              <div class="col-md-6 mb-2"><label class="form-label small">Precisa até (data de necessidade)</label>
+                <input class="form-control" type="date" id="e-needed" value="${t.needed_by ? String(t.needed_by).slice(0, 10) : ''}"></div>
+            </div>
+            ${support ? `
+            <div class="row">
+              <div class="col-md-6 mb-2"><label class="form-label small">Previsão de atendimento</label>
+                <input class="form-control" type="datetime-local" id="e-estimated" value="${toLocalInput(t.estimated_at)}">
+                <div class="form-text">O solicitante e os observadores são avisados.</div></div>
+              <div class="col-md-6 mb-2"><label class="form-label small">Prazo (SLA)</label>
+                <input class="form-control" type="datetime-local" id="e-due" value="${toLocalInput(t.due_at)}"></div>
+            </div>` : ''}
+            <div class="mb-2"><label class="form-label small">Equipamento (inventário)</label>
+              <select class="form-select" id="e-asset"><option value="">— sem equipamento —</option></select>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
             <button class="btn btn-primary" id="btn-save-edit">Salvar</button>
-          </div>
-        </div></div></div>`;
-    }
-
-    function assignModal() {
-      return `<div class="modal fade" id="modal-assign" tabindex="-1">
-        <div class="modal-dialog"><div class="modal-content">
-          <div class="modal-header"><h6>Atribuir técnico · ${esc(t.number)}</h6>
-            <button class="btn-close" data-bs-dismiss="modal"></button></div>
-          <div class="modal-body">
-            <select class="form-select" id="a-tech"><option value="">— Nenhum (desatribuir) —</option></select>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button class="btn btn-primary" id="btn-save-assign">Salvar</button>
           </div>
         </div></div></div>`;
     }
@@ -392,78 +467,75 @@ Views.ticketDetail = function ticketDetail(id) {
           hideModal('modal-status');
           toast('Status atualizado.', 'success'); afterReload();
         } catch (e) {
-          if (e.data?.request_approval) {
-            hideModal('modal-status');
-            const mEl = document.getElementById('modal-approval');
-            if (mEl) new bootstrap.Modal(mEl).show();
-            toast('Para resolver, solicite a aprovação do cliente.', 'warning');
-          } else showError(e);
+          showError(e);
         }
       });
 
-      el.querySelector('#btn-send-approval')?.addEventListener('click', async () => {
-        const comment = el.querySelector('#ap-comment').value.trim();
-        if (!comment) { toast('Descreva a solução.', 'warning'); return; }
-        try {
-          await API.post(`/tickets/${t.id}/approval`, { comment });
-          hideModal('modal-approval');
-          toast('Solicitação de aprovação enviada.', 'success'); afterReload();
-        } catch (e) { showError(e); }
-      });
-
-      el.querySelector('#btn-save-assign')?.addEventListener('click', async () => {
-        const techId = el.querySelector('#a-tech').value;
-        try {
-          await API.post(`/tickets/${t.id}/assign`, { user_id: techId || null });
-          hideModal('modal-assign');
-          toast('Atribuição atualizada.', 'success'); afterReload();
-        } catch (e) { showError(e); }
-      });
-
+      let editSimpleMode = false;
       el.querySelector('#btn-save-edit')?.addEventListener('click', async () => {
-        const due = el.querySelector('#e-due').value;
+        const body = {
+          title: el.querySelector('#e-title').value.trim(),
+          description: el.querySelector('#e-desc').value.trim(),
+          needed_by: el.querySelector('#e-needed').value || null,
+        };
+        const catVal = el.querySelector('#e-cat').value;
+        if (catVal) body[editSimpleMode ? 'simple_category_id' : 'category_id'] = parseInt(catVal, 10);
+        const imp = el.querySelector('#e-impact').value;
+        if (imp) body.impact_id = parseInt(imp, 10);
+        const locSel = el.querySelector('#e-location');
+        if (!locSel.disabled) body.location_id = locSel.value ? parseInt(locSel.value, 10) : null;
+        const est = el.querySelector('#e-estimated');
+        if (est) body.estimated_at = est.value ? new Date(est.value).toISOString() : null;
+        const due = el.querySelector('#e-due');
+        if (due) body.due_at = due.value ? new Date(due.value).toISOString() : null;
         const assetVal = el.querySelector('#e-asset')?.value;
+        body.asset_id = assetVal ? parseInt(assetVal, 10) : null;
         try {
-          await API.patch(`/tickets/${t.id}`, {
-            title: el.querySelector('#e-title').value.trim(),
-            description: el.querySelector('#e-desc').value.trim(),
-            category_id: parseInt(el.querySelector('#e-cat').value, 10) || null,
-            priority: parseInt(el.querySelector('#e-prio').value, 10),
-            due_at: due ? new Date(due).toISOString() : null,
-            asset_id: assetVal ? parseInt(assetVal,10) : null,
-          });
+          await API.patch(`/tickets/${t.id}`, body);
           hideModal('modal-edit');
           toast('Chamado atualizado.', 'success'); afterReload();
-        } catch (e) { showError(e); }
+        } catch (e) {
+          if (e.status === 422 && /Nenhuma alteração/.test(e.message)) { hideModal('modal-edit'); return; }
+          showError(e);
+        }
       });
 
       // cargas de modais
       const editCat = el.querySelector('#e-cat');
       if (editCat) {
-        API.get('/categories').then((cats) => {
-          editCat.innerHTML = `<option value="">— sem categoria —</option>` +
-            cats.filter((c) => c.active).map((c) => `<option value="${c.id}" ${c.id === t.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+        API.get('/categories/for-entity/' + t.entity_id).then((data) => {
+          editSimpleMode = data.mode === 'simple';
+          if (editSimpleMode) {
+            editCat.innerHTML = data.categories.map((c) =>
+              `<option value="${c.id}" ${String(c.id) === String(t.display_simple_id) ? 'selected' : ''}>${esc(c.icon || '')} ${esc(c.name)}</option>`).join('');
+          } else {
+            editCat.innerHTML = categoryOptions(data.categories);
+            editCat.value = String(t.category_id || '');
+          }
         }).catch(() => {});
       }
-      const ePrio = el.querySelector('#e-prio');
-      if (ePrio) ePrio.value = String(t.priority || 2);
-      const eDue = el.querySelector('#e-due');
-      if (eDue && t.due_at) eDue.value = new Date(t.due_at).toISOString().slice(0, 16);
+      const eImpact = el.querySelector('#e-impact');
+      if (eImpact) {
+        API.get('/impact-levels').then((levels) => {
+          eImpact.innerHTML = levels.map((l) => `<option value="${l.id}" ${String(l.id) === String(t.impact_id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+        }).catch(() => {});
+      }
+      const eLoc = el.querySelector('#e-location');
+      if (eLoc) {
+        API.get(`/locations?entity_id=${t.entity_id}&active=true`).then((locs) => {
+          if (!locs.length) { eLoc.innerHTML = '<option value="">Nenhuma localização cadastrada</option>'; eLoc.disabled = true; return; }
+          eLoc.innerHTML = '<option value="">— nenhuma —</option>' + locs.map((l) =>
+            `<option value="${l.id}" ${String(l.id) === String(t.location_id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+        }).catch(() => {});
+      }
       const eAsset = el.querySelector('#e-asset');
       if (eAsset) {
         API.get('/inventory/assets?entity_id=' + t.entity_id).then((assets) => {
-          eAsset.innerHTML = `<option value="">— sem ativo —</option>` +
-            assets.map((a) => `<option value="${a.id}" ${String(a.id)===String(t.asset_id)?'selected':''}>${esc(a.name)} ${a.asset_tag?`(${esc(a.asset_tag)})`:''}</option>`).join('');
+          eAsset.innerHTML = `<option value="">— sem equipamento —</option>` +
+            assets.map((a) => `<option value="${a.id}" ${String(a.id) === String(t.asset_id) ? 'selected' : ''}>${esc(a.name)} ${a.asset_tag ? `(${esc(a.asset_tag)})` : ''}</option>`).join('');
         }).catch(() => {});
       }
 
-      const aTech = el.querySelector('#a-tech');
-      if (aTech) {
-        API.get('/users?role=technician&active=true').then((users) => {
-          aTech.innerHTML = `<option value="">— Nenhum (desatribuir) —</option>` +
-            users.map((u) => `<option value="${u.id}" ${u.id === t.assigned_user_id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-        }).catch(() => {});
-      }
     }
   };
-};
+};

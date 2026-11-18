@@ -58,6 +58,7 @@ async function createBackup() {
     '-U', config.db.user,
     '-d', config.db.name,
     '--format=plain',
+    '--exclude-schema=preview_*', // copias da Visualizacao de cargos
     '--no-owner',
     '--no-privileges',
     '--clean',
@@ -125,4 +126,4 @@ module.exports = {
   filePath,
   startScheduler,
   backupsDir,
-};
+};

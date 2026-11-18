@@ -5,7 +5,18 @@ const fs = require('fs');
 const multer = require('multer');
 const config = require('../config');
 const { query } = require('../db');
-const { requireAuth, scopeConditions } = require('../middleware/auth');
+const {
+  requireAuth, scopeConditions, canAccessEntity, isStaff, isMaster, entityIdsOf, has,
+} = require('../middleware/auth');
+
+// Inventario: ver exige "Ver o inventario"; criar/editar/excluir exige "Cadastrar e editar equipamentos"
+const requireInv = [requireAuth, (req, res, next) => {
+  const perm = req.method === 'GET' ? 'inventory.view' : 'inventory.manage';
+  // a lista simples de equipamentos tambem serve para escolher o equipamento ao abrir chamado
+  if (req.method === 'GET' && req.path === '/assets' && has(req.user, 'ticket.create')) return next();
+  if (!has(req.user, perm)) return res.status(403).json({ error: 'Seu perfil não tem permissão para esta ação no inventário.' });
+  next();
+}];
 
 const router = express.Router();
 
@@ -31,11 +42,7 @@ const assetPhotoUpload = multer({
   },
 });
 
-function canAccessEntity(user, entityId) {
-  if (user.role === 'admin' || user.role === 'technician') return true;
-  if (user.role === 'client' && Number(user.client_level) === 2) return String(user.entity_id) === String(entityId);
-  return String(user.entity_id) === String(entityId);
-}
+// canAccessEntity vem de ../middleware/auth (equipe: todas; admin local/gestor/usuario: as proprias empresas)
 
 // Normaliza datas vindas do agente (evita /Date(...)/ e formatos WMI inválidos)
 function sanitizeDate(v) {
@@ -69,7 +76,7 @@ function sanitizeTz(v) {
 // ------------------- ASSETS -------------------
 
 // Lista ativos com filtros
-router.get('/assets', requireAuth, async (req, res) => {
+router.get('/assets', requireInv, async (req, res) => {
   const { entity_id, type, status, q, limit } = req.query;
   const user = req.user;
   const conds = [];
@@ -78,9 +85,9 @@ router.get('/assets', requireAuth, async (req, res) => {
   if (entity_id) {
     if (!canAccessEntity(user, entity_id)) return res.status(403).json({ error: 'Acesso negado a esta entidade' });
     add('a.entity_id = ?', entity_id);
-  } else if (user.role === 'client') {
-    // cliente vê apenas da própria entidade
-    add('a.entity_id = ?', user.entity_id);
+  } else if (!isStaff(user)) {
+    // fora da equipe: apenas as empresas do usuario
+    add('a.entity_id::text = ANY(?::text[])', entityIdsOf(user));
   }
   if (type) add('a.type = ?', type);
   if (status) add('a.status = ?', status);
@@ -109,7 +116,7 @@ router.get('/assets', requireAuth, async (req, res) => {
 });
 
 // Detalhe do ativo
-router.get('/assets/:id', requireAuth, async (req, res) => {
+router.get('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query(
     `SELECT a.*, e.name AS entity_name, u.name AS responsible_name
      FROM assets a
@@ -154,11 +161,11 @@ router.get('/assets/:id', requireAuth, async (req, res) => {
 });
 
 // Criar ativo
-router.post('/assets', requireAuth, async (req, res) => {
+router.post('/assets', requireInv, async (req, res) => {
   const user = req.user;
   const { entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro } = req.body || {};
   let entId = entity_id;
-  if (user.role === 'client') entId = user.entity_id;
+  if (!isStaff(user) && !(entId && canAccessEntity(user, entId))) entId = user.entity_id;
   if (!entId) return res.status(422).json({ error: 'Entidade é obrigatória' });
   if (!canAccessEntity(user, entId)) return res.status(403).json({ error: 'Acesso negado a esta entidade' });
   if (!name) return res.status(422).json({ error: 'Nome do ativo é obrigatório' });
@@ -184,7 +191,7 @@ router.post('/assets', requireAuth, async (req, res) => {
 });
 
 // Atualizar ativo
-router.patch('/assets/:id', requireAuth, async (req, res) => {
+router.patch('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   const asset = rows[0];
@@ -221,7 +228,7 @@ router.patch('/assets/:id', requireAuth, async (req, res) => {
 });
 
 // Excluir ativo
-router.delete('/assets/:id', requireAuth, async (req, res) => {
+router.delete('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -231,7 +238,7 @@ router.delete('/assets/:id', requireAuth, async (req, res) => {
 
 // ------------------- FOTOS -------------------
 
-router.post('/assets/:id/photos', requireAuth, assetPhotoUpload.single('photo'), async (req, res) => {
+router.post('/assets/:id/photos', requireInv, assetPhotoUpload.single('photo'), async (req, res) => {
   const assetId = req.params.id;
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [assetId]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
@@ -250,7 +257,7 @@ router.post('/assets/:id/photos', requireAuth, assetPhotoUpload.single('photo'),
   res.status(201).json(photo[0]);
 });
 
-router.get('/assets/:id/photos', requireAuth, async (req, res) => {
+router.get('/assets/:id/photos', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -258,7 +265,7 @@ router.get('/assets/:id/photos', requireAuth, async (req, res) => {
   res.json(photos);
 });
 
-router.delete('/assets/:assetId/photos/:photoId', requireAuth, async (req, res) => {
+router.delete('/assets/:assetId/photos/:photoId', requireInv, async (req, res) => {
   const { rows } = await query('SELECT a.* FROM assets a JOIN asset_photos ap ON ap.asset_id=a.id WHERE ap.id=$1', [req.params.photoId]);
   if (!rows.length) return res.status(404).json({ error: 'Foto não encontrada' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -270,7 +277,7 @@ router.delete('/assets/:assetId/photos/:photoId', requireAuth, async (req, res) 
   res.json({ ok: true });
 });
 
-router.post('/assets/:assetId/photos/:photoId/primary', requireAuth, async (req, res) => {
+router.post('/assets/:assetId/photos/:photoId/primary', requireInv, async (req, res) => {
   const { rows } = await query('SELECT a.* FROM assets a JOIN asset_photos ap ON ap.asset_id=a.id WHERE ap.id=$1', [req.params.photoId]);
   if (!rows.length) return res.status(404).json({ error: 'Foto não encontrada' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -302,10 +309,10 @@ router.get('/assets/:assetId/photos/:photoId/file', async (req, res, next) => {
 // ------------------- AGENTES -------------------
 
 // Provisionamento - gera token para instalação
-router.post('/agents/provision', requireAuth, async (req, res) => {
+router.post('/agents/provision', requireInv, async (req, res) => {
   const { entity_id } = req.body || {};
   let entId = entity_id;
-  if (req.user.role === 'client') entId = req.user.entity_id;
+  if (!isStaff(req.user) && !(entId && canAccessEntity(req.user, entId))) entId = req.user.entity_id;
   if (!entId) return res.status(422).json({ error: 'Entidade é obrigatória' });
   if (!canAccessEntity(req.user, entId)) return res.status(403).json({ error: 'Acesso negado' });
   const token = `${entId}-${crypto.randomBytes(3).toString('hex').toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
@@ -316,13 +323,13 @@ router.post('/agents/provision', requireAuth, async (req, res) => {
 });
 
 // Listar agentes
-router.get('/agents', requireAuth, async (req, res) => {
+router.get('/agents', requireInv, async (req, res) => {
   const user = req.user;
   const cond = [];
   const params = [];
-  if (user.role === 'client') {
-    cond.push(`ag.entity_id = $${params.length+1}`);
-    params.push(user.entity_id);
+  if (!isStaff(user)) {
+    cond.push(`ag.entity_id::text = ANY($${params.length+1}::text[])`);
+    params.push(entityIdsOf(user));
   } else if (req.query.entity_id) {
     cond.push(`ag.entity_id = $${params.length+1}`);
     params.push(req.query.entity_id);
@@ -470,11 +477,11 @@ router.post('/agents/inventory', requireAgentAuth, async (req, res) => {
 // ------------------- HISTORICO DE MANUTENCOES -------------------
 
 function canEditMaintenance(user, row) {
-  return user.role === 'admin' || String(user.id) === String(row.created_by);
+  return isMaster(user) || String(user.id) === String(row.created_by);
 }
 
 // Listar manutencoes do ativo
-router.get('/assets/:id/maintenances', requireAuth, async (req, res) => {
+router.get('/assets/:id/maintenances', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -488,7 +495,7 @@ router.get('/assets/:id/maintenances', requireAuth, async (req, res) => {
 });
 
 // Registrar manutencao realizada
-router.post('/assets/:id/maintenances', requireAuth, async (req, res) => {
+router.post('/assets/:id/maintenances', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -516,7 +523,7 @@ router.post('/assets/:id/maintenances', requireAuth, async (req, res) => {
 });
 
 // Alterar manutencao — somente quem criou ou admin
-router.patch('/assets/:assetId/maintenances/:id', requireAuth, async (req, res) => {
+router.patch('/assets/:assetId/maintenances/:id', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.assetId]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -553,7 +560,7 @@ router.patch('/assets/:assetId/maintenances/:id', requireAuth, async (req, res) 
 });
 
 // Histórico do ativo
-router.get('/assets/:id/history', requireAuth, async (req, res) => {
+router.get('/assets/:id/history', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
@@ -562,7 +569,7 @@ router.get('/assets/:id/history', requireAuth, async (req, res) => {
 });
 
 // Transferência de ativo entre entidades (histórico acompanha)
-router.post('/assets/:id/transfer', requireAuth, async (req, res) => {
+router.post('/assets/:id/transfer', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });

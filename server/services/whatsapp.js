@@ -210,7 +210,8 @@ function isConfigured() {
   return true;
 }
 
-start();
+// WHATSAPP_DISABLED=1 desliga o cliente (ex.: servidor sem navegador). Sem a variável, nada muda.
+if (process.env.WHATSAPP_DISABLED !== '1') start();
 
 module.exports = {
   start,

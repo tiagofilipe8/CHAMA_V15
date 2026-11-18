@@ -3,12 +3,23 @@
 // ---------------------------------------------------------------
 
 // ---------------- Usuarios ----------------
+// Perfil com a cor do módulo: gestão = violeta, equipe Orcim = azul, posto = verde-água, usuário = cinza
+function tagPerfil(u) {
+  const posto = u.role === 'client' && u.location_name && u.name === u.location_name;
+  const [cor, icone] = posto ? ['tg-teal', 'bi-shop']
+    : ({ admin: ['tg-violet', 'bi-shield-lock'], admin_local: ['tg-violet', 'bi-shield'], moderator: ['tg-blue', 'bi-funnel'],
+      technician: ['tg-blue', 'bi-tools'] }[u.role]
+      || (Number(u.client_level) === 2 ? ['tg-violet', 'bi-briefcase'] : ['tg-gray', 'bi-person']));
+  return `<span class="tg ${cor}"><i class="bi ${icone}"></i>${esc(posto ? 'Posto' : Roles.label(u))}</span>`;
+}
+
 Views.adminUsers = async function adminUsers(el) {
   const _u = currentUser();
-  const _isManager = _u.role === 'client' && Number(_u.client_level) === 2;
-  if (!(_u.role === 'admin' || _isManager)) {
+  // admin local e gestor administram somente usuarios da propria empresa
+  const _isManager = !Roles.isMaster(_u);
+  if (!Roles.canManageUsers(_u)) {
     location.hash = '#/dashboard';
-    toast('Acesso restrito a administradores e gestores.', 'warning');
+    toast('Seu perfil não pode gerenciar usuários.', 'warning');
     return;
   }
   el.innerHTML = `
@@ -16,20 +27,22 @@ Views.adminUsers = async function adminUsers(el) {
       <div class="card-body py-3 d-flex flex-wrap gap-2 align-items-center">
         <input class="form-control form-control-sm" id="u-q" style="max-width:260px" placeholder="Buscar usuário...">
         <select class="form-select form-select-sm" id="u-role" style="max-width:170px">
-          <option value="">Todos os papéis</option>
-          <option value="admin">Administrador</option>
+          <option value="">Todos os perfis</option>
+          <option value="admin">Administrador Mestre</option>
+          <option value="admin_local">Administrador Local</option>
+          <option value="moderator">Moderador</option>
           <option value="technician">Técnico</option>
-          <option value="client">Cliente</option>
+          <option value="client">Usuário / Gestor</option>
         </select>
-        <select class="form-select form-select-sm" id="u-entity" style="max-width:220px">
-          <option value="">Todas as entidades</option>
+        <select class="form-select form-select-sm multi-empresa" id="u-entity" style="max-width:220px">
+          <option value="">Todas as empresas</option>
         </select>
         <button class="btn btn-primary btn-sm ms-auto" id="btn-new-user"><i class="bi bi-person-plus"></i> Novo usuário</button>
       </div>
     </div>
     <div class="card panel-card">
       <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Usuário</th><th>Papel</th><th>Nível</th><th>Entidade</th><th>Contato</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
+        <thead><tr><th>Usuário</th><th>Perfil</th><th class="multi-empresa">Empresa</th><th>Localização</th><th>Contato</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
         <tbody id="u-body"><tr><td colspan="7" class="text-center py-3 text-muted">Carregando usuários...</td></tr></tbody>
       </table></div>
     </div>`;
@@ -53,11 +66,11 @@ Views.adminUsers = async function adminUsers(el) {
             return `
           <tr>
             <td><strong>${esc(u.name)}</strong><br><small class="text-muted">@${esc(u.username)}</small></td>
-            <td><span class="badge text-bg-${u.role === 'admin' ? 'danger' : u.role === 'technician' ? 'primary' : 'success'}">${LABELS.role[u.role]}</span></td>
-            <td>${u.role === 'client' ? esc(LABELS.clientLevel[u.client_level]) : '—'}</td>
-            <td>${esc(u.entity_name || '—')}</td>
+            <td>${tagPerfil(u)}</td>
+            <td class="multi-empresa">${esc(u.entity_name || '—')}${(u.extra_entity_ids || []).length ? `<br><small class="text-muted">+${u.extra_entity_ids.length} empresa(s)</small>` : ''}</td>
+            <td>${esc(u.location_name || '—')}</td>
             <td>${esc(u.email || '')}<br><small class="text-muted">${esc(u.phone || '')}</small></td>
-            <td>${u.active ? '<span class="text-success"><i class="bi bi-check-circle"></i></span>' : '<span class="text-danger"><i class="bi bi-x-circle"></i></span>'}</td>
+            <td>${u.active ? '<span class="tg tg-green">Ativo</span>' : '<span class="tg tg-gray">Inativo</span>'}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary u-edit" data-id="${u.id}" title="Editar"><i class="bi bi-pencil"></i></button>
               ${u.active
@@ -102,11 +115,11 @@ Views.adminUsers = async function adminUsers(el) {
     const sel = document.getElementById('u-entity');
     if (_isManager) {
       const own = ents.find((e) => String(e.id) === String(_u.entity_id));
-      sel.innerHTML = own ? `<option value="${own.id}">${esc(own.name)} (sua entidade)</option>` : `<option value="">Sem entidade</option>`;
+      sel.innerHTML = own ? `<option value="${own.id}">${esc(own.name)} (sua empresa)</option>` : `<option value="">Sem empresa</option>`;
       sel.disabled = true;
-      sel.title = 'Gestor só visualiza usuários da própria entidade';
+      sel.title = 'Você só visualiza usuários da própria empresa';
     } else {
-      sel.innerHTML = `<option value="">Todas as entidades</option>` +
+      sel.innerHTML = `<option value="">Todas as empresas</option>` +
         ents.filter((e) => e.active).map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
     }
   } catch {}
@@ -120,6 +133,19 @@ Views.adminUsers = async function adminUsers(el) {
     if (id) { try { const all = await API.get('/users'); u = all.find((x) => String(x.id) === String(id)); } catch {} }
     const ents = await API.get('/entities').catch(() => []);
     const isMgrModal = _isManager;
+    // perfil = papel + nivel (Usuario e Gestor sao "client" com nivel 1 ou 2)
+    const ALL_PROFILES = [
+      { value: 'client:1', label: 'Usuário', help: 'Abre e acompanha os próprios chamados.' },
+      { value: 'client:2', label: 'Gestor', help: 'Acompanha chamados e painel da(s) empresa(s) e aprova soluções.' },
+      { value: 'admin_local', label: 'Administrador Local', help: 'Administra usuários, localizações e chamados de UMA empresa.' },
+      { value: 'technician', label: 'Técnico', help: 'Atende os chamados atribuídos a ele.' },
+      { value: 'moderator', label: 'Moderador', help: 'Faz a triagem: atribui técnico, ajusta categoria/urgência, previsão e observadores.' },
+      { value: 'admin', label: 'Administrador Mestre', help: 'Acesso total a todas as empresas.' },
+    ];
+    const allowed = Roles.isMaster(_u) ? ALL_PROFILES.map((p) => p.value)
+      : Roles.isLocalAdmin(_u) ? ['client:1', 'client:2', 'admin_local'] : ['client:1', 'client:2'];
+    const profileOptions = ALL_PROFILES.filter((p) => allowed.includes(p.value));
+    const curProfile = u ? (u.role === 'client' ? `client:${u.client_level === 2 ? 2 : 1}` : u.role) : 'client:1';
     const m = document.createElement('div');
     m.className = 'modal fade';
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
@@ -128,7 +154,7 @@ Views.adminUsers = async function adminUsers(el) {
         <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        ${isMgrModal ? '<div class="alert alert-info small py-2">Como gestor, você só pode criar usuários para <b>' + esc(ents.find((e)=> String(e.id)===String(_u.entity_id))?.name || 'sua entidade') + '</b>. Todos os campos com * são obrigatórios.</div>' : ''}
+        ${isMgrModal ? '<div class="alert alert-info small py-2">Você só pode criar usuários para <b>' + esc(ents.find((e)=> String(e.id)===String(_u.entity_id))?.name || 'sua empresa') + '</b>. Todos os campos com * são obrigatórios.</div>' : ''}
         <div class="row">
           <div class="col-md-6 mb-2"><label class="form-label small">Nome *</label>
             <input class="form-control" id="f-name" value="${esc((u && u.name) || '')}"></div>
@@ -142,20 +168,20 @@ Views.adminUsers = async function adminUsers(el) {
             <input class="form-control" id="f-phone" type="tel" placeholder="" maxlength="14" value="${esc((u && u.phone) || '')}" ${isMgrModal ? 'required' : ''}></div>
         </div>
         <div class="row">
-          <div class="col-md-4 mb-2"><label class="form-label small">Papel ${isMgrModal ? '*' : ''}</label>
-            <select class="form-select" id="f-role" ${isMgrModal && u && u.role === 'admin' ? 'disabled' : ''}>
-              ${isMgrModal ? `<option value="client" ${!u || u.role === 'client' ? 'selected' : ''}>Cliente</option>` : `
-              <option value="admin" ${u && u.role === 'admin' ? 'selected' : ''}>Administrador</option>
-              <option value="technician" ${u && u.role === 'technician' ? 'selected' : ''}>Técnico</option>
-              <option value="client" ${u && u.role === 'client' ? 'selected' : ''}>Cliente</option>`}
-            </select></div>
-          <div class="col-md-4 mb-2"><label class="form-label small">Nível de cliente ${isMgrModal ? '*' : ''}</label>
-            <select class="form-select" id="f-level">
-              <option value="1" ${u && u.client_level !== 2 ? 'selected' : ''}>1 - Requisitante</option>
-              <option value="2" ${u && u.client_level === 2 ? 'selected' : ''}>2 - Gestor</option>
-            </select></div>
-          <div class="col-md-4 mb-2"><label class="form-label small">Entidade ${isMgrModal ? '*' : ''}</label>
+          <div class="col-md-6 mb-2"><label class="form-label small">Perfil *</label>
+            <select class="form-select" id="f-profile">
+              ${profileOptions.map((o) => `<option value="${o.value}" ${o.value === curProfile ? 'selected' : ''}>${o.label}</option>`).join('')}
+            </select>
+            <div class="form-text" id="f-profile-help"></div></div>
+          <div class="col-md-6 mb-2 multi-empresa"><label class="form-label small">Empresa <span id="f-entity-req"></span></label>
             <select class="form-select" id="f-entity" ${isMgrModal ? 'disabled' : ''}></select></div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-2"><label class="form-label small">Localização (posto)</label>
+            <select class="form-select" id="f-location"><option value="">—</option></select></div>
+          <div class="col-md-6 mb-2 multi-empresa" id="f-extra-box" style="display:none"><label class="form-label small">Outras empresas que o gestor acompanha</label>
+            <select class="form-select" id="f-extra" multiple size="4"></select>
+            <div class="form-text">Segure Ctrl para escolher mais de uma.</div></div>
         </div>
         <div class="mb-2">
           <label class="form-label small">${u ? 'Nova senha (deixe em branco para manter)' : 'Senha *'}</label>
@@ -188,24 +214,48 @@ Views.adminUsers = async function adminUsers(el) {
     const entSel = m.querySelector('#f-entity');
     if (isMgrModal) {
       const own = ents.find((e) => String(e.id) === String(_u.entity_id));
-      entSel.innerHTML = own ? `<option value="${own.id}" selected>${esc(own.name)}</option>` : `<option value="">Sem entidade</option>`;
+      entSel.innerHTML = own ? `<option value="${own.id}" selected>${esc(own.name)}</option>` : `<option value="">Sem empresa</option>`;
       entSel.disabled = true;
     } else {
-      entSel.innerHTML = `<option value="">— sem entidade —</option>` +
+      entSel.innerHTML = `<option value="">— sem empresa (equipe de suporte) —</option>` +
         ents.filter((e) => e.active).map((e) => `<option value="${e.id}" ${u && u.entity_id === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+      if (window.EMPRESA_UNICA && !entSel.value) entSel.value = String(window.EMPRESA_UNICA.id);
     }
-    m.querySelector('#f-role').onchange = () => {
-      m.querySelector('#f-level').closest('.col-md-4').style.display =
-        m.querySelector('#f-role').value === 'client' ? '' : 'none';
+    const profSel = m.querySelector('#f-profile');
+    const locSel = m.querySelector('#f-location');
+    const extraSel = m.querySelector('#f-extra');
+    const loadLocs = async () => {
+      const entId = entSel.value || (isMgrModal ? _u.entity_id : '');
+      if (!entId) { locSel.innerHTML = '<option value="">— escolha a empresa —</option>'; return; }
+      try {
+        const locs = await API.get(`/locations?entity_id=${entId}&active=true`);
+        locSel.innerHTML = '<option value="">— nenhuma —</option>' + locs.map((l) =>
+          `<option value="${l.id}" ${u && String(u.location_id) === String(l.id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+      } catch { locSel.innerHTML = '<option value="">—</option>'; }
     };
-    m.querySelector('#f-role').dispatchEvent(new Event('change'));
+    const onProfile = () => {
+      const v = profSel.value;
+      const p = ALL_PROFILES.find((x) => x.value === v);
+      m.querySelector('#f-profile-help').textContent = p ? p.help : '';
+      m.querySelector('#f-entity-req').textContent = ['client:1', 'client:2', 'admin_local'].includes(v) ? '*' : '';
+      m.querySelector('#f-extra-box').style.display = v === 'client:2' && Roles.isMaster(_u) ? '' : 'none';
+    };
+    if (extraSel) {
+      extraSel.innerHTML = ents.filter((e) => e.active).map((e) =>
+        `<option value="${e.id}" ${u && (u.extra_entity_ids || []).map(String).includes(String(e.id)) ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+    }
+    profSel.onchange = onProfile;
+    entSel.addEventListener('change', loadLocs);
+    onProfile();
+    loadLocs();
 
     m.querySelector('#f-save').onclick = async () => {
       const nameVal = m.querySelector('#f-name').value.trim();
       const userVal = m.querySelector('#f-username').value.trim();
       const emailVal = m.querySelector('#f-email').value.trim();
       const phoneVal = m.querySelector('#f-phone').value.trim();
-      const roleVal = m.querySelector('#f-role').value;
+      const profVal = m.querySelector('#f-profile').value;
+      const roleVal = profVal.startsWith('client') ? 'client' : profVal;
       const pass = m.querySelector('#f-pass').value;
       // validacao obrigatoria para gestor
       if (isMgrModal) {
@@ -215,7 +265,7 @@ Views.adminUsers = async function adminUsers(el) {
         if (!u && !pass) missing.push('senha');
         if (!emailVal) missing.push('e-mail');
         if (!phoneVal) missing.push('telefone');
-        if (!roleVal) missing.push('papel');
+        if (!roleVal) missing.push('perfil');
         if (missing.length) { toast('Campos obrigatórios: ' + missing.join(', ') + '.', 'warning'); return; }
       }
       const phoneDigits = phoneVal.replace(/\D/g, '');
@@ -225,10 +275,15 @@ Views.adminUsers = async function adminUsers(el) {
         email: emailVal || null,
         phone: phoneVal || null,
         role: roleVal,
-        client_level: parseInt(m.querySelector('#f-level').value, 10),
+        client_level: profVal === 'client:2' ? 2 : 1,
         entity_id: isMgrModal ? _u.entity_id : (parseInt(m.querySelector('#f-entity').value, 10) || null),
+        location_id: parseInt(locSel.value, 10) || null,
         active: m.querySelector('#f-active').checked,
       };
+      if (['client', 'admin_local'].includes(roleVal) && !body.entity_id) { toast('Escolha a empresa.', 'warning'); return; }
+      if (Roles.isMaster(_u)) {
+        body.extra_entity_ids = profVal === 'client:2' ? Array.from(extraSel.selectedOptions).map((o) => o.value) : [];
+      }
       if (pass) body.password = pass;
       if (u) {
         if (!userVal) {} // username nao muda
@@ -255,7 +310,7 @@ Views.adminEntities = async function adminEntities(el) {
   if (!(await guardRole('admin'))) return;
   el.innerHTML = `
     <div class="d-flex justify-content-end mb-3">
-      <button class="btn btn-primary" id="btn-new-entity"><i class="bi bi-building-add"></i> Nova entidade</button>
+      <button class="btn btn-primary multi-empresa" id="btn-new-entity"><i class="bi bi-building-add"></i> Nova empresa</button>
     </div>
     <div class="row g-3" id="ent-grid">${spinner()}</div>`;
 
@@ -286,18 +341,19 @@ Views.adminEntities = async function adminEntities(el) {
               <div class="d-flex flex-wrap gap-3 mt-2 small">
                 <span><b>${e.open_tickets}</b> chamados abertos</span>
                 <span><b>${e.users_count}</b> usuários</span>
+                <a href="#/admin/locations?entity_id=${e.id}"><b>${e.locations_count || 0}</b> localizações</a>
                 <span class="text-muted"><i class="bi bi-pc-display me-1"></i><b>${e.computers_count||0}</b> computadores</span>
                 <span class="text-muted"><i class="bi bi-hdd-rack me-1"></i><b>${e.servers_count||0}</b> servidores</span>
                 <span class="text-muted"><i class="bi bi-laptop me-1"></i><b>${e.notebooks_count||0}</b> notebooks</span>
               </div>
               <div class="text-end mt-3">
                 <button class="btn btn-sm btn-outline-primary ent-edit" data-id="${e.id}"><i class="bi bi-pencil"></i></button>
-                <button class="btn btn-sm btn-outline-danger ent-del" data-id="${e.id}"><i class="bi bi-trash"></i></button>
+                <button class="btn btn-sm btn-outline-danger ent-del multi-empresa" data-id="${e.id}"><i class="bi bi-trash"></i></button>
               </div>
             </div>
           </div>
         </div>`).join('')
-      : emptyState('Nenhuma entidade cadastrada', 'Crie a primeira empresa/cliente.', 'bi-building');
+      : emptyState('Nenhuma empresa cadastrada', 'Crie a primeira empresa/cliente.', 'bi-building');
       grid.querySelectorAll('.ent-edit').forEach((b) => b.addEventListener('click', () => openEntityModal(parseInt(b.dataset.id, 10))));
       grid.querySelectorAll('.ent-del').forEach((b) => b.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Remover entidade', body: 'Se houver chamados, a entidade será desativada.', confirmText: 'Remover', danger: true });
@@ -316,7 +372,7 @@ Views.adminEntities = async function adminEntities(el) {
     const m = document.createElement('div');
     m.className = 'modal fade';
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
-      <div class="modal-header"><h6>${e ? 'Editar entidade' : 'Nova entidade'}</h6>
+      <div class="modal-header"><h6>${e ? 'Editar empresa' : 'Nova empresa'}</h6>
         <button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div class="mb-2"><label class="form-label small">Nome *</label>
@@ -392,6 +448,7 @@ Views.adminEntities = async function adminEntities(el) {
         active: m.querySelector('#e-active').checked,
         sla_days: parseInt(m.querySelector('#e-sla-days').value, 10) || 0,
         sla_hours: parseInt(m.querySelector('#e-sla-hours').value, 10) || 0,
+        category_mode: 'simple',
       };
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
       try {
@@ -406,67 +463,144 @@ Views.adminEntities = async function adminEntities(el) {
   }
 };
 
-// ---------------- Categorias ----------------
+// ---------------- Categorias e urgencia ----------------
+// Categorias complexas: arvore detalhada (ex.: Rede > Problemas de conexão > DNS).
+// Categorias simples: lista facil com icone; cada uma aponta para uma complexa,
+// onde o chamado e gravado. O modo (simples/complexo) e escolhido por empresa.
 Views.adminCategories = async function adminCategories(el) {
   if (!(await guardRole('admin'))) return;
+  let tab = sessionStorage.getItem('cat_tab') || 'simple';
+  if (tab === 'complex') tab = 'simple';
   el.innerHTML = `
-    <div class="d-flex justify-content-end mb-3">
-      <button class="btn btn-primary" id="btn-new-cat"><i class="bi bi-diagram-3"></i> Nova categoria</button>
-    </div>
-    <div class="card panel-card">
-      <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Categoria</th><th>Hierarquia</th><th>Chamados abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
-        <tbody id="cat-body">${spinner()}</tbody>
-      </table></div>
-    </div>`;
+    <ul class="nav nav-tabs mb-3" id="cat-tabs">
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="simple">Categorias</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="impact">Urgência</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="causes">Causas de encerramento</a></li>
+    </ul>
+    <div id="cat-tab-body">${spinner()}</div>`;
 
-  const load = async () => {
+  el.querySelectorAll('#cat-tabs a').forEach((a) => a.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    tab = a.dataset.tab;
+    try { sessionStorage.setItem('cat_tab', tab); } catch {}
+    render();
+  }));
+
+  async function render() {
+    el.querySelectorAll('#cat-tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
+    const body = document.getElementById('cat-tab-body');
+    body.innerHTML = spinner();
     try {
+      if (tab === 'impact') return renderImpact(body);
+      if (tab === 'causes') return renderCauses(body);
       const cats = await API.get('/categories');
-      const byId = {}; cats.forEach((c) => (byId[c.id] = c));
-      const pathOf = (c) => { const p = c.parent_id ? byId[c.parent_id] : null; return p ? `${pathOf(p)} / ${c.name}` : c.name; };
-      document.getElementById('cat-body').innerHTML = cats.length ? cats.map((c) => `
-        <tr>
-          <td><strong>${esc(c.name)}</strong></td>
-          <td class="small text-muted">${esc(pathOf(c))}</td>
-          <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
-          <td>${c.active ? '<span class="text-success">Ativa</span>' : '<span class="text-muted">Inativa</span>'}</td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-outline-primary cat-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
-            <button class="btn btn-sm btn-outline-danger cat-del" data-id="${c.id}"><i class="bi bi-trash"></i></button>
-          </td>
-        </tr>`).join('')
-      : `<tr><td colspan="5" class="text-center py-4 text-muted">Nenhuma categoria.</td></tr>`;
-      document.querySelectorAll('.cat-edit').forEach((b) => b.addEventListener('click', () => openCatModal(parseInt(b.dataset.id, 10), cats)));
-      document.querySelectorAll('.cat-del').forEach((b) => b.addEventListener('click', async () => {
-        const ok = await confirmDialog({ title: 'Remover categoria', body: 'Se houver chamados, será desativada.', confirmText: 'Remover', danger: true });
-        if (!ok) return;
-        try { await API.del('/categories/' + b.dataset.id); toast('Categoria removida.', 'warning'); load(); } catch (e) { showError(e); }
-      }));
-    } catch (e) { showError(e); }
-  };
+      renderSimple(body, cats);
+    } catch (e) { body.innerHTML = emptyState('Erro ao carregar', e.message, 'bi-exclamation-triangle'); }
+  }
 
-  document.getElementById('btn-new-cat').onclick = () => openCatModal(null, []);
-  await load();
+  function renderSimple(body, cats) {
+    const simple = cats.filter((c) => c.kind === 'simple');
+    body.innerHTML = `
+      <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i> É a lista que todos veem ao abrir chamado. O chamado fica registrado
+        na própria categoria escolhida (ex.: "🌐 Internet ou rede").
+      </div>
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-primary btn-sm" id="btn-new-simple"><i class="bi bi-plus-lg"></i> Nova categoria</button>
+      </div>
+      <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Ordem</th><th>Categoria</th><th>Abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <tbody>${simple.map((c) => `
+          <tr>
+            <td class="text-muted">${c.sort_order}</td>
+            <td><span class="fs-5 me-1">${esc(c.icon || '')}</span><strong>${esc(c.name)}</strong>
+              ${c.examples ? `<br><small class="text-muted">Ex.: ${esc(c.examples)}</small>` : ''}</td>
+            <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary cat-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger cat-del" data-id="${c.id}"><i class="bi bi-trash"></i></button>
+            </td>
+          </tr>`).join('') || '<tr><td colspan="5" class="text-center py-4 text-muted">Nenhuma categoria.</td></tr>'}</tbody>
+      </table></div></div>`;
+    body.querySelector('#btn-new-simple').onclick = () => openCatModal(null, 'simple', cats);
+    wireRows(body, cats);
+  }
 
-  async function openCatModal(id, all) {
-    let c = null;
-    if (id) { try { c = (await API.get('/categories')).find((x) => String(x.id) === String(id)); } catch {} }
-    const parents = all.length ? all : await API.get('/categories').catch(() => []);
+  function renderComplex(body, cats) {
+    const complex = cats.filter((c) => c.kind === 'complex').sort((a, b) => (a.path || '').localeCompare(b.path || '', 'pt-BR'));
+    const simpleByTarget = {};
+    cats.filter((c) => c.kind === 'simple' && c.maps_to_id).forEach((c) => {
+      (simpleByTarget[c.maps_to_id] = simpleByTarget[c.maps_to_id] || []).push(c);
+    });
+    body.innerHTML = `
+      <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i> Árvore detalhada usada pela equipe e pelas empresas no modo <b>Complexo</b>.
+        A equipe pode detalhar um chamado (ex.: de <i>Rede › Problemas de conexão</i> para <i>… › DNS</i>) sem perder a ligação com a categoria simples.
+      </div>
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-primary btn-sm" id="btn-new-complex"><i class="bi bi-plus-lg"></i> Nova categoria complexa</button>
+      </div>
+      <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Categoria</th><th>Simples ligadas</th><th>Abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <tbody>${complex.map((c) => {
+          const depth = (c.path || '').split(' > ').length - 1;
+          return `
+          <tr>
+            <td><span class="text-muted">${'&nbsp;&nbsp;&nbsp;'.repeat(depth)}${depth ? '└ ' : ''}</span><strong>${esc(c.name)}</strong>
+              ${depth ? `<br><small class="text-muted">${'&nbsp;&nbsp;&nbsp;'.repeat(depth)}${esc(c.path)}</small>` : ''}</td>
+            <td class="small">${(simpleByTarget[c.id] || []).map((x) => `${esc(x.icon || '')} ${esc(x.name)}`).join('<br>') || '—'}</td>
+            <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary cat-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger cat-del" data-id="${c.id}"><i class="bi bi-trash"></i></button>
+            </td>
+          </tr>`; }).join('') || '<tr><td colspan="5" class="text-center py-4 text-muted">Nenhuma categoria.</td></tr>'}</tbody>
+      </table></div></div>`;
+    body.querySelector('#btn-new-complex').onclick = () => openCatModal(null, 'complex', cats);
+    wireRows(body, cats);
+  }
+
+  function wireRows(body, cats) {
+    body.querySelectorAll('.cat-edit').forEach((b) => b.addEventListener('click', () => {
+      const c = cats.find((x) => String(x.id) === b.dataset.id);
+      openCatModal(c, c.kind, cats);
+    }));
+    body.querySelectorAll('.cat-del').forEach((b) => b.addEventListener('click', async () => {
+      const ok = await confirmDialog({ title: 'Remover categoria', body: 'Se estiver em uso, ela será apenas desativada.', confirmText: 'Remover', danger: true });
+      if (!ok) return;
+      try { const r = await API.del('/categories/' + b.dataset.id); toast(r.message || 'Categoria removida.', 'warning'); render(); } catch (e) { showError(e); }
+    }));
+  }
+
+  function openCatModal(c, kind, cats) {
+    const complex = cats.filter((x) => x.kind === 'complex' && x.active && (!c || x.id !== c.id))
+      .sort((a, b) => (a.path || '').localeCompare(b.path || '', 'pt-BR'));
     const m = document.createElement('div');
     m.className = 'modal fade';
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
-      <div class="modal-header"><h6>${c ? 'Editar categoria' : 'Nova categoria'}</h6>
+      <div class="modal-header"><h6>${c ? 'Editar' : 'Nova'} categoria</h6>
         <button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <div class="mb-2"><label class="form-label small">Nome *</label>
-          <input class="form-control" id="c-name" value="${esc((c && c.name) || '')}"></div>
-        <div class="mb-2"><label class="form-label small">Categoria pai</label>
-          <select class="form-select" id="c-parent">
-            <option value="">— raiz —</option>
-            ${parents.filter((p) => !c || p.id !== c.id).map((p) =>
-              `<option value="${p.id}" ${c && c.parent_id === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
-          </select></div>
+        <div class="row">
+          ${kind === 'simple' ? `<div class="col-3 mb-2"><label class="form-label small">Ícone</label>
+            <input class="form-control" id="c-icon" maxlength="4" value="${esc((c && c.icon) || '')}" placeholder="🌐"></div>` : ''}
+          <div class="${kind === 'simple' ? 'col-9' : 'col-12'} mb-2"><label class="form-label small">Nome *</label>
+            <input class="form-control" id="c-name" value="${esc((c && c.name) || '')}"></div>
+        </div>
+        ${kind === 'simple' ? `
+          <div class="mb-2"><label class="form-label small">Explicação para o usuário</label>
+            <input class="form-control" id="c-desc" value="${esc((c && c.description) || '')}" placeholder="Ex.: Sem internet, internet lenta ou Wi-Fi."></div>
+          <div class="mb-2"><label class="form-label small">Exemplos (separe com ;)</label>
+            <input class="form-control" id="c-examples" value="${esc((c && c.examples) || '')}" placeholder="Sem internet; Wi-Fi caiu"></div>
+          <div class="mb-2"><label class="form-label small">Ordem na lista</label>
+            <input class="form-control" id="c-order" type="number" value="${esc(String((c && c.sort_order) || 0))}"></div>` : `
+          <div class="mb-2"><label class="form-label small">Categoria pai</label>
+            <select class="form-select" id="c-parent">
+              <option value="">— raiz —</option>
+              ${complex.map((x) => `<option value="${x.id}" ${c && c.parent_id === x.id ? 'selected' : ''}>${esc(x.path)}</option>`).join('')}
+            </select></div>`}
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="c-active" ${!c || c.active ? 'checked' : ''}>
           <label class="form-check-label small">Ativa</label>
@@ -479,24 +613,339 @@ Views.adminCategories = async function adminCategories(el) {
     </div></div>`;
     document.body.appendChild(m);
     const modal = new bootstrap.Modal(m);
+    m.addEventListener('hidden.bs.modal', () => m.remove());
     m.querySelector('#c-save').onclick = async () => {
       const name = m.querySelector('#c-name').value.trim();
       if (!name) { toast('Informe o nome.', 'warning'); return; }
-      const body = {
-        name,
-        parent_id: parseInt(m.querySelector('#c-parent').value, 10) || null,
-        active: m.querySelector('#c-active').checked,
-      };
+      const body = { name, active: m.querySelector('#c-active').checked };
+      if (kind === 'simple') {
+        body.icon = m.querySelector('#c-icon').value.trim();
+        body.description = m.querySelector('#c-desc').value.trim();
+        body.examples = m.querySelector('#c-examples').value.trim();
+        body.sort_order = parseInt(m.querySelector('#c-order').value, 10) || 0;
+      } else {
+        body.parent_id = parseInt(m.querySelector('#c-parent').value, 10) || null;
+      }
+      if (!c) body.kind = kind;
       try {
         if (c) await API.patch('/categories/' + c.id, body);
         else await API.post('/categories', body);
-        modal.hide(); m.addEventListener('hidden.bs.modal', () => m.remove());
+        modal.hide();
         toast('Categoria salva.', 'success');
+        render();
+      } catch (e) { showError(e); }
+    };
+    modal.show();
+  }
+
+  async function renderImpact(body) {
+    const levels = await API.get('/impact-levels?all=true');
+    body.innerHTML = `
+      <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i> Opções da pergunta <b>"Isso está afetando a operação?"</b> ao abrir chamado.
+        Cada uma equivale a uma prioridade interna, usada no painel e no SLA.
+      </div>
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-primary btn-sm" id="btn-new-impact"><i class="bi bi-plus-lg"></i> Nova opção</button>
+      </div>
+      <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Ordem</th><th>Urgência</th><th>Prioridade interna</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <tbody>${levels.map((l) => `
+          <tr>
+            <td class="text-muted">${l.sort_order}</td>
+            <td><strong>${esc(l.name)}</strong><br><small class="text-muted">${esc(l.description || '')}</small></td>
+            <td>${badgePriority(l.priority)}</td>
+            <td>${l.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary imp-edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
+              ${l.active ? `<button class="btn btn-sm btn-outline-danger imp-del" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div></div>`;
+    body.querySelector('#btn-new-impact').onclick = () => openImpactModal(null);
+    body.querySelectorAll('.imp-edit').forEach((b) => b.addEventListener('click', () =>
+      openImpactModal(levels.find((l) => String(l.id) === b.dataset.id))));
+    body.querySelectorAll('.imp-del').forEach((b) => b.addEventListener('click', async () => {
+      const ok = await confirmDialog({ title: 'Desativar opção', body: 'Chamados antigos mantêm o registro. Ela só deixa de aparecer para novos chamados.', confirmText: 'Desativar', danger: true });
+      if (!ok) return;
+      try { await API.del('/impact-levels/' + b.dataset.id); render(); } catch (e) { showError(e); }
+    }));
+  }
+
+  async function renderCauses(body) {
+    const causes = await API.get('/resolution-causes?all=true');
+    body.innerHTML = `
+      <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i> Opções da pergunta <b>"Qual foi a causa?"</b> no formulário de encerramento do chamado.
+        Só a equipe vê a causa. Use para relatórios (ex.: quantos chamados foram erro do usuário ou acidente).
+      </div>
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-primary btn-sm" id="btn-new-cause"><i class="bi bi-plus-lg"></i> Nova causa</button>
+      </div>
+      <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Ordem</th><th>Causa</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <tbody>${causes.map((c) => `
+          <tr>
+            <td class="text-muted">${c.sort_order}</td>
+            <td><strong>${esc(c.name)}</strong><br><small class="text-muted">${esc(c.description || '')}</small></td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary cause-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
+              ${c.active ? `<button class="btn btn-sm btn-outline-danger cause-del" data-id="${c.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div></div>`;
+    const open = (c) => {
+      const m = document.createElement('div');
+      m.className = 'modal fade';
+      m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h6>${c ? 'Editar' : 'Nova'} causa</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label small">Nome *</label><input class="form-control" id="rc-name" value="${esc((c && c.name) || '')}"></div>
+          <div class="mb-2"><label class="form-label small">Explicação</label><input class="form-control" id="rc-desc" value="${esc((c && c.description) || '')}"></div>
+          <div class="mb-2"><label class="form-label small">Ordem</label><input class="form-control" id="rc-order" type="number" value="${esc(String((c && c.sort_order) || 0))}"></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" id="rc-active" ${!c || c.active ? 'checked' : ''}><label class="form-check-label small">Ativa</label></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="rc-save">Salvar</button></div>
+      </div></div>`;
+      document.body.appendChild(m);
+      const modal = new bootstrap.Modal(m);
+      m.addEventListener('hidden.bs.modal', () => m.remove());
+      m.querySelector('#rc-save').onclick = async () => {
+        const b = {
+          name: m.querySelector('#rc-name').value.trim(),
+          description: m.querySelector('#rc-desc').value.trim(),
+          sort_order: parseInt(m.querySelector('#rc-order').value, 10) || 0,
+          active: m.querySelector('#rc-active').checked,
+        };
+        if (!b.name) { toast('Informe o nome.', 'warning'); return; }
+        try {
+          if (c) await API.patch('/resolution-causes/' + c.id, b); else await API.post('/resolution-causes', b);
+          modal.hide(); toast('Salvo.', 'success'); render();
+        } catch (e) { showError(e); }
+      };
+      modal.show();
+    };
+    body.querySelector('#btn-new-cause').onclick = () => open(null);
+    body.querySelectorAll('.cause-edit').forEach((b) => b.addEventListener('click', () => open(causes.find((c) => String(c.id) === b.dataset.id))));
+    body.querySelectorAll('.cause-del').forEach((b) => b.addEventListener('click', async () => {
+      const ok = await confirmDialog({ title: 'Desativar causa', body: 'Chamados antigos mantêm o registro.', confirmText: 'Desativar', danger: true });
+      if (!ok) return;
+      try { await API.del('/resolution-causes/' + b.dataset.id); render(); } catch (e) { showError(e); }
+    }));
+  }
+
+  function openImpactModal(l) {
+    const m = document.createElement('div');
+    m.className = 'modal fade';
+    m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h6>${l ? 'Editar' : 'Nova'} opção de urgência</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small">Nome *</label>
+          <input class="form-control" id="i-name" value="${esc((l && l.name) || '')}"></div>
+        <div class="mb-2"><label class="form-label small">Explicação para o usuário</label>
+          <input class="form-control" id="i-desc" value="${esc((l && l.description) || '')}"></div>
+        <div class="mb-2"><label class="form-label small">Exemplos</label>
+          <input class="form-control" id="i-examples" value="${esc((l && l.examples) || '')}"></div>
+        <div class="row">
+          <div class="col-6 mb-2"><label class="form-label small">Prioridade interna</label>
+            <select class="form-select" id="i-prio">
+              ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${l && l.priority === p ? 'selected' : ''}>${LABELS.priority[p]}</option>`).join('')}
+            </select></div>
+          <div class="col-6 mb-2"><label class="form-label small">Ordem</label>
+            <input class="form-control" id="i-order" type="number" value="${esc(String((l && l.sort_order) || 0))}"></div>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="i-active" ${!l || l.active ? 'checked' : ''}>
+          <label class="form-check-label small">Ativa</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="i-save">Salvar</button>
+      </div>
+    </div></div>`;
+    document.body.appendChild(m);
+    const modal = new bootstrap.Modal(m);
+    m.addEventListener('hidden.bs.modal', () => m.remove());
+    m.querySelector('#i-save').onclick = async () => {
+      const body = {
+        name: m.querySelector('#i-name').value.trim(),
+        description: m.querySelector('#i-desc').value.trim(),
+        examples: m.querySelector('#i-examples').value.trim(),
+        priority: parseInt(m.querySelector('#i-prio').value, 10),
+        sort_order: parseInt(m.querySelector('#i-order').value, 10) || 0,
+        active: m.querySelector('#i-active').checked,
+      };
+      if (!body.name) { toast('Informe o nome.', 'warning'); return; }
+      try {
+        if (l) await API.patch('/impact-levels/' + l.id, body);
+        else await API.post('/impact-levels', body);
+        modal.hide();
+        toast('Salvo.', 'success');
+        render();
+      } catch (e) { showError(e); }
+    };
+    modal.show();
+  }
+
+  render();
+};
+
+// ---------------- Localizacoes (postos) ----------------
+Views.adminLocations = async function adminLocations(el) {
+  const u = currentUser();
+  if (!Roles.canManageLocations(u)) {
+    location.hash = '#/dashboard';
+    toast('Seu perfil não pode gerenciar localizações.', 'warning');
+    return;
+  }
+  const params = new URLSearchParams((location.hash.split('?')[1] || ''));
+  let entityFilter = !Roles.isMaster(u) ? String(u.entity_id) : (params.get('entity_id') || '');
+  const ents = (await API.get('/entities').catch(() => [])).filter((e) => Roles.isMaster(u) || String(e.id) === String(u.entity_id));
+
+  el.innerHTML = `
+    <div class="card panel-card mb-3"><div class="card-body py-3 d-flex flex-wrap gap-2 align-items-center">
+      <select class="form-select form-select-sm multi-empresa" id="l-entity" style="max-width:280px" ${!Roles.isMaster(u) ? 'disabled' : ''}>
+        ${Roles.isMaster(u) ? '<option value="">Todas as empresas</option>' : ''}
+        ${ents.map((e) => `<option value="${e.id}" ${String(e.id) === entityFilter ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary btn-sm ms-auto" id="btn-new-loc"><i class="bi bi-geo-alt"></i> Nova localização</button>
+    </div></div>
+    <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Localização</th><th class="multi-empresa">Empresa</th><th>Cidade/UF</th><th>Acesso do posto</th><th>Usuários</th><th>Chamados abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+      <tbody id="l-body"><tr><td colspan="8">${spinner()}</td></tr></tbody>
+    </table></div></div>`;
+
+  const load = async () => {
+    const q = entityFilter ? `?entity_id=${entityFilter}` : '';
+    try {
+      const locs = await API.get('/locations' + q);
+      document.getElementById('l-body').innerHTML = locs.map((l) => `
+        <tr>
+          <td><strong>${esc(l.name)}</strong>${l.code ? ` <small class="text-muted">(${esc(l.code)})</small>` : ''}
+            ${l.address ? `<br><small class="text-muted">${esc(l.address)}</small>` : ''}</td>
+          <td class="multi-empresa">${esc(l.entity_name)}</td>
+          <td>${esc([l.city, l.state].filter(Boolean).join('/') || '—')}</td>
+          <td>${l.posto_username ? `<span class="tg tg-teal"><i class="bi bi-shop"></i>@${esc(l.posto_username)}</span>` : '<span class="tg tg-gray">sem acesso</span>'}</td>
+          <td><a href="#/admin/users">${l.users_count}</a></td>
+          <td>${l.open_tickets}</td>
+          <td>${l.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary l-edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
+            ${l.active ? `<button class="btn btn-sm btn-outline-danger l-off" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
+          </td>
+        </tr>`).join('') || '<tr><td colspan="8" class="text-center py-4 text-muted">Nenhuma localização cadastrada.</td></tr>';
+      document.querySelectorAll('.l-edit').forEach((b) => b.addEventListener('click', () => openModal(locs.find((x) => String(x.id) === b.dataset.id))));
+      document.querySelectorAll('.l-off').forEach((b) => b.addEventListener('click', async () => {
+        const ok = await confirmDialog({ title: 'Desativar localização', body: 'Ela deixa de aparecer para novos chamados. O histórico é mantido.', confirmText: 'Desativar', danger: true });
+        if (!ok) return;
+        try { await API.del('/locations/' + b.dataset.id); toast('Localização desativada.', 'warning'); load(); } catch (e) { showError(e); }
+      }));
+    } catch (e) { showError(e); }
+  };
+
+  document.getElementById('l-entity').addEventListener('change', (ev) => { entityFilter = ev.target.value; load(); });
+  document.getElementById('btn-new-loc').onclick = () => openModal(null);
+
+  function openModal(l) {
+    const m = document.createElement('div');
+    m.className = 'modal fade';
+    const defaultEnt = l ? l.entity_id : (entityFilter || (ents[0] && ents[0].id));
+    m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h6>${l ? 'Editar localização' : 'Nova localização'}</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2 multi-empresa"><label class="form-label small">Empresa *</label>
+          <select class="form-select" id="lm-entity" ${l || !Roles.isMaster(u) ? 'disabled' : ''}>
+            ${ents.map((e) => `<option value="${e.id}" ${String(e.id) === String(defaultEnt) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+          </select></div>
+        <div class="row">
+          <div class="col-8 mb-2"><label class="form-label small">Nome *</label>
+            <input class="form-control" id="lm-name" value="${esc((l && l.name) || '')}" placeholder="Ex.: Posto X"></div>
+          <div class="col-4 mb-2"><label class="form-label small">Código</label>
+            <input class="form-control" id="lm-code" value="${esc((l && l.code) || '')}"></div>
+        </div>
+        <div class="mb-2"><label class="form-label small">Endereço</label>
+          <input class="form-control" id="lm-address" value="${esc((l && l.address) || '')}"></div>
+        <div class="row">
+          <div class="col-8 mb-2"><label class="form-label small">Cidade</label>
+            <input class="form-control" id="lm-city" value="${esc((l && l.city) || '')}"></div>
+          <div class="col-4 mb-2"><label class="form-label small">UF</label>
+            <input class="form-control" id="lm-state" maxlength="2" value="${esc((l && l.state) || '')}"></div>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="lm-active" ${!l || l.active ? 'checked' : ''}>
+          <label class="form-check-label small">Ativa</label>
+        </div>
+        <hr>
+        <div class="mb-1 fw-semibold small"><i class="bi bi-person-badge me-1"></i>Acesso do posto</div>
+        ${l && l.posto_username ? `<div class="small text-muted">Este posto já entra no sistema como <b>@${esc(l.posto_username)}</b>.
+          Para trocar a senha, use <a href="#/admin/users">Usuários</a>.</div>` : `
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="lm-acesso" ${l ? '' : 'checked'}>
+          <label class="form-check-label small" for="lm-acesso">Criar um usuário para o próprio posto abrir chamados</label>
+        </div>
+        <div class="row" id="lm-acesso-box">
+          <div class="col-6 mb-2"><label class="form-label small">Usuário de acesso *</label>
+            <input class="form-control" id="lm-user" autocomplete="off" placeholder="ex.: palhaseca"></div>
+          <div class="col-6 mb-2"><label class="form-label small">Senha * (mín. 6)</label>
+            <input class="form-control" id="lm-pass" type="password" autocomplete="new-password"></div>
+        </div>`}
+        <div class="form-text">O posto também aparece sozinho nos <b>Postos</b> do Dia a dia da TI, onde se definem as visitas e o checklist.
+          Pessoas (gestor, TI) se ligam a uma localização em <a href="#/admin/users">Usuários</a>.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="lm-save">Salvar</button>
+      </div>
+    </div></div>`;
+    document.body.appendChild(m);
+    const modal = new bootstrap.Modal(m);
+    m.addEventListener('hidden.bs.modal', () => m.remove());
+    // sugere o usuário do posto a partir do nome (ex.: "Posto Palha Seca" -> "palhaseca")
+    const sugerir = () => {
+      const uIn = m.querySelector('#lm-user');
+      if (!uIn || uIn.dataset.mexido) return;
+      uIn.value = m.querySelector('#lm-name').value.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/^posto\s+/, '').replace(/[^a-z0-9]/g, '');
+    };
+    m.querySelector('#lm-name').addEventListener('input', sugerir);
+    const uInput = m.querySelector('#lm-user');
+    if (uInput) uInput.addEventListener('input', () => { uInput.dataset.mexido = '1'; });
+    const acesso = m.querySelector('#lm-acesso');
+    const syncAcesso = () => { if (acesso) m.querySelector('#lm-acesso-box').style.display = acesso.checked ? '' : 'none'; };
+    if (acesso) acesso.addEventListener('change', syncAcesso);
+    syncAcesso();
+    m.querySelector('#lm-save').onclick = async () => {
+      const body = {
+        name: m.querySelector('#lm-name').value.trim(),
+        code: m.querySelector('#lm-code').value.trim(),
+        address: m.querySelector('#lm-address').value.trim(),
+        city: m.querySelector('#lm-city').value.trim(),
+        state: m.querySelector('#lm-state').value.trim().toUpperCase(),
+        active: m.querySelector('#lm-active').checked,
+      };
+      if (!body.name) { toast('Informe o nome.', 'warning'); return; }
+      if (acesso && acesso.checked) {
+        const username = m.querySelector('#lm-user').value.trim();
+        const password = m.querySelector('#lm-pass').value;
+        if (!username || password.length < 6) { toast('Informe o usuário e uma senha de ao menos 6 caracteres para o posto.', 'warning'); return; }
+        body.posto_user = { username, password };
+      }
+      try {
+        if (l) await API.patch('/locations/' + l.id, body);
+        else await API.post('/locations', { ...body, entity_id: parseInt(m.querySelector('#lm-entity').value, 10) });
+        modal.hide();
+        toast('Localização salva.', 'success');
         load();
       } catch (e) { showError(e); }
     };
     modal.show();
   }
+
+  await load();
 };
 
 // ---------------- Configuracoes ----------------
@@ -924,4 +1373,301 @@ Views.profile = async function profile(el) {
       document.querySelectorAll('#p-current, #p-new, #p-confirm').forEach((i) => (i.value = ''));
     } catch (e) { showError(e); }
   };
+};
+// ---------------------------------------------------------------
+// Perfis e permissoes + Visualizacao de cargos (somente Admin Mestre)
+// ---------------------------------------------------------------
+Views.adminRoles = async function adminRoles(el) {
+  if (!(await guardRole('admin'))) return;
+  el.innerHTML = spinner();
+  let data;
+  try { data = await API.get('/permissions'); } catch (e) { showError(e); return; }
+  const ents = (await API.get('/entities').catch(() => [])).filter((e) => e.active);
+  const { roles, permissions, master_only: masterOnly, defaults } = data;
+  const saved = JSON.parse(JSON.stringify(data.matrix));
+  const matrix = JSON.parse(JSON.stringify(data.matrix));
+  const groups = [...new Set(permissions.map((p) => p.group))];
+  const needsEntity = (key) => ['admin_local', 'manager', 'user'].includes(key);
+
+  const isDirty = () => roles.some((r) => permissions.some((p) => !!matrix[r.key][p.key] !== !!saved[r.key][p.key]));
+  const countOn = (rk) => permissions.filter((p) => matrix[rk][p.key]).length;
+
+  el.innerHTML = `
+    <div class="roles-page">
+      <div class="roles-intro">
+        <p>Marque o que cada perfil pode fazer. O <b>Administrador Mestre</b> sempre pode tudo e é o único que mexe nesta tela.
+          As mudanças valem para todos os usuários do perfil assim que você salvar (eles veem na próxima página que abrirem).</p>
+      </div>
+
+      <div class="card panel-card mb-3 preview-card">
+        <div class="card-body">
+          <div class="pv-head">
+            <i class="bi bi-eye"></i>
+            <div>
+              <h6 class="mb-1">Visualização de cargos</h6>
+              <p class="small text-muted mb-0">Veja a plataforma inteira como outro perfil. Abre uma cópia provisória do sistema:
+                pode clicar, abrir e mover chamados à vontade, nada vai para os dados reais e ninguém recebe aviso.</p>
+            </div>
+          </div>
+          <div class="row g-2 align-items-end mt-1">
+            <div class="col-sm-4">
+              <label class="form-label small mb-1">Ver como</label>
+              <select class="form-select form-select-sm" id="pv-role">
+                ${roles.map((r) => `<option value="${r.key}">${esc(r.label)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-sm-4" id="pv-ent-box">
+              <label class="form-label small mb-1">Empresa</label>
+              <select class="form-select form-select-sm" id="pv-ent">
+                ${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-sm-4" id="pv-loc-box">
+              <label class="form-label small mb-1">Localização</label>
+              <select class="form-select form-select-sm" id="pv-loc"><option value="">—</option></select>
+            </div>
+          </div>
+          <p class="small text-muted mt-2 mb-2">As permissões usadas na prévia são as que estão <b>salvas</b>. Se mudou alguma caixa, salve antes.</p>
+          <button class="btn btn-primary btn-sm" id="pv-start"><i class="bi bi-play-fill"></i> Abrir prévia</button>
+        </div>
+      </div>
+
+      <div class="card panel-card">
+        <div class="card-header d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <span><i class="bi bi-shield-check me-1"></i> O que cada perfil pode fazer</span>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" id="rp-undo" disabled>Descartar mudanças</button>
+            <button class="btn btn-primary btn-sm" id="rp-save" disabled><i class="bi bi-check2"></i> Salvar</button>
+          </div>
+        </div>
+        <div class="perm-scroll">
+          <table class="perm-table">
+            <thead>
+              <tr>
+                <th class="perm-name">Função</th>
+                <th class="perm-col master" title="Sempre pode tudo">Admin Mestre</th>
+                ${roles.map((r) => `
+                  <th class="perm-col">
+                    <div>${esc(r.label)}</div>
+                    <div class="perm-col-tools">
+                      <span class="perm-count" data-count="${r.key}"></span>
+                      <button class="btn btn-link btn-sm p-0 rp-preview" data-role="${r.key}" title="Ver a plataforma como ${esc(r.label)}"><i class="bi bi-eye"></i></button>
+                      <button class="btn btn-link btn-sm p-0 rp-reset" data-role="${r.key}" title="Voltar ao padrão deste perfil"><i class="bi bi-arrow-counterclockwise"></i></button>
+                    </div>
+                  </th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${groups.map((g) => `
+                <tr class="perm-group"><td colspan="${roles.length + 2}">${esc(g)}</td></tr>
+                ${permissions.filter((p) => p.group === g).map((p) => `
+                  <tr>
+                    <td class="perm-name">${esc(p.label)}</td>
+                    <td class="perm-col master"><input type="checkbox" class="form-check-input" checked disabled aria-label="Admin Mestre: sempre"></td>
+                    ${roles.map((r) => `
+                      <td class="perm-col"><input type="checkbox" class="form-check-input rp-box" data-role="${r.key}" data-perm="${p.key}"
+                        aria-label="${esc(r.label)}: ${esc(p.label)}"></td>`).join('')}
+                  </tr>`).join('')}`).join('')}
+              <tr class="perm-group"><td colspan="${roles.length + 2}">Somente Administrador Mestre</td></tr>
+              ${masterOnly.map((label) => `
+                <tr class="perm-locked">
+                  <td class="perm-name">${esc(label)}</td>
+                  <td class="perm-col master"><input type="checkbox" class="form-check-input" checked disabled></td>
+                  ${roles.map(() => '<td class="perm-col"><i class="bi bi-lock text-muted" title="Exclusivo do Administrador Mestre"></i></td>').join('')}
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+
+  const saveBtn = el.querySelector('#rp-save');
+  const undoBtn = el.querySelector('#rp-undo');
+
+  function paint() {
+    el.querySelectorAll('.rp-box').forEach((b) => {
+      const { role, perm } = b.dataset;
+      b.checked = !!matrix[role][perm];
+      b.closest('td').classList.toggle('changed', !!matrix[role][perm] !== !!saved[role][perm]);
+    });
+    roles.forEach((r) => {
+      el.querySelector(`[data-count="${r.key}"]`).textContent = `${countOn(r.key)}/${permissions.length}`;
+    });
+    const dirty = isDirty();
+    saveBtn.disabled = !dirty; undoBtn.disabled = !dirty;
+  }
+
+  el.querySelectorAll('.rp-box').forEach((b) => b.addEventListener('change', () => {
+    matrix[b.dataset.role][b.dataset.perm] = b.checked;
+    paint();
+  }));
+  el.querySelectorAll('.rp-reset').forEach((b) => b.addEventListener('click', () => {
+    const rk = b.dataset.role;
+    permissions.forEach((p) => { matrix[rk][p.key] = (defaults[rk] || []).includes(p.key); });
+    paint();
+    toast('Padrão restaurado na tela. Clique em Salvar para aplicar.', 'info');
+  }));
+  undoBtn.addEventListener('click', () => {
+    roles.forEach((r) => { matrix[r.key] = { ...saved[r.key] }; });
+    paint();
+  });
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    try {
+      await API.request('PUT', '/permissions', { matrix });
+      roles.forEach((r) => { saved[r.key] = { ...matrix[r.key] }; });
+      paint();
+      toast('Permissões salvas.', 'success');
+    } catch (e) { showError(e); paint(); }
+  });
+
+  // ---- Visualizacao de cargos ----
+  const roleSel = el.querySelector('#pv-role');
+  const entSel = el.querySelector('#pv-ent');
+  const locSel = el.querySelector('#pv-loc');
+  async function loadLocs() {
+    locSel.innerHTML = '<option value="">—</option>';
+    if (!entSel.value) return;
+    const locs = await API.get(`/locations?entity_id=${entSel.value}&active=true`).catch(() => []);
+    locSel.innerHTML = locs.length
+      ? locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('')
+      : '<option value="">Sem localizações</option>';
+  }
+  function syncPreviewForm() {
+    const need = needsEntity(roleSel.value);
+    el.querySelector('#pv-ent-box').style.display = need ? '' : 'none';
+    el.querySelector('#pv-loc-box').style.display = need ? '' : 'none';
+  }
+  roleSel.addEventListener('change', syncPreviewForm);
+  entSel.addEventListener('change', loadLocs);
+  syncPreviewForm();
+  loadLocs();
+
+  async function startPreview(roleKey) {
+    if (isDirty()) {
+      const go = await confirmDialog({ title: 'Mudanças não salvas', body: 'A prévia usa as permissões salvas. Abrir mesmo assim, sem as mudanças desta tela?', confirmText: 'Abrir prévia' });
+      if (!go) return;
+    }
+    const need = needsEntity(roleKey);
+    if (need && !entSel.value) { toast('Cadastre uma empresa antes.', 'warning'); return; }
+    const btn = el.querySelector('#pv-start');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Preparando a cópia...';
+    try {
+      const r = await API.post('/permissions/preview', {
+        role_key: roleKey,
+        entity_id: need ? entSel.value : null,
+        location_id: need ? (locSel.value || null) : null,
+      });
+      API.startPreview(r.token, r.user);
+      location.href = '/app.html#/tickets';
+      location.reload();
+    } catch (e) {
+      showError(e);
+      btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill"></i> Abrir prévia';
+    }
+  }
+  el.querySelector('#pv-start').addEventListener('click', () => startPreview(roleSel.value));
+  el.querySelectorAll('.rp-preview').forEach((b) => b.addEventListener('click', () => {
+    roleSel.value = b.dataset.role; syncPreviewForm();
+    if (needsEntity(b.dataset.role)) {
+      el.querySelector('.preview-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('Escolha a empresa e clique em Abrir prévia.', 'info');
+    } else {
+      startPreview(b.dataset.role);
+    }
+  }));
+
+  paint();
+};
+
+// ---------------- Materiais (Pedido de material) ----------------
+// Lista do que pode ser pedido no chamado "Pedido de material".
+Views.adminMaterials = async function adminMaterials(el) {
+  const u = currentUser();
+  if (!(Roles.isMaster(u) || u.role === 'admin_local')) {
+    location.hash = '#/dashboard';
+    toast('Apenas administradores editam a lista de materiais.', 'warning');
+    return;
+  }
+  el.innerHTML = `
+    <div class="alert alert-info small"><i class="bi bi-box-seam me-1"></i>
+      É a lista que aparece quando alguém abre um chamado de <b>📦 Pedido de material</b>.
+      Desative o que não estiver mais disponível: ele some da lista, mas os pedidos antigos continuam.</div>
+    <div class="d-flex justify-content-end mb-2">
+      <button class="btn btn-primary btn-sm" id="btn-new-mat"><i class="bi bi-plus-lg"></i> Novo material</button>
+    </div>
+    <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Ordem</th><th>Material</th><th>Unidade</th><th>Já pedido</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+      <tbody id="mat-body"><tr><td colspan="6">${spinner()}</td></tr></tbody>
+    </table></div></div>`;
+
+  let lista = [];
+  const load = async () => {
+    try {
+      lista = await API.get('/materials?all=true');
+      document.getElementById('mat-body').innerHTML = lista.map((m) => `
+        <tr>
+          <td class="text-muted">${m.sort_order}</td>
+          <td><strong>${esc(m.name)}</strong>${m.description ? `<br><small class="text-muted">${esc(m.description)}</small>` : ''}</td>
+          <td>${esc(m.unit || 'un')}</td>
+          <td><span class="tg ${m.pedidos ? 'tg-teal' : 'tg-gray'}">${m.pedidos} vez(es)</span></td>
+          <td>${m.active ? '<span class="tg tg-green">Disponível</span>' : '<span class="tg tg-gray">Indisponível</span>'}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary mat-edit" data-id="${m.id}"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger mat-del" data-id="${m.id}"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="6" class="text-center py-4 text-muted">Nenhum material cadastrado.</td></tr>';
+      el.querySelectorAll('.mat-edit').forEach((b) => b.addEventListener('click', () => abrir(lista.find((x) => String(x.id) === b.dataset.id))));
+      el.querySelectorAll('.mat-del').forEach((b) => b.addEventListener('click', async () => {
+        const ok = await confirmDialog({ title: 'Remover material', body: 'Se já foi pedido em algum chamado, ele só fica indisponível.', confirmText: 'Remover', danger: true });
+        if (!ok) return;
+        try { const r = await API.del('/materials/' + b.dataset.id); toast(r.message || 'Removido.', 'warning'); load(); } catch (e) { showError(e); }
+      }));
+    } catch (e) { showError(e); }
+  };
+
+  function abrir(m) {
+    const md = document.createElement('div');
+    md.className = 'modal fade';
+    md.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h6>${m ? 'Editar' : 'Novo'} material</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-8 mb-2"><label class="form-label small">Nome *</label>
+            <input class="form-control" id="m-name" value="${esc((m && m.name) || '')}" placeholder="Ex.: Toner HP 85A"></div>
+          <div class="col-4 mb-2"><label class="form-label small">Unidade</label>
+            <input class="form-control" id="m-unit" value="${esc((m && m.unit) || '')}" placeholder="un, caixa, resma"></div>
+        </div>
+        <div class="mb-2"><label class="form-label small">Detalhe (opcional)</label>
+          <input class="form-control" id="m-desc" value="${esc((m && m.description) || '')}" placeholder="Ex.: para as impressoras do caixa"></div>
+        <div class="row">
+          <div class="col-4 mb-2"><label class="form-label small">Ordem</label>
+            <input class="form-control" id="m-ord" type="number" value="${esc(String((m && m.sort_order) || 0))}"></div>
+          <div class="col-8 mb-2 d-flex align-items-end"><label class="form-check">
+            <input class="form-check-input" type="checkbox" id="m-active" ${!m || m.active ? 'checked' : ''}>
+            <span class="form-check-label small">Disponível para pedir</span></label></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="m-save">Salvar</button></div>
+    </div></div>`;
+    document.body.appendChild(md);
+    const modal = new bootstrap.Modal(md);
+    md.addEventListener('hidden.bs.modal', () => md.remove());
+    md.querySelector('#m-save').onclick = async () => {
+      const body = {
+        name: md.querySelector('#m-name').value.trim(), unit: md.querySelector('#m-unit').value.trim(),
+        description: md.querySelector('#m-desc').value.trim(), sort_order: parseInt(md.querySelector('#m-ord').value, 10) || 0,
+        active: md.querySelector('#m-active').checked,
+      };
+      if (!body.name) { toast('Informe o nome.', 'warning'); return; }
+      try {
+        if (m) await API.patch('/materials/' + m.id, body); else await API.post('/materials', body);
+        modal.hide(); toast('Material salvo.', 'success'); load();
+      } catch (e) { showError(e); }
+    };
+    modal.show();
+  }
+  document.getElementById('btn-new-mat').onclick = () => abrir(null);
+  await load();
 };
