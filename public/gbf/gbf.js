@@ -215,7 +215,7 @@
     atrasada: ['tag-red', 'Atrasada'], vence_logo: ['tag-amber', 'Vence em 24 h'], no_prazo: ['tag-green', 'No prazo'],
     sem_prazo: null, cumprido: ['tag-green', 'Feita no prazo'], fora_do_prazo: ['tag-red', 'Feita com atraso'],
   };
-  const PRIO_TAREFA = { 1: 'Baixa', 2: 'Normal', 3: 'Alta', 4: 'Urgente' };
+  const PRIO_TAREFA = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' }; // mesma urgência dos chamados (nomes da Orcim)
   const tag = (cls, txt, icon) => `<span class="tag ${cls}">${icon ? `<i class="bi bi-${icon}"></i>` : ''}${esc(txt)}</span>`;
   const tagSla = (s) => tag(...(SLA[s] || SLA.sem_prazo));
   const tagStatus = (d) => tag(TAG_STATUS_CENTRAL[d.status] || 'tag-gray', d.status_label);
@@ -1135,8 +1135,8 @@
           <textarea class="form-control" name="description" rows="4">${esc(t?.description || '')}</textarea></div>
         <div class="row g-3 mb-3">
           <div class="col-sm-6"><label class="form-label">Prazo</label><input type="datetime-local" class="form-control" name="due_at" value="${paraInputLocal(t?.due_at)}"></div>
-          <div class="col-sm-6"><label class="form-label">Prioridade</label><select class="form-select" name="priority">
-            ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(t?.priority || 2) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label">Urgência</label><select class="form-select" name="priority">
+            ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(t?.priority || 1) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
           ${ehGestor() ? `<div class="col-sm-6"><label class="form-label">Responsável</label><select class="form-select" name="assignee_id">
             <option value="">Sem responsável</option>${users.map((u) => `<option value="${u.id}" ${String(t ? t.assignee_id : EU.id) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>` : ''}
           <div class="col-sm-6"><label class="form-label">Posto</label><select class="form-select" name="location_id">
@@ -2428,8 +2428,8 @@
         <div class="row g-3 mb-3">
           <div class="col-sm-6"><label class="form-label" for="sl-posto">Posto</label><select class="form-select" id="sl-posto" name="location_id"><option value="">Nenhum</option>
             ${postos.map((p) => `<option value="${p.id}" ${String(p.id) === String(postoSel) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
-          <div class="col-sm-6"><label class="form-label" for="sl-prio">Prioridade</label><select class="form-select" id="sl-prio" name="priority">
-            ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(s?.priority || 2) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label" for="sl-prio">Urgência</label><select class="form-select" id="sl-prio" name="priority">
+            ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(s?.priority || 1) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
           <div class="col-sm-6"><label class="form-label" for="sl-data">Data desejada</label><input type="date" class="form-control" id="sl-data" name="desired_date" value="${esc(s?.desired_date || '')}"></div>
         </div>
         <div class="alert alert-danger py-2 d-none" id="sl-erro"></div>

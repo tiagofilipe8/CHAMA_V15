@@ -165,7 +165,7 @@ router.post('/', ah(async (req, res) => {
     `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id, visit_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [
       title.slice(0, 200), String(b.description || '').trim() || null,
-      Math.min(Math.max(parseInt(b.priority, 10) || 2, 1), 4),
+      Math.min(Math.max(parseInt(b.priority, 10) || 1, 1), 4),
       assignee, u.id, tk.id, String(b.location || '').trim() || null, b.due_at || null,
       /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null,
       visitId,

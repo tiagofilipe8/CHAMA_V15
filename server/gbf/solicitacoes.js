@@ -5,7 +5,7 @@ const { ah, notificar, usuariosAtivos } = require('./common');
 
 const router = express.Router();
 const STATUS = { a_fazer: 'A fazer', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
-const PRIORIDADE = { 1: 'Baixa', 2: 'Normal', 3: 'Alta', 4: 'Urgente' };
+const PRIORIDADE = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' }; // mesma urgência dos chamados
 
 const SELECT = `
   SELECT r.*, r.desired_date::text AS desired_date, l.name AS location_name, ur.name AS requested_by_name, uh.name AS handled_by_name

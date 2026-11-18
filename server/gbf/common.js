@@ -15,7 +15,8 @@ const STATUS_TAREFA = {
   a_fazer: 'A fazer', em_andamento: 'Em andamento', aguardando: 'Aguardando',
   concluida: 'Concluída', cancelada: 'Cancelada',
 };
-const PRIORIDADE_TAREFA = { 1: 'Baixa', 2: 'Normal', 3: 'Alta', 4: 'Urgente' };
+// Atividades e solicitações usam a mesma escala de urgência dos chamados
+const PRIORIDADE_TAREFA = PRIORIDADE_CENTRAL;
 
 async function getSetting(key, fallback = null) {
   const { rows } = await query('SELECT value FROM gbf_settings WHERE key = $1', [key]);
