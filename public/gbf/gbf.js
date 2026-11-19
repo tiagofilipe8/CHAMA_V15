@@ -926,6 +926,18 @@
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   };
 
+  // Etiqueta do status real (A fazer, Em andamento, Aguardando: o quê, Concluída) + "atrasada" quando for o caso
+  function etiquetaEstado(i) {
+    if (i.feito) return tag('tag-green', 'Concluída');
+    const e = i.estado;
+    const base = e === 'aguardando' ? tag('tag-amber', i.aguardando ? `Aguardando: ${corta(i.aguardando, 22)}` : 'Aguardando')
+      : e === 'em_andamento' ? tag('tag-blue', 'Em andamento')
+        : e === 'a_fazer' ? tag('tag-gray', 'A fazer')
+          : tag('tag-gray', i.situacao || '—');
+    return `<span class="etq">${base}${i.atrasado ? tag('tag-red', 'Atrasada') : ''}</span>`;
+  }
+  const corta = (t, n) => (String(t).length > n ? `${String(t).slice(0, n - 1)}…` : String(t));
+
   async function vCalendarioPainel(qs, seq, abasHtml = '', base = '#/painel?aba=calendario') {
     titulo('Painel do gestor');
     base = base.replace(/&(mes|dia)=[^&]*/g, '');
@@ -1051,7 +1063,7 @@
       const linha = criar('cal-linha', '<svg width="100%" height="100%"><path d="" /></svg>');
       const fechar = () => { pop.classList.remove('on', 'fixo'); linha.classList.remove('on'); celFixa = null; };
       let celFixa = null;
-      const etiqueta = (i) => (i.feito ? tag('tag-green', 'Concluída') : i.atrasado ? tag('tag-red', 'Atrasada') : i.aberto ? tag('tag-blue', 'Em aberto') : tag('tag-gray', i.situacao));
+      const etiqueta = (i) => etiquetaEstado(i);
       const fmtCurta = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
       // itens do dia + atividades de vários dias que estão correndo naquele dia (a entrega já vem na lista)
       const doDia = (dia) => {
@@ -1061,7 +1073,6 @@
       };
       const comentariosDe = (lst) => lst.flatMap((i) => (i.comentarios || []).map((k) => ({ ...k, item: i.titulo })))
         .sort((a, b) => new Date(b.quando) - new Date(a.quando));
-      const corta = (t, n) => (String(t).length > n ? `${String(t).slice(0, n - 1)}…` : String(t));
 
       // --- hover: cartão pequeno que segue o mouse ---
       const grade = $('#cal-dias');
@@ -1519,6 +1530,7 @@
       <div class="meta">
         ${t.priority >= 3 ? tag(TAG_PRIO[t.priority], PRIO_TAREFA[t.priority]) : ''}
         ${tagPrazoTarefa(t.prazo)}
+        ${t.status === 'aguardando' && t.waiting_for ? tag('tag-amber', t.waiting_for, 'pause-circle') : ''}
         ${t.due_at ? `<span><i class="bi bi-calendar"></i> ${prazoTxt(t)}</span>` : ''}
         ${t.ticket_number ? `<span><i class="bi bi-link-45deg"></i>${esc(t.ticket_number)}</span>` : ''}
         ${t.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(t.location_name)}</span>` : ''}
@@ -1536,18 +1548,107 @@
     if (t.includes('urg') || t.includes('prioridade')) return 'exclamation-triangle';
     return 'dot';
   }
-  function itemHistorico(e) {
+function itemHistorico(e) {
+    const hora = new Date(e.created_at).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
     if (e.kind === 'system') {
       return `<div class="hist-acao"><i class="bi bi-${iconeAcao(e.content)}"></i>
         <span class="hist-txt"><b>${esc(e.user_name || 'Sistema')}</b> ${esc(e.user_name && String(e.content).startsWith(e.user_name) ? String(e.content).slice(e.user_name.length).trim() : e.content)}</span>
-        <span class="hist-quando" title="${fmtData(e.created_at)}">${fmtData(e.created_at)}</span></div>`;
+        <span class="hist-quando">${hora}</span></div>`;
     }
     return `<div class="hist-coment"><span class="avatar">${esc(iniciais(e.user_name || '?'))}</span>
-      <div class="hist-balao"><div class="hist-cab"><b>${esc(e.user_name || 'Sistema')}</b><span>${fmtData(e.created_at)}</span></div>
-      <div class="hist-corpo">${esc(e.content)}</div></div></div>`;
+      <div class="hist-balao"><div class="hist-cab"><b>${esc(e.user_name || 'Sistema')}</b><span>${hora}</span></div>
+      <div class="hist-corpo">${realcarMencoes(esc(e.content))}</div></div></div>`;
+  }
+  // separa o histórico por dia: "Hoje", "Ontem", "qua, 18/11"
+  function historicoHtml(eventos) {
+    if (!eventos.length) return '<div class="small-muted">Nada ainda.</div>';
+    let dia = null;
+    return eventos.map((e) => {
+      const d = new Date(e.created_at).toLocaleDateString('en-CA', { timeZone: TZ });
+      const cab = d !== dia ? `<div class="hist-dia">${d === hojeSP() ? 'Hoje' : d === isoSoma(hojeSP(), -1) ? 'Ontem' : dataCurta(d)}</div>` : '';
+      dia = d;
+      return cab + itemHistorico(e);
+    }).join('');
+  }
+  // @Nome vira destaque (só nomes de usuários que existem)
+  function realcarMencoes(html) {
+    const nomes = (usuariosAtivos || []).map((u) => esc(u.name)).sort((a, b) => b.length - a.length);
+    let out = html;
+    for (const n of nomes) out = out.split(`@${n}`).join(`<span class="mencao">@${n}</span>`);
+    return out;
   }
 
-  async function vAtividades(qs, seq) {
+  // Marcação com @ num campo de texto: lista de pessoas enquanto digita
+  async function ligarMencoes(campo) {
+    const users = (await carregarUsuarios()).filter((u) => u.role !== 'unidade');
+    const lista = document.createElement('div');
+    lista.className = 'mencao-lista d-none';
+    campo.parentElement.style.position = 'relative';
+    campo.after(lista);
+    let achados = []; let sel = 0;
+    const termo = () => {
+      const antes = campo.value.slice(0, campo.selectionStart);
+      const m = antes.match(/(^|\s)@([^@\n]{0,30})$/);
+      return m ? m[2] : null;
+    };
+    const fechar = () => { lista.classList.add('d-none'); achados = []; };
+    const pintar = () => {
+      lista.innerHTML = achados.map((u, i) => `<button type="button" class="${i === sel ? 'on' : ''}" data-i="${i}"><span class="avatar">${esc(iniciais(u.name))}</span>${esc(u.name)}</button>`).join('');
+      lista.classList.toggle('d-none', !achados.length);
+    };
+    const escolher = (u) => {
+      const pos = campo.selectionStart;
+      const antes = campo.value.slice(0, pos).replace(/@([^@\n]{0,30})$/, `@${u.name} `);
+      campo.value = antes + campo.value.slice(pos);
+      campo.setSelectionRange(antes.length, antes.length);
+      fechar(); campo.focus();
+    };
+    campo.addEventListener('input', () => {
+      const t = termo();
+      if (t === null) { fechar(); return; }
+      const b = t.toLowerCase();
+      achados = users.filter((u) => u.name.toLowerCase().split(/\s+/).some((p) => p.startsWith(b)) || u.name.toLowerCase().startsWith(b)).slice(0, 6);
+      sel = 0; pintar();
+    });
+    campo.addEventListener('keydown', (e) => {
+      if (!achados.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); sel = (sel + 1) % achados.length; pintar(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); sel = (sel - 1 + achados.length) % achados.length; pintar(); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); escolher(achados[sel]); }
+      else if (e.key === 'Escape') { e.stopPropagation(); fechar(); }
+    });
+    lista.addEventListener('mousedown', (e) => { const b = e.target.closest('[data-i]'); if (b) { e.preventDefault(); escolher(achados[Number(b.dataset.i)]); } });
+    campo.addEventListener('blur', () => setTimeout(fechar, 150));
+  }
+
+  // "Aguardando o quê?": pop-up ao mudar para Aguardando (no botão ou arrastando no quadro)
+  const MOTIVOS_AGUARDANDO = ['Peça / fornecedor', 'Resposta do posto', 'Aprovação do gestor', 'Orcim', 'Terceiro / operadora'];
+  function pedirAguardando(id, depois) {
+    const el = janela('Aguardando o quê?', `
+      <label class="form-label" for="ag-oque">O que falta para continuar?</label>
+      <input class="form-control mb-2" id="ag-oque" maxlength="200" placeholder="Ex.: peça chegar do fornecedor">
+      <div class="ag-motivos mb-3">${MOTIVOS_AGUARDANDO.map((m) => `<button type="button" class="chip" data-mot="${esc(m)}">${esc(m)}</button>`).join('')}</div>
+      <label class="form-label" for="ag-com">Comentário <span class="small-muted">(opcional · use @ para marcar alguém)</span></label>
+      <textarea class="form-control" id="ag-com" rows="3" placeholder="Ex.: pedi para @Pedro aprovar a compra"></textarea>`, {
+      ok: 'Marcar como aguardando',
+      onOk: async (m) => {
+        const oque = m.querySelector('#ag-oque').value.trim();
+        if (!oque) throw new Error('Diga o que a atividade está aguardando.');
+        await API.patch(`/atividades/${id}`, { status: 'aguardando', aguardando: oque });
+        const com = m.querySelector('#ag-com').value.trim();
+        if (com) await API.post(`/atividades/${id}/comentarios`, { content: com });
+        toast('Atividade aguardando. A equipe foi avisada.');
+        if (depois) depois();
+      },
+    });
+    el.querySelectorAll('[data-mot]').forEach((b) => b.addEventListener('click', () => {
+      el.querySelector('#ag-oque').value = b.dataset.mot; el.querySelector('#ag-oque').focus();
+    }));
+    ligarMencoes(el.querySelector('#ag-com'));
+    setTimeout(() => el.querySelector('#ag-oque')?.focus(), 300);
+  }
+
+    async function vAtividades(qs, seq) {
     titulo(ehGestor() ? 'Atividades do time' : 'Minhas atividades');
     const f = Object.fromEntries(qs.entries());
     const modo = f.situacao || 'quadro';
@@ -1668,7 +1769,7 @@
   }
 
   async function vAtividade(id, seq) {
-    const t = await API.get(`/atividades/${encodeURIComponent(id)}`);
+    const [t] = await Promise.all([API.get(`/atividades/${encodeURIComponent(id)}`), carregarUsuarios()]);
     if (seq !== renderSeq) return;
     titulo('Atividade');
     const acoes = {
@@ -1683,7 +1784,7 @@
       <a href="#/atividades" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Atividades</a>
       <div class="detail-head">
         <div class="min-w-0">
-          <div class="d-flex flex-wrap gap-2 mt-2">${tagTarefa(t.status)}${tagPrazoTarefa(t.prazo)}${t.priority >= 3 ? tag(TAG_PRIO[t.priority], PRIO_TAREFA[t.priority]) : ''}</div>
+          <div class="d-flex flex-wrap gap-2 mt-2">${tagTarefa(t.status)}${t.status === 'aguardando' && t.waiting_for ? tag('tag-amber', `aguardando: ${t.waiting_for}`, 'pause-circle') : ''}${tagPrazoTarefa(t.prazo)}${t.priority >= 3 ? tag(TAG_PRIO[t.priority], PRIO_TAREFA[t.priority]) : ''}</div>
           <h3>${esc(t.title)}</h3>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -1707,15 +1808,16 @@
         </div>
         <div class="card-x">
           <h3><i class="bi bi-chat-dots"></i>Histórico e comentários</h3>
-          <div class="hist">${t.eventos.map(itemHistorico).join('') || '<div class="small-muted">Nada ainda.</div>'}</div>
+          <div class="hist">${historicoHtml(t.eventos)}</div>
           <form id="form-coment" class="mt-2">
-            <textarea class="form-control mb-2" name="content" rows="2" placeholder="Escreva um comentário ou atualização" required></textarea>
+            <div class="mb-2"><textarea class="form-control" name="content" rows="2" placeholder="Escreva um comentário ou atualização · @ para marcar alguém" required></textarea></div>
             <button class="btn btn-sm btn-brand" type="submit">Comentar</button>
           </form>
         </div>
       </div>`;
     $$('[data-status]').forEach((b) => b.addEventListener('click', async () => {
       if (b.dataset.status === 'cancelada' && !confirm('Cancelar esta atividade?')) return;
+      if (b.dataset.status === 'aguardando') { pedirAguardando(t.id, render); return; }
       try {
         await API.patch(`/atividades/${t.id}`, { status: b.dataset.status });
         toast('Status atualizado.');
@@ -1729,6 +1831,7 @@
         render();
       } catch (e) { toast(e.message, true); }
     });
+    ligarMencoes($('#form-coment textarea'));
   }
 
   // ------------------------------------------------------------------
@@ -2300,6 +2403,7 @@
       if (dados.kanban) { // quadro de atividades: muda o status
         const novo = destino?.dataset.dropStatus;
         if (!novo || novo === dados.status) return;
+        if (novo === 'aguardando') { pedirAguardando(dados.id, render); return; }
         try {
           await API.patch(`/atividades/${dados.id}`, { status: novo });
           toast(`Atividade movida para "${STATUS_TAREFA_NOME[novo] || novo}".`);
@@ -3020,7 +3124,7 @@
   // ------------------------------------------------------------------
   // Página de notificações: filtros por tipo, marcar como lida, abrir o item
   const GRUPOS_NOTIF = [
-    ['todas', 'Todas', null], ['nao_lidas', 'Não lidas', null],
+    ['todas', 'Todas', null], ['nao_lidas', 'Não lidas', null], ['mencoes', 'Menções', ['mencao']],
     ['atividades', 'Atividades', ['atividade', 'atividade_prazo', 'atividade_atrasada']],
     ['comentarios', 'Comentários', ['comentario']],
     ['pedidos', 'Pedidos de visita', ['solicitacao']],
@@ -3029,7 +3133,7 @@
     ['cadastros', 'Postos e checklists', ['posto', 'checklist']],
   ];
   const ICONE_NOTIF = {
-    atividade: 'check2-square', atividade_prazo: 'hourglass-split', atividade_atrasada: 'alarm', comentario: 'chat-left-text',
+    mencao: 'at', atividade: 'check2-square', atividade_prazo: 'hourglass-split', atividade_atrasada: 'alarm', comentario: 'chat-left-text',
     solicitacao: 'megaphone', visita: 'geo-alt', visita_prevista: 'calendar-event', reagendamento: 'arrow-left-right',
     posto: 'shop', checklist: 'ui-checks', demanda_nova: 'inbox', demanda_status: 'inbox', demanda_atrasada: 'alarm',
   };
@@ -3562,7 +3666,7 @@
       resumo: 'Ver o que mudou, filtrar por assunto e marcar como lido.',
       passos: [
         { alvo: '#top-aba-notif', titulo: 'Aba de notificações', texto: 'Fica no topo de todas as telas. Clique para abrir a página com tudo.' },
-        { rota: '#/notificacoes', alvo: '.pg-abas', titulo: 'Filtros', texto: 'Todas, Não lidas, Atividades, Comentários, Pedidos de visita, Visitas, Reagendamentos e Postos e checklists. O número mostra as não lidas de cada assunto.' },
+        { rota: '#/notificacoes', alvo: '.pg-abas', titulo: 'Filtros', texto: 'Todas, Não lidas, Menções (quando alguém marca você com @), Atividades, Comentários, Pedidos de visita, Visitas, Reagendamentos e Postos e checklists. O número mostra as não lidas de cada assunto.' },
         { alvo: '.nt-lista', titulo: 'Por dia', texto: 'As notificações vêm separadas por dia. As novas ficam em verde-claro. Clique numa para abrir o item (ela fica lida).' },
         { alvo: '#nt-ler', titulo: 'Marcar todas como lidas', texto: 'Limpa o número vermelho de uma vez.' },
         { titulo: 'Quem recebe', texto: 'Quando alguém cria, muda, comenta, reagenda, inicia ou conclui algo, a equipe (gestores e técnicos) recebe o aviso. Quem fez a ação não recebe o próprio aviso.' },
@@ -3595,7 +3699,8 @@
         { alvo: '.chips', titulo: 'Outras vistas', texto: 'Para hoje, Atrasadas, Em aberto, Concluídas ou Todas, em lista.' },
         { alvo: '#busca-at', titulo: 'Buscar', texto: 'Procure pelo nome da atividade. O gestor também filtra por responsável.' },
         { rota: primeiraAtividade, alvo: '.hist', titulo: 'Histórico e comentários', texto: 'Dentro da atividade: as ações ficam em linhas pequenas e roxas; os comentários, em destaque verde.' },
-        { alvo: '#form-coment', titulo: 'Comentar', texto: 'Escreva uma atualização, ex.: "peça chega amanhã". Quem cuida da atividade e a equipe recebem o aviso.' },
+        { alvo: '#form-coment', titulo: 'Comentar e marcar com @', texto: 'Escreva uma atualização, ex.: "peça chega amanhã". Digite @ e escolha alguém para marcar: a pessoa recebe o aviso na aba Menções das notificações.' },
+        { titulo: 'Aguardando', texto: 'Ao mudar para Aguardando (no botão ou arrastando no quadro), o painel pergunta "aguardando o quê?" (peça, resposta do posto, aprovação...) e deixa escrever um comentário. O motivo aparece no cartão e no calendário.' },
       ],
     },
     {

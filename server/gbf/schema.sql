@@ -261,3 +261,6 @@ ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT 
 
 -- Atividade de vários dias: dia em que começa (o prazo é a entrega)
 ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS start_date DATE;
+
+-- Atividade "Aguardando": o que está esperando (peça, resposta, aprovação...)
+ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS waiting_for TEXT;

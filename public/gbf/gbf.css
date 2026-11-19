@@ -910,3 +910,17 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .np-ck-prev { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .np-ck-prev li { font-size: .74rem; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--ink); }
 .np-ck-prev li.mais { color: var(--muted); border-style: dashed; }
+
+/* Histórico: separador de dia */
+.hist-dia { font-size: .7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 10px 0 4px; }
+.hist-dia:first-child { margin-top: 0; }
+/* Marcação com @ */
+.mencao { color: var(--brand); font-weight: 600; background: rgba(15, 118, 110, .08); border-radius: 4px; padding: 0 2px; }
+.mencao-lista { position: absolute; left: 0; top: 100%; z-index: 2000; min-width: 220px; background: #fff; border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 26px rgba(15, 23, 42, .15); padding: 4px; margin-top: 2px; }
+.mencao-lista button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; padding: 6px 8px; border-radius: 7px; font-size: .86rem; text-align: left; }
+.mencao-lista button.on, .mencao-lista button:hover { background: #f1f5f9; }
+.mencao-lista .avatar { width: 24px; height: 24px; font-size: .64rem; }
+/* Aguardando */
+.ag-motivos { display: flex; flex-wrap: wrap; gap: 6px; }
+.etq { display: inline-flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }

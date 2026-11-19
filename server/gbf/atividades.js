@@ -255,10 +255,13 @@ router.patch('/:id', ah(async (req, res) => {
   if (b.status !== undefined && b.status !== t.status) {
     if (!STATUS_TAREFA[b.status]) return res.status(422).json({ error: 'Status inválido.' });
     set('status', b.status);
+    // aguardando: guarda o quê; saindo de aguardando, limpa
+    var aguardandoOque = b.status === 'aguardando' ? (String(b.aguardando || '').trim().slice(0, 200) || null) : null;
+    if (b.status === 'aguardando' || t.status === 'aguardando') set('waiting_for', aguardandoOque);
     if (b.status === 'em_andamento' && !t.started_at) sets.push('started_at = now()');
     if (b.status === 'concluida') sets.push('completed_at = now()');
     else if (FECHADA.includes(t.status)) sets.push('completed_at = NULL');
-    mudancas.push(`status: ${STATUS_TAREFA[t.status]} → ${STATUS_TAREFA[b.status]}`);
+    mudancas.push(`status: ${STATUS_TAREFA[t.status]} → ${STATUS_TAREFA[b.status]}${aguardandoOque ? ` (aguardando: ${aguardandoOque})` : ''}`);
   }
   if (!sets.length) return res.status(422).json({ error: 'Nada para alterar.' });
   sets.push('updated_at = now()');
@@ -289,10 +292,18 @@ router.post('/:id/comentarios', ah(async (req, res) => {
   if (!content) return res.status(422).json({ error: 'Escreva o comentário.' });
   await evento(t.id, u.id, content.slice(0, 4000), 'comment');
   await query('UPDATE gbf_tasks SET updated_at = now() WHERE id = $1', [t.id]);
+  const baixo = content.toLowerCase();
+  const marcados = (await query('SELECT id, name FROM gbf_users WHERE active = TRUE')).rows
+    .filter((x) => String(x.id) !== String(u.id) && baixo.includes(`@${String(x.name).toLowerCase()}`))
+    .map((x) => x.id);
+  await notificar(marcados, {
+    kind: 'mencao', title: `${u.name} marcou você em: ${t.title}`,
+    message: content.slice(0, 200), link: `#/atividades/${t.id}`,
+  });
   await avisarEquipe(u, {
     kind: 'comentario', title: `${u.name} comentou em: ${t.title}`,
     message: content.slice(0, 200), link: `#/atividades/${t.id}`,
-  }, { extras: [t.assignee_id, t.created_by] });
+  }, { extras: [t.assignee_id, t.created_by], excluir: marcados });
   res.status(201).json({ ok: true });
 }));
 

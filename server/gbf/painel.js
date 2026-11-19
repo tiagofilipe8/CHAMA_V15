@@ -537,12 +537,12 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
       atrasado: aberto && !!r.desejada && r.desejada < hoje,
       detalhe: [r.posto, visita ? `${r.tarefas} tarefa(s)` : null, r.status === 'concluida' && r.problemas ? `${r.problemas} com problema` : null]
         .filter(Boolean).join(' · '),
-      responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`,
+      responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`, estado: r.status,
     });
   }
 
   const [tarefas, faixasRows, rotina] = await Promise.all([
-    query(`SELECT t.id, t.title, t.priority, t.status, t.all_day, ${DIA('t.due_at')} AS dia,
+    query(`SELECT t.id, t.title, t.priority, t.status, t.waiting_for, t.all_day, ${DIA('t.due_at')} AS dia,
               CASE WHEN t.all_day THEN '' ELSE ${HORA('t.due_at')} END AS hora, (t.due_at < now()) AS vencida,
               l.name AS posto, u.name AS responsavel, to_char(t.start_date, 'YYYY-MM-DD') AS comeca,
               (SELECT json_agg(x) FROM (SELECT uq.name AS quem, e.content AS texto, e.created_at AS quando
@@ -553,7 +553,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
        LEFT JOIN gbf_users u ON u.id = t.assignee_id
        WHERE t.status <> 'cancelada' AND t.due_at >= ${INI} AND t.due_at < ${FIM}`, [inicio, fim]),
     // atividades de vários dias que passam pela grade (do início à entrega)
-    query(`SELECT t.id, t.title, t.priority, t.status, to_char(t.start_date, 'YYYY-MM-DD') AS ini, ${DIA('t.due_at')} AS fim,
+    query(`SELECT t.id, t.title, t.priority, t.status, t.waiting_for, to_char(t.start_date, 'YYYY-MM-DD') AS ini, ${DIA('t.due_at')} AS fim,
               (t.due_at < now()) AS vencida, l.name AS posto, u.name AS responsavel,
               (SELECT json_agg(x) FROM (SELECT uq.name AS quem, e.content AS texto, e.created_at AS quando
                  FROM gbf_task_events e LEFT JOIN gbf_users uq ON uq.id = e.user_id
@@ -573,6 +573,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     const aberto = !['concluida', 'cancelada'].includes(t.status);
     itens.push({
       fonte: 'ti', tipo: 'atividade', id: t.id, numero: `A-${String(t.id).padStart(4, '0')}`, titulo: t.title, dia: t.dia, hora: t.hora,
+      estado: t.status, aguardando: t.waiting_for,
       prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
       atrasado: aberto && t.vencida, detalhe: ['Atividade', t.posto].filter(Boolean).join(' · '),
       responsavel: t.responsavel, link: `#/atividades/${t.id}`,
@@ -583,6 +584,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     const aberto = !['concluida', 'cancelada'].includes(t.status);
     return {
       fonte: 'ti', tipo: 'atividade', id: t.id, numero: `A-${String(t.id).padStart(4, '0')}`, titulo: t.title, ini: t.ini, fim: t.fim,
+      estado: t.status, aguardando: t.waiting_for,
       prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
       atrasado: aberto && t.vencida, detalhe: ['Atividade de vários dias', t.posto].filter(Boolean).join(' · '),
       responsavel: t.responsavel, link: `#/atividades/${t.id}`, comentarios: t.comentarios || [], hora: '',
@@ -592,7 +594,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     itens.push({
       fonte: 'ti', tipo: 'rotina', id: l.id, numero: 'Rotina', titulo: `Visita de rotina — ${l.name}`, dia: l.dia, hora: l.hora,
       prioridade: 1, situacao: 'Visita prevista', aberto: true, feito: false, atrasado: l.dia < hoje,
-      detalhe: l.checklist || '', responsavel: null, link: `#/postos/${l.id}`,
+      detalhe: l.checklist || '', responsavel: null, link: `#/postos/${l.id}`, estado: 'a_fazer',
     });
   }
 
