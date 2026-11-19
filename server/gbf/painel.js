@@ -541,14 +541,29 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     });
   }
 
-  const [tarefas, rotina] = await Promise.all([
+  const [tarefas, faixasRows, rotina] = await Promise.all([
     query(`SELECT t.id, t.title, t.priority, t.status, t.all_day, ${DIA('t.due_at')} AS dia,
               CASE WHEN t.all_day THEN '' ELSE ${HORA('t.due_at')} END AS hora, (t.due_at < now()) AS vencida,
-              l.name AS posto, u.name AS responsavel
+              l.name AS posto, u.name AS responsavel, to_char(t.start_date, 'YYYY-MM-DD') AS comeca,
+              (SELECT json_agg(x) FROM (SELECT uq.name AS quem, e.content AS texto, e.created_at AS quando
+                 FROM gbf_task_events e LEFT JOIN gbf_users uq ON uq.id = e.user_id
+                 WHERE e.task_id = t.id AND e.kind = 'comment' ORDER BY e.created_at DESC LIMIT 2) x) AS comentarios
        FROM gbf_tasks t
        LEFT JOIN gbf_locations l ON l.id = t.location_id
        LEFT JOIN gbf_users u ON u.id = t.assignee_id
        WHERE t.status <> 'cancelada' AND t.due_at >= ${INI} AND t.due_at < ${FIM}`, [inicio, fim]),
+    // atividades de vários dias que passam pela grade (do início à entrega)
+    query(`SELECT t.id, t.title, t.priority, t.status, to_char(t.start_date, 'YYYY-MM-DD') AS ini, ${DIA('t.due_at')} AS fim,
+              (t.due_at < now()) AS vencida, l.name AS posto, u.name AS responsavel,
+              (SELECT json_agg(x) FROM (SELECT uq.name AS quem, e.content AS texto, e.created_at AS quando
+                 FROM gbf_task_events e LEFT JOIN gbf_users uq ON uq.id = e.user_id
+                 WHERE e.task_id = t.id AND e.kind = 'comment' ORDER BY e.created_at DESC LIMIT 2) x) AS comentarios
+       FROM gbf_tasks t
+       LEFT JOIN gbf_locations l ON l.id = t.location_id
+       LEFT JOIN gbf_users u ON u.id = t.assignee_id
+       WHERE t.status <> 'cancelada' AND t.start_date IS NOT NULL AND t.due_at IS NOT NULL
+         AND t.start_date < (t.due_at AT TIME ZONE '${TZ}')::date
+         AND t.start_date <= $2::date AND (t.due_at AT TIME ZONE '${TZ}')::date >= $1::date`, [inicio, fim]),
     query(`SELECT l.id, l.name, l.next_visit_date::text AS dia, COALESCE(to_char(l.next_visit_time, 'HH24:MI'), '') AS hora,
               c.name AS checklist
        FROM gbf_locations l LEFT JOIN gbf_checklists c ON c.id = l.checklist_id
@@ -561,8 +576,18 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
       prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
       atrasado: aberto && t.vencida, detalhe: ['Atividade', t.posto].filter(Boolean).join(' · '),
       responsavel: t.responsavel, link: `#/atividades/${t.id}`,
+      comentarios: t.comentarios || [], comeca: t.comeca && t.comeca < t.dia ? t.comeca : null,
     });
   }
+  const faixas = faixasRows.rows.map((t) => {
+    const aberto = !['concluida', 'cancelada'].includes(t.status);
+    return {
+      fonte: 'ti', tipo: 'atividade', id: t.id, numero: `A-${String(t.id).padStart(4, '0')}`, titulo: t.title, ini: t.ini, fim: t.fim,
+      prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
+      atrasado: aberto && t.vencida, detalhe: ['Atividade de vários dias', t.posto].filter(Boolean).join(' · '),
+      responsavel: t.responsavel, link: `#/atividades/${t.id}`, comentarios: t.comentarios || [], hora: '',
+    };
+  });
   for (const l of rotina.rows) {
     itens.push({
       fonte: 'ti', tipo: 'rotina', id: l.id, numero: 'Rotina', titulo: `Visita de rotina — ${l.name}`, dia: l.dia, hora: l.hora,
@@ -571,7 +596,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     });
   }
 
-  res.json({ mes, primeiro, ultimo, inicio, fim, hoje, orcim_ok: orcimOk, urgencias: PRIORIDADE_CENTRAL, itens });
+  res.json({ mes, primeiro, ultimo, inicio, fim, hoje, orcim_ok: orcimOk, urgencias: PRIORIDADE_CENTRAL, itens, faixas });
 }));
 
 module.exports = router;

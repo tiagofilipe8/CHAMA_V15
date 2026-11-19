@@ -9,7 +9,7 @@ const {
 const router = express.Router();
 
 const TASK_SELECT = `
-  SELECT t.*, ua.name AS assignee_name, uc.name AS created_by_name,
+  SELECT t.*, to_char(t.start_date, 'YYYY-MM-DD') AS inicio, ua.name AS assignee_name, uc.name AS created_by_name,
          gl.name AS location_name
   FROM gbf_tasks t
   LEFT JOIN gbf_users ua ON ua.id = t.assignee_id
@@ -166,15 +166,17 @@ router.post('/', ah(async (req, res) => {
   if (pz && pz.erro) return res.status(422).json({ error: pz.erro });
   const dueAt = pz ? pz.due_at : (b.due_at || null);
   const allDay = pz ? pz.all_day : false;
+  const ini = dataInicio(b.start_date);
+  if (ini === false) return res.status(422).json({ error: 'Data de início inválida.' });
 
   const { rows } = await query(
-    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id, visit_id, all_day)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [
+    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id, visit_id, all_day, start_date)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [
       title.slice(0, 200), String(b.description || '').trim() || null,
       Math.min(Math.max(parseInt(b.priority, 10) || 1, 1), 4),
       assignee, u.id, tk.id, String(b.location || '').trim() || null, dueAt,
       /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null,
-      visitId, allDay,
+      visitId, allDay, ini || null,
     ]);
   const id = rows[0].id;
   await evento(id, u.id, `${u.name} criou a atividade.`);
@@ -187,6 +189,12 @@ router.post('/', ah(async (req, res) => {
   }
   res.status(201).json(enriquecer(await carregar(id)));
 }));
+
+// Data de início (atividade de vários dias): '' = sem início; false = inválida
+function dataInicio(v) {
+  if (v === undefined || v === null || v === '') return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : false;
+}
 
 // Alteração (campos e status)
 router.patch('/:id', ah(async (req, res) => {
@@ -208,6 +216,15 @@ router.patch('/:id', ah(async (req, res) => {
   if (b.location !== undefined) set('location', String(b.location).trim() || null);
   if (b.location_id !== undefined) set('location_id', /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null);
   if (b.priority !== undefined) set('priority', Math.min(Math.max(parseInt(b.priority, 10) || 2, 1), 4));
+  if (b.start_date !== undefined) {
+    const ini = dataInicio(b.start_date);
+    if (ini === false) return res.status(422).json({ error: 'Data de início inválida.' });
+    const antes = t.start_date ? new Date(t.start_date).toISOString().slice(0, 10) : null;
+    if ((ini || null) !== (t.inicio || antes)) {
+      set('start_date', ini || null);
+      mudancas.push(ini ? `início em ${ini.split('-').reverse().join('/')}` : 'tirou a data de início');
+    }
+  }
   const pz = prazoDe(b);
   if (pz && pz.erro) return res.status(422).json({ error: pz.erro });
   if (pz || b.due_at !== undefined) {

@@ -258,3 +258,6 @@ ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS faz_visitas BOOLEAN NOT NULL DEFA
 
 -- Atividade sem horário = o dia todo (vence às 23:59 daquele dia)
 ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Atividade de vários dias: dia em que começa (o prazo é a entrega)
+ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS start_date DATE;

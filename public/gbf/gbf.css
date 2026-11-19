@@ -773,3 +773,50 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .cal-pop-det dd { margin: 0; color: var(--ink); word-break: break-word; }
 .cal-pop-abrir { display: inline-flex; gap: 4px; align-items: center; margin: 4px 0 2px 16px; font-size: .74rem; font-weight: 600; color: var(--brand); }
 @media (prefers-reduced-motion: reduce) { .cal-pop-det { transition: none; } }
+
+/* Calendário: cursor de olho nos dias */
+.calpg .cal-cel { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%23ffffff' stroke='%230f766e' stroke-width='1.2'/%3E%3Cpath d='M4.5 12s2.8-4.6 7.5-4.6 7.5 4.6 7.5 4.6-2.8 4.6-7.5 4.6S4.5 12 4.5 12z' fill='none' stroke='%230f766e' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='12' r='2.2' fill='%230f766e'/%3E%3C/svg%3E") 13 13, pointer; }
+
+/* Hover pequeno perto do mouse */
+#cal-dica { position: fixed; left: 0; top: 0; z-index: 3600; pointer-events: none; max-width: 260px;
+  background: rgba(15, 23, 42, .92); color: #e2e8f0; border-radius: 9px; padding: 6px 9px; font-size: .72rem; line-height: 1.35;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .25); opacity: 0; transition: opacity .15s ease; }
+#cal-dica.on { opacity: 1; }
+#cal-dica .cal-dica-l1 { font-weight: 600; color: #fff; display: flex; gap: 5px; align-items: center; }
+#cal-dica .cal-dica-l2 { color: #94a3b8; margin-top: 3px; font-size: .68rem; }
+#cal-dica .cal-dica-com { display: flex; gap: 5px; margin-top: 4px; color: #cbd5e1; }
+#cal-dica .cal-dica-com i { color: #5eead4; flex: none; margin-top: 1px; }
+#cal-dica .cal-dica-com b { color: #fff; font-weight: 600; }
+
+/* Linha que liga o dia à lista */
+#cal-linha { position: fixed; inset: 0; z-index: 3490; pointer-events: none; opacity: 0; transition: opacity .15s; }
+#cal-linha.on { opacity: 1; }
+#cal-linha path { fill: none; stroke: var(--brand, #0f766e); stroke-width: 1.5; stroke-linecap: round;
+  stroke-dasharray: 400; stroke-dashoffset: 400; }
+#cal-linha.on path { animation: calLinha .35s cubic-bezier(.2, .8, .2, 1) forwards; }
+@keyframes calLinha { to { stroke-dashoffset: 0; } }
+.calpg .cal-cel.sel { position: relative; z-index: 1; }
+
+/* Comentários e "em curso" dentro da lista */
+.cal-pop-faixa { font-size: .7rem; color: var(--muted); margin: 1px 0 0 16px; }
+.cal-pop-coms { margin: 6px 0 0 16px; display: flex; flex-direction: column; gap: 4px; }
+.cal-pop-com { background: #f0fdfa; border-left: 3px solid var(--brand); border-radius: 6px; padding: 4px 7px; font-size: .74rem; }
+.cal-pop-com span { color: var(--muted); font-size: .68rem; }
+.cal-pop-com div { color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+
+/* Atividade de vários dias: linha fina do início até a entrega (discreta) */
+.calpg .cal-cel.com-faixa { padding-bottom: calc(6px + var(--nf) * 8px); }
+.calpg .cal-faixa { position: absolute; height: 0; border-top: 1.5px solid currentColor; bottom: calc(4px + var(--p) * 8px);
+  left: -3px; right: -3px; opacity: .55; pointer-events: none; background: none !important; }
+.calpg .cal-faixa.ini { left: 50%; }
+.calpg .cal-faixa.fim { right: 50%; }
+.calpg .cal-faixa.ini::before, .calpg .cal-faixa.fim::after { content: ''; position: absolute; top: -3.5px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.calpg .cal-faixa.ini::before { left: -2px; }
+.calpg .cal-faixa.fim::after { right: -2px; }
+.calpg .cal-faixa em { position: absolute; top: -11px; font-style: normal; font-size: .52rem; line-height: 1; letter-spacing: .02em; color: currentColor; white-space: nowrap; }
+.calpg .cal-faixa.ini em { left: 4px; }
+.calpg .cal-faixa.fim em { right: 4px; }
+.calpg .cal-faixa.feita { opacity: .3; }
+.calpg .cal-faixa.urg-4 { color: #d7263d; } .calpg .cal-faixa.urg-3 { color: #ec7a1c; }
+.calpg .cal-faixa.urg-2 { color: #b38800; } .calpg .cal-faixa.urg-1 { color: #4c7dd9; }
+@media (prefers-reduced-motion: reduce) { #cal-linha.on path { animation: none; stroke-dashoffset: 0; } }
