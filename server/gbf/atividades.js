@@ -3,7 +3,7 @@ const express = require('express');
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
 const {
-  ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets, prazoDe, textoPrazo,
+  ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets, prazoDe, textoPrazo, avisarEquipe,
 } = require('./common');
 
 const router = express.Router();
@@ -187,6 +187,11 @@ router.post('/', ah(async (req, res) => {
       link: `#/atividades/${id}`,
     });
   }
+  await avisarEquipe(u, {
+    kind: 'atividade', title: `${u.name} criou a atividade: ${title}`,
+    message: [dueAt ? `Prazo: ${textoPrazo(dueAt, allDay)}` : null, ini ? `começa ${ini.split('-').reverse().join('/')}` : null].filter(Boolean).join(' · ') || null,
+    link: `#/atividades/${id}`,
+  }, { excluir: [assignee] });
   res.status(201).json(enriquecer(await carregar(id)));
 }));
 
@@ -265,10 +270,12 @@ router.patch('/:id', ah(async (req, res) => {
       kind: 'atividade', title: `Atividade atribuída a você: ${t.title}`, link: `#/atividades/${t.id}`,
     });
   }
-  if (b.status === 'concluida' && u.role !== 'gestor') {
-    await notificar((await usuariosAtivos('gestor')).filter((id) => id !== u.id), {
-      kind: 'atividade', title: `${u.name} concluiu: ${t.title}`, link: `#/atividades/${t.id}`,
-    });
+  if (mudancas.length) {
+    const verbo = b.status === 'concluida' ? 'concluiu' : b.status === 'cancelada' ? 'cancelou' : 'alterou';
+    await avisarEquipe(u, {
+      kind: 'atividade', title: `${u.name} ${verbo}: ${t.title}`,
+      message: mudancas.join(' · ').slice(0, 300), link: `#/atividades/${t.id}`,
+    }, { extras: [t.assignee_id, t.created_by], excluir: [novoResponsavel] });
   }
   res.json(enriquecer(await carregar(t.id)));
 }));
@@ -282,11 +289,10 @@ router.post('/:id/comentarios', ah(async (req, res) => {
   if (!content) return res.status(422).json({ error: 'Escreva o comentário.' });
   await evento(t.id, u.id, content.slice(0, 4000), 'comment');
   await query('UPDATE gbf_tasks SET updated_at = now() WHERE id = $1', [t.id]);
-  const destinatarios = [t.assignee_id, t.created_by].filter((id) => id && id !== u.id);
-  await notificar(destinatarios, {
+  await avisarEquipe(u, {
     kind: 'comentario', title: `${u.name} comentou em: ${t.title}`,
     message: content.slice(0, 200), link: `#/atividades/${t.id}`,
-  });
+  }, { extras: [t.assignee_id, t.created_by] });
   res.status(201).json({ ok: true });
 }));
 

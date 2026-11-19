@@ -314,7 +314,7 @@
       ['#/conta', 'person-lock', 'Minha conta'],
     ];
     let sec = 'dia';
-    $('#side-nav').innerHTML = (g ? '<a class="side-cta" href="#/solicitacoes/nova" data-rota="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i><span>Solicitar visita</span></a>' : '')
+    $('#side-nav').innerHTML = '<a class="side-cta" href="#/novo" data-rota="#/novo"><i class="bi bi-plus-lg"></i><span>Novo pedido</span></a>'
       + itens.map((i) => {
         // cada seção do menu tem a sua cor (ícones, título e item ativo)
         if (i[0] === 'grp') { sec = SECAO_MENU[i[1]] || 'dia'; return `<div class="grp sec-${sec}">${esc(i[1])}</div>`; }
@@ -342,6 +342,7 @@
 
   function marcarMenu(base) {
     $$('#side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.rota === base));
+    $('#top-aba-notif')?.classList.toggle('ativa', location.hash.startsWith('#/notificacoes'));
     $('#side').classList.remove('open');
   }
 
@@ -375,9 +376,11 @@
     checklists: 'Modelos de checklist usados nas visitas. Cada posto usa um na visita de rotina.',
     usuarios: 'Quem usa o painel e o papel de cada um: gestor, técnico ou os dois.',
     config: 'Ajustes gerais do painel.',
-    tutoriais: 'Passo a passo guiado de cada tarefa do painel.',
+    tutoriais: 'Passo a passo guiado, separado por assunto: a tela escurece, o lugar certo fica em destaque e um balão explica.',
     conta: 'Seus dados e sua senha.',
     tudo: 'Todas as tabelas copiadas da Orcim, só para consulta.',
+    novo: 'Peça uma visita ao posto ou crie uma atividade. Só o essencial: o resto já vem preenchido.',
+    notificacoes: 'Tudo o que aconteceu no painel e envolve você ou a equipe: pedidos, mudanças, comentários e reagendamentos.',
   };
   const DESC_PAINEL = {
     calendario: 'Todas as atividades, visitas de rotina, visitas pedidas e chamados da Orcim do mês, nas cores da urgência. Clique num dia para ver a lista.',
@@ -436,6 +439,8 @@
       else if (a === 'visitas' && b) { marcarMenu('#/postos'); await vVisita(b, seq); }
       else if (a === 'checklists' && b) { marcarMenu('#/checklists'); await vFormChecklist(b === 'novo' ? null : b, seq); }
       else if (a === 'checklists') { marcarMenu('#/checklists'); await vChecklists(seq); }
+      else if (a === 'novo') { marcarMenu('#/novo'); await vNovoPedido(qs, seq); }
+      else if (a === 'notificacoes') { marcarMenu(''); await vNotificacoes(qs, seq); }
       else if (a === 'solicitacoes' && b === 'nova' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(null, qs, seq); }
       else if (a === 'solicitacoes' && b && partes[2] === 'editar' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(b, qs, seq); }
       else if (a === 'solicitacoes' && b) { marcarMenu('#/solicitacoes'); await vSolicitacao(b, seq); }
@@ -2480,7 +2485,7 @@
     ligarIniciar();
     $$('[data-add-dia]').forEach((b) => b.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      novaAtividadeNoDia(b.dataset.addDia).catch((e) => toast(e.message, true));
+      location.hash = `#/novo?data=${b.dataset.addDia}`;
     }));
     if (modo === 'semana' || modo === 'mes') ativarArrasto(view());
     ativarPopAgenda();
@@ -3009,6 +3014,203 @@
     ligarVisitaSolic();
   }
 
+  // ------------------------------------------------------------------
+  // Novo pedido: um formulário só. Primeiro escolhe Visita ou Atividade; o resto se ajusta.
+  // Visita -> solicitação de visita (as tarefas viram o checklist). Atividade -> quadro de atividades.
+  // ------------------------------------------------------------------
+  // Página de notificações: filtros por tipo, marcar como lida, abrir o item
+  const GRUPOS_NOTIF = [
+    ['todas', 'Todas', null], ['nao_lidas', 'Não lidas', null],
+    ['atividades', 'Atividades', ['atividade', 'atividade_prazo', 'atividade_atrasada']],
+    ['comentarios', 'Comentários', ['comentario']],
+    ['pedidos', 'Pedidos de visita', ['solicitacao']],
+    ['visitas', 'Visitas', ['visita', 'visita_prevista']],
+    ['reagendamentos', 'Reagendamentos', ['reagendamento']],
+    ['cadastros', 'Postos e checklists', ['posto', 'checklist']],
+  ];
+  const ICONE_NOTIF = {
+    atividade: 'check2-square', atividade_prazo: 'hourglass-split', atividade_atrasada: 'alarm', comentario: 'chat-left-text',
+    solicitacao: 'megaphone', visita: 'geo-alt', visita_prevista: 'calendar-event', reagendamento: 'arrow-left-right',
+    posto: 'shop', checklist: 'ui-checks', demanda_nova: 'inbox', demanda_status: 'inbox', demanda_atrasada: 'alarm',
+  };
+  async function vNotificacoes(qs, seq) {
+    titulo('Notificações');
+    const grupo = GRUPOS_NOTIF.some(([k]) => k === qs.get('f')) ? qs.get('f') : 'todas';
+    const r = await API.get(`/notificacoes?limite=300${grupo === 'nao_lidas' ? '&nao_lidas=1' : ''}`);
+    if (seq !== renderSeq) return;
+    const tipos = GRUPOS_NOTIF.find(([k]) => k === grupo)[2];
+    const itens = tipos ? r.itens.filter((n) => tipos.includes(n.kind)) : r.itens;
+    const contar = (t) => r.itens.filter((n) => !n.is_read && (!t || t.includes(n.kind))).length;
+    // agrupa por dia
+    const dias = new Map();
+    for (const n of itens) {
+      const d = new Date(n.created_at).toLocaleDateString('en-CA', { timeZone: TZ });
+      if (!dias.has(d)) dias.set(d, []);
+      dias.get(d).push(n);
+    }
+    const nomeDia = (d) => (d === hojeSP() ? 'Hoje' : d === isoSoma(hojeSP(), -1) ? 'Ontem' : dataCurta(d));
+    view().innerHTML = `
+      <nav class="pg-abas" aria-label="Filtrar notificações">${GRUPOS_NOTIF.map(([k, nome, t]) => {
+    const n = k === 'todas' ? r.nao_lidas : k === 'nao_lidas' ? r.nao_lidas : contar(t);
+    return `<a href="#/notificacoes?f=${k}" class="${k === grupo ? 'on' : ''}">${nome}${n ? ` <b class="nt-n">${n}</b>` : ''}</a>`;
+  }).join('')}</nav>
+      <div class="d-flex justify-content-end mb-2"><button class="btn btn-sm btn-outline-secondary" id="nt-ler"><i class="bi bi-check2-all"></i> Marcar todas como lidas</button></div>
+      ${itens.length ? [...dias.entries()].map(([d, lst]) => `<div class="nt-dia">${esc(nomeDia(d))}</div>
+        <div class="card-x p-0 nt-lista">${lst.map((n) => `<a class="nt-item ${n.is_read ? '' : 'nova'}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
+          <span class="nt-ic"><i class="bi bi-${ICONE_NOTIF[n.kind] || 'bell'}"></i></span>
+          <span class="nt-txt"><span class="nt-t">${esc(n.title)}</span>${n.message ? `<span class="nt-m">${esc(n.message)}</span>` : ''}</span>
+          <span class="nt-w">${new Date(n.created_at).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })}</span>
+        </a>`).join('')}</div>`).join('')
+    : `<div class="card-x">${vazio(grupo === 'nao_lidas' ? 'Nenhuma notificação não lida.' : 'Nenhuma notificação aqui.', 'bell-slash')}</div>`}`;
+    $('#nt-ler').addEventListener('click', async () => {
+      await API.post('/notificacoes/lidas', {}).catch(() => {});
+      buscarNotificacoes(); render();
+    });
+    $$('.nt-item[data-nid]').forEach((a) => a.addEventListener('click', () => {
+      API.post('/notificacoes/lidas', { ids: [Number(a.dataset.nid)] }).then(buscarNotificacoes).catch(() => {});
+    }));
+  }
+
+  async function vNovoPedido(qs, seq) {
+    titulo('Novo pedido');
+    const g = ehGestor();
+    const [postos, modelos, users] = await Promise.all([
+      API.get('/postos'), g ? API.get('/solicitacoes/modelos') : [], g ? carregarUsuarios() : [],
+    ]);
+    if (seq !== renderSeq) return;
+    let tipo = g ? (['visita', 'atividade'].includes(qs.get('tipo')) ? qs.get('tipo') : '') : 'atividade';
+    const data0 = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('data') || '') ? qs.get('data') : '';
+    const tecnicos = users.filter((u) => u.role === 'tecnico' || u.faz_visitas);
+    const respPadrao = fazVisitas() ? EU.id : (tecnicos[0]?.id || '');
+    const tarefas = [];
+    const URG = [[1, 'Requisição'], [2, 'Prejudicada'], [3, 'Parada iminente'], [4, 'Operação parada']];
+
+    view().innerHTML = `
+      <form class="np card-x" id="np" novalidate>
+        ${g ? `<div class="np-tipos" role="radiogroup" aria-label="O que você precisa">
+          <button type="button" class="np-tipo" data-tipo="visita" role="radio"><i class="bi bi-geo-alt"></i><b>Visita ao posto</b><small>ir até lá e fazer uma ou mais coisas</small></button>
+          <button type="button" class="np-tipo" data-tipo="atividade" role="radio"><i class="bi bi-check2-square"></i><b>Atividade</b><small>algo a fazer, sem precisar ir ao posto</small></button>
+        </div>` : ''}
+        <div class="np-corpo">
+          <div class="np-linha"><label for="np-tit">O que precisa?</label>
+            <input class="form-control" id="np-tit" maxlength="200" placeholder="Ex.: Trocar nobreak do caixa" autocomplete="off"></div>
+          <div class="np-linha"><label for="np-posto">Posto</label>
+            <select class="form-select" id="np-posto"><option value="">${g ? 'Escolha o posto' : 'Nenhum'}</option>
+            ${postos.map((p) => `<option value="${p.id}" data-ck="${p.checklist_id || ''}" ${String(p.id) === String(qs.get('posto')) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="np-linha"><label for="np-data">Para quando</label>
+            <div class="np-quando">
+              <input type="date" class="form-control" id="np-data" value="${esc(data0)}">
+              <input type="time" class="form-control np-so-ativ" id="np-hora" aria-label="Horário (opcional)">
+              <span class="small-muted np-so-ativ">vazio = dia todo</span>
+            </div>
+            <label class="form-check np-so-ativ mt-1"><input type="checkbox" class="form-check-input" id="np-varios"> <span class="form-check-label">Leva vários dias</span></label>
+            <div class="np-inicio d-none"><span class="small-muted">Começa em</span> <input type="date" class="form-control form-control-sm" id="np-ini"></div></div>
+          <div class="np-linha"><span class="np-rot">Urgência</span>
+            <div class="np-urg" role="radiogroup" aria-label="Urgência">${URG.map(([v, n]) => `<label class="np-urg-op"><input type="radio" name="np-urg" value="${v}" ${v === 1 ? 'checked' : ''}><i class="cal-num urg-${v}"></i>${n}</label>`).join('')}</div></div>
+
+          <div class="np-linha np-so-visita"><span class="np-rot">O que fazer lá</span>
+            <div class="np-tarefas">
+              <input class="form-control" id="np-tarefa" placeholder="Digite uma tarefa e aperte Enter" autocomplete="off">
+              <ul id="np-lista" class="np-lista"></ul>
+              <label class="form-check d-none" id="np-ck-l"><input type="checkbox" class="form-check-input" id="np-ck"> <span class="form-check-label" id="np-ck-t"></span></label>
+            </div></div>
+
+          ${g ? `<div class="np-linha np-so-ativ"><label for="np-resp">Responsável</label>
+            <select class="form-select" id="np-resp"><option value="">Sem responsável</option>
+            ${users.filter((u) => u.role !== 'unidade').map((u) => `<option value="${u.id}" ${String(u.id) === String(respPadrao) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>` : ''}
+
+          <div class="np-linha"><span class="np-rot"></span><div>
+            <a href="#" class="small" id="np-mais-l">+ detalhes</a>
+            <textarea class="form-control d-none mt-1" id="np-det" rows="3" placeholder="Algo mais que a TI precisa saber"></textarea></div></div>
+
+          <div class="np-acoes"><button class="btn btn-brand" type="submit" id="np-ok">Enviar pedido</button></div>
+        </div>
+        <div class="np-escolha small-muted">Escolha acima o que você precisa.</div>
+      </form>`;
+
+    const form = $('#np');
+    const aplicarTipo = () => {
+      form.dataset.tipo = tipo;
+      $$('.np-tipo').forEach((b) => { b.classList.toggle('on', b.dataset.tipo === tipo); b.setAttribute('aria-checked', String(b.dataset.tipo === tipo)); });
+      $('#np-ok').textContent = tipo === 'visita' ? 'Pedir visita' : 'Criar atividade';
+      atualizarCk();
+    };
+    const pintarTarefas = () => {
+      $('#np-lista').innerHTML = tarefas.map((t, i) => `<li><span>${esc(t)}</span><button type="button" data-tira="${i}" aria-label="Tirar ${esc(t)}"><i class="bi bi-x"></i></button></li>`).join('');
+    };
+    const itensCk = () => {
+      const op = $('#np-posto').selectedOptions[0];
+      const m = op && op.dataset.ck ? modelos.find((x) => String(x.id) === op.dataset.ck) : null;
+      return m ? m.itens : [];
+    };
+    function atualizarCk() {
+      const n = itensCk().length;
+      $('#np-ck-l').classList.toggle('d-none', !n);
+      $('#np-ck-t').textContent = n ? `Incluir também o checklist do posto (${plural(n, 'item', 'itens')})` : '';
+      if (!n) $('#np-ck').checked = false;
+    }
+    $$('.np-tipo').forEach((b) => b.addEventListener('click', () => { tipo = b.dataset.tipo; aplicarTipo(); $('#np-tit').focus(); }));
+    $('#np-posto').addEventListener('change', atualizarCk);
+    $('#np-varios').addEventListener('change', (e) => $('.np-inicio').classList.toggle('d-none', !e.target.checked));
+    $('#np-mais-l').addEventListener('click', (e) => { e.preventDefault(); e.target.classList.add('d-none'); $('#np-det').classList.remove('d-none'); $('#np-det').focus(); });
+    $('#np-tarefa').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const v = e.target.value.trim();
+      if (v && !tarefas.some((t) => t.toLowerCase() === v.toLowerCase())) { tarefas.push(v); pintarTarefas(); }
+      e.target.value = '';
+    });
+    $('#np-lista').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tira]');
+      if (b) { tarefas.splice(Number(b.dataset.tira), 1); pintarTarefas(); }
+    });
+    // Enter nos outros campos não envia sem querer
+    form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.id !== 'np-tarefa') e.preventDefault(); });
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const tit = $('#np-tit').value.trim();
+      const posto = $('#np-posto').value;
+      const data = $('#np-data').value;
+      const urg = Number(form.querySelector('[name="np-urg"]:checked')?.value || 1);
+      const det = $('#np-det').value.trim();
+      const btn = $('#np-ok');
+      try {
+        if (!tipo) throw new Error('Escolha se é uma visita ou uma atividade.');
+        btn.disabled = true;
+        if (tipo === 'visita') {
+          if (!posto) throw new Error('Escolha o posto da visita.');
+          const pendente = $('#np-tarefa').value.trim();
+          if (pendente && !tarefas.includes(pendente)) tarefas.push(pendente);
+          const comCk = $('#np-ck').checked;
+          let lista = [...tarefas, ...(comCk ? itensCk() : [])];
+          if (!lista.length && tit) lista = [tit];
+          if (!lista.length) throw new Error('Diga o que fazer lá: escreva no "O que precisa?" ou adicione uma tarefa.');
+          const r = await API.post('/solicitacoes', {
+            kind: 'visita', visit_type: comCk ? 'rotina' : 'pontual', location_id: posto, desired_date: data || null, priority: urg,
+            description: [tit, det].filter(Boolean).join('\n\n') || null, tarefas: lista,
+          });
+          toast('Visita pedida. A TI foi avisada.');
+          location.hash = `#/solicitacoes/${r.id}`;
+        } else {
+          if (!tit) throw new Error('Escreva o que precisa ser feito.');
+          const varios = $('#np-varios').checked && $('#np-ini').value;
+          if (varios && data && $('#np-ini').value > data) throw new Error('O início precisa ser antes da entrega.');
+          const body = {
+            title: tit, description: det, priority: urg, location_id: posto || null,
+            due_date: data || '', due_time: data ? ($('#np-hora').value || '') : '', start_date: varios ? $('#np-ini').value : '',
+          };
+          if (g) body.assignee_id = $('#np-resp').value || null;
+          const r = await API.post('/atividades', body);
+          toast('Atividade criada.');
+          location.hash = `#/atividades/${r.id}`;
+        }
+      } catch (e) { toast(e.message, true); btn.disabled = false; }
+    });
+    aplicarTipo();
+    if (!g || tipo) $('#np-tit').focus();
+  }
+
   async function vFormSolicitacao(id, qs, seq) {
     const [s, postos, modelos] = await Promise.all([
       id ? API.get(`/solicitacoes/${encodeURIComponent(id)}`) : null, API.get('/postos'), API.get('/solicitacoes/modelos'),
@@ -3299,17 +3501,117 @@
     return postos.length ? `#/postos/${postos[0].id}/editar` : '#/postos';
   };
 
+  // Categorias dos tutoriais (a parte da Orcim entra depois, quando as APIs estiverem prontas)
+  const CATEGORIAS_TUT = [
+    ['inicio', 'Primeiros passos', 'compass'],
+    ['pedidos', 'Pedidos e atividades', 'kanban'],
+    ['visitas', 'Visitas', 'geo-alt'],
+    ['resultados', 'Acompanhar e resultados', 'graph-up-arrow'],
+  ];
+  const primeiraAtividade = async () => {
+    const l = await API.get('/atividades?situacao=abertas').catch(() => []);
+    return l.length ? `#/atividades/${l[0].id}` : '#/atividades';
+  };
+
   const TUTORIAIS = [
+    // ------------------------- Primeiros passos -------------------------
     {
-      id: 'usuarios', papeis: ['gestor'], icone: 'people', titulo: 'Cadastrar gestores e técnicos',
-      resumo: 'Dê acesso ao Pedro, à Silvani e aos técnicos.',
+      id: 'menu', cat: 'inicio', papeis: ['gestor', 'tecnico'], icone: 'signpost-split', titulo: 'Conhecer o painel',
+      resumo: 'Onde fica cada coisa: o menu por cores, o Novo pedido e as notificações.',
       passos: [
-        { rota: '#/usuarios', alvo: '#form-user', titulo: 'Novo usuário', texto: 'Crie o acesso com usuário e senha inicial. A pessoa troca a senha no primeiro login.' },
-        { alvo: 'table.table-x', titulo: 'Gestor, técnico ou os dois', texto: 'Gestor: pede visitas, cria checklists e vê o painel. Técnico: faz as visitas. Marque os dois para quem faz as duas coisas: ganha o "Meu dia" no menu e recebe os pedidos de visita.' },
+        { titulo: 'Bem-vindo ao Painel Beija-Flor', texto: 'Aqui a TI do grupo organiza visitas aos postos, atividades e pedidos dos gestores. Este tour mostra onde fica cada coisa.' },
+        { alvo: '.side-cta', titulo: 'Novo pedido', texto: 'O botão mais usado. De qualquer tela, pede uma visita ao posto ou cria uma atividade.' },
+        { alvo: '.side-nav .grp.sec-vis', titulo: 'Seções por cor', texto: 'Cada parte do menu tem uma cor: Visitas (azul), Painel do Gestor (amarelo), Configurar (rosa). O item aberto fica destacado na cor da seção.' },
+        { alvo: '.side-nav a[href="#/agenda"]', titulo: 'Agenda', texto: 'Tudo o que está marcado para a TI: visitas de rotina, visitas pedidas e atividades.' },
+        { alvo: '.side-nav a[href="#/atividades"]', titulo: 'Atividades', texto: 'O quadro de tarefas da TI. O número ao lado mostra o que está esperando.' },
+        { alvo: '#top-aba-notif', titulo: 'Notificações', texto: 'Tudo o que acontece no painel aparece aqui: pedidos, mudanças, comentários e reagendamentos. O número vermelho são as não lidas.' },
+        { alvo: '.tela-desc', titulo: 'Para que serve a tela', texto: 'Toda tela tem uma frase pequena no topo explicando para que ela serve.' },
+        { alvo: '.side-nav a[href="#/tutoriais"]', titulo: 'Tutoriais', texto: 'Ficou com dúvida? Os tutoriais ficam aqui, separados por assunto.' },
       ],
     },
     {
-      id: 'checklist', papeis: ['gestor'], icone: 'ui-checks', titulo: 'Criar um checklist que se repete',
+      id: 'usuarios', cat: 'inicio', papeis: ['gestor'], icone: 'people', titulo: 'Cadastrar gestores e técnicos',
+      resumo: 'Dê acesso ao Pedro, à Silvani e aos técnicos.',
+      passos: [
+        { alvo: '.side-nav a[href="#/usuarios"]', titulo: 'Usuários', texto: 'No menu, em Configurar → Usuários.' },
+        { rota: '#/usuarios', alvo: '#form-user', titulo: 'Novo usuário', texto: 'Crie o acesso com usuário e senha inicial. A pessoa troca a senha no primeiro login.' },
+        { alvo: '.papeis', titulo: 'Gestor, técnico ou os dois', texto: 'Gestor: pede visitas, cria checklists e vê o painel. Técnico: faz as visitas. Marque os dois para quem faz as duas coisas: ganha o "Meu dia" no menu e recebe os pedidos de visita.' },
+        { alvo: 'table.table-x', titulo: 'Quem já tem acesso', texto: 'A lista de usuários. Clique em um para editar, trocar o papel ou desativar.' },
+      ],
+    },
+    {
+      id: 'notificacoes', cat: 'inicio', papeis: ['gestor', 'tecnico'], icone: 'bell', titulo: 'Acompanhar as notificações',
+      resumo: 'Ver o que mudou, filtrar por assunto e marcar como lido.',
+      passos: [
+        { alvo: '#top-aba-notif', titulo: 'Aba de notificações', texto: 'Fica no topo de todas as telas. Clique para abrir a página com tudo.' },
+        { rota: '#/notificacoes', alvo: '.pg-abas', titulo: 'Filtros', texto: 'Todas, Não lidas, Atividades, Comentários, Pedidos de visita, Visitas, Reagendamentos e Postos e checklists. O número mostra as não lidas de cada assunto.' },
+        { alvo: '.nt-lista', titulo: 'Por dia', texto: 'As notificações vêm separadas por dia. As novas ficam em verde-claro. Clique numa para abrir o item (ela fica lida).' },
+        { alvo: '#nt-ler', titulo: 'Marcar todas como lidas', texto: 'Limpa o número vermelho de uma vez.' },
+        { titulo: 'Quem recebe', texto: 'Quando alguém cria, muda, comenta, reagenda, inicia ou conclui algo, a equipe (gestores e técnicos) recebe o aviso. Quem fez a ação não recebe o próprio aviso.' },
+        { alvo: '#btn-sino', titulo: 'Sino', texto: 'O sino mostra as últimas notificações rapidinho, sem sair da tela. Dá para ativar o aviso do navegador por ali.' },
+      ],
+    },
+    // ----------------------- Pedidos e atividades -----------------------
+    {
+      id: 'novo-pedido', cat: 'pedidos', papeis: ['gestor', 'tecnico'], icone: 'plus-circle', titulo: 'Fazer um Novo pedido',
+      resumo: 'Pedir uma visita ao posto (com as tarefas) ou criar uma atividade, numa tela só.',
+      passos: [
+        { alvo: '.side-cta', titulo: 'Novo pedido', texto: 'Este botão abre o pedido de qualquer tela. O "+" de cada dia na Agenda também abre, já com a data.' },
+        { rota: '#/novo', alvo: '.np-tipos', titulo: 'Visita ou atividade', texto: 'Visita ao posto: alguém da TI vai até lá fazer uma ou mais coisas. Atividade: algo a fazer sem precisar ir ao posto. (Técnico só cria atividade.)' },
+        { rota: () => (ehGestor() ? '#/novo?tipo=visita' : '#/novo?tipo=atividade'), alvo: '#np-tit', titulo: 'O que precisa?', texto: 'Uma frase curta, ex.: "Trocar nobreak do caixa".' },
+        { alvo: '#np-posto', titulo: 'Posto', texto: 'Em qual posto. Na visita é obrigatório.' },
+        { alvo: '#np-data', titulo: 'Para quando', texto: 'O dia. Na atividade, o horário é opcional: vazio = o dia todo.' },
+        { alvo: '.np-urg', titulo: 'Urgência', texto: 'Requisição (azul), Prejudicada (amarelo), Parada iminente (laranja) ou Operação parada (vermelho). A cor aparece no calendário.' },
+        { alvo: '#np-tarefa', titulo: 'O que fazer lá (visita)', texto: 'Digite uma tarefa e aperte Enter; a próxima linha aparece. Escolhendo um posto com checklist, dá para incluir o checklist dele também.' },
+        { alvo: '#np-mais-l', titulo: '+ detalhes', texto: 'Algo mais que a TI precisa saber. Fica escondido para não atrapalhar.' },
+        { alvo: '#np-ok', titulo: 'Enviar', texto: 'Visita: a TI é avisada e ela entra no calendário. Atividade: vai para o quadro de Atividades.' },
+      ],
+    },
+    {
+      id: 'atividades', cat: 'pedidos', papeis: ['gestor', 'tecnico'], icone: 'kanban', titulo: 'Usar o quadro de atividades',
+      resumo: 'Arrastar o cartão para mudar o status, filtrar e comentar.',
+      passos: [
+        { rota: '#/atividades', alvo: '.board', titulo: 'O quadro', texto: 'Quatro colunas: A fazer, Em andamento, Aguardando e Concluídas. Cada cartão é uma atividade.' },
+        { alvo: '.board .task[data-drag]', titulo: 'Arraste como um post-it', texto: 'Segure o cartão e solte em outra coluna: o status muda na hora e a equipe é avisada. No celular, segure um instante antes de arrastar.' },
+        { alvo: '.chips', titulo: 'Outras vistas', texto: 'Para hoje, Atrasadas, Em aberto, Concluídas ou Todas, em lista.' },
+        { alvo: '#busca-at', titulo: 'Buscar', texto: 'Procure pelo nome da atividade. O gestor também filtra por responsável.' },
+        { rota: primeiraAtividade, alvo: '.hist', titulo: 'Histórico e comentários', texto: 'Dentro da atividade: as ações ficam em linhas pequenas e roxas; os comentários, em destaque verde.' },
+        { alvo: '#form-coment', titulo: 'Comentar', texto: 'Escreva uma atualização, ex.: "peça chega amanhã". Quem cuida da atividade e a equipe recebem o aviso.' },
+      ],
+    },
+    {
+      id: 'varios-dias', cat: 'pedidos', papeis: ['gestor', 'tecnico'], icone: 'arrows-expand-vertical', titulo: 'Atividade de vários dias ou do dia todo',
+      resumo: 'Prazo sem horário (dia todo) e atividade que começa num dia e entrega em outro.',
+      passos: [
+        { rota: '#/atividades/nova', alvo: 'input[name=due_date]', titulo: 'Dia da entrega', texto: 'O prazo da atividade.' },
+        { alvo: 'input[name=due_time]', titulo: 'Horário (opcional)', texto: 'Deixe vazio para "o dia todo": ela só conta como atrasada depois das 23:59 daquele dia.' },
+        { alvo: 'input[name=start_date]', titulo: 'Começa em', texto: 'Para atividade que leva vários dias: o dia em que começa. No calendário do Painel do gestor ela vira uma linha fina de "início" até "entrega".' },
+        { titulo: 'No Novo pedido', texto: 'Lá é igual: marque "Leva vários dias" e escolha o dia em que começa.' },
+      ],
+    },
+    // ------------------------------ Visitas ------------------------------
+    {
+      id: 'agenda', cat: 'visitas', papeis: ['gestor', 'tecnico'], icone: 'calendar3', titulo: 'Usar a Agenda',
+      resumo: 'Ver por dia, semana ou mês, passar o mouse para detalhes e criar pelo "+".',
+      passos: [
+        { rota: '#/agenda?modo=semana', alvo: () => $('a[href^="#/agenda?modo=dia"]')?.parentElement, titulo: 'Dia, Semana, Mês ou Lista', texto: 'Escolha como ver. As setas vão para a semana (ou mês) anterior e a seguinte.' },
+        { alvo: '[data-pop]', titulo: 'Passe o mouse', texto: 'Num item, aparece um resumo: responsável, quem pediu, urgência e detalhes. Clique para abrir.' },
+        { alvo: '.cal-add', titulo: '"+" do dia', texto: 'Abre o Novo pedido já com aquela data.' },
+        { alvo: '.arrastavel', titulo: 'Arrastar para outro dia', texto: 'Visitas previstas, pedidos e atividades em aberto podem ser arrastados para outro dia. Pede o motivo e avisa a equipe.' },
+      ],
+    },
+    {
+      id: 'reagendar', cat: 'visitas', papeis: ['gestor', 'tecnico'], icone: 'calendar2-week', titulo: 'Reagendar com motivo',
+      resumo: 'Mudar a data de uma visita, pedido ou atividade e avisar os outros.',
+      passos: [
+        { titulo: 'Reagendar', texto: 'Gestor e técnico podem mudar a data de uma visita, de um pedido ou de uma atividade. O motivo é obrigatório e vai para a equipe nas notificações.' },
+        { rota: '#/agenda', alvo: '[data-reag]', titulo: 'Botão Reagendar', texto: 'Aparece na Agenda, no "Meu dia", na ficha do posto e no pedido. Clique, escolha a nova data (o horário é opcional) e escreva o motivo.' },
+        { alvo: '.arrastavel', titulo: 'Ou arraste', texto: 'Na Agenda, dá para arrastar o item para outro dia (no celular: segure e arraste). A janela do motivo abre do mesmo jeito.' },
+        { alvo: '#top-aba-notif', titulo: 'Quem fica sabendo', texto: 'Todos os gestores e técnicos recebem: "Reagendado: Visita ao Posto Centro — mudou de 20/11 para 22/11. Motivo: ...". No pedido fica o histórico.' },
+      ],
+    },
+    {
+      id: 'checklist', cat: 'visitas', papeis: ['gestor'], icone: 'ui-checks', titulo: 'Criar um checklist que se repete',
       resumo: 'Monte a lista de tarefas da visita de rotina e defina de quanto em quanto tempo o posto é visitado.',
       passos: [
         { titulo: 'Checklist + frequência = visita que se repete', texto: 'O checklist é a lista de tarefas que o técnico confere em cada visita (internet, nobreak, caixas...). Cada posto tem uma frequência (semanal, mensal...). Quando uma visita termina, o sistema já marca a próxima sozinho.' },
@@ -3327,80 +3629,54 @@
       ],
     },
     {
-      id: 'solicitar', papeis: ['gestor'], icone: 'calendar-plus', titulo: 'Agendar uma visita (de rotina ou pontual)',
-      resumo: 'Peça uma visita ao técnico para um dia: com as tarefas do checklist ou só um pedido específico.',
+      id: 'visita', cat: 'visitas', papeis: ['tecnico', 'gestor'], icone: 'clipboard-check', titulo: 'Fazer uma visita (técnico)',
+      resumo: 'Do "Meu dia" até concluir a visita com os comentários.',
       passos: [
-        { titulo: 'Solicitar visita', texto: 'Quando você quer que o técnico vá a um posto num dia, abra uma solicitação de visita. Ele recebe o aviso e faz a visita pelo próprio pedido.' },
-        { alvo: '.side-cta', titulo: 'Solicitar visita', texto: 'Este botão, no topo do menu, abre o pedido de visita de qualquer tela.' },
-        { alvo: '.side-nav a[href="#/solicitacoes"]', titulo: 'Visitas pedidas', texto: 'Aqui ficam todas as visitas pedidas. O número ao lado mostra quantas estão em aberto.' },
-        { rota: '#/solicitacoes', alvo: 'a[href="#/solicitacoes/nova"]', titulo: 'Solicitar visita', texto: 'Clique aqui para pedir uma visita.' },
-        { rota: '#/solicitacoes/nova', alvo: '#sl-posto', titulo: 'Posto', texto: 'Escolha o posto. As tarefas do checklist dele já aparecem embaixo.' },
-        { alvo: '#sl-data', titulo: 'Data desejada', texto: 'O dia em que você quer a visita. É neste dia que ela aparece no calendário.' },
-        { alvo: '#sl-prio', titulo: 'Urgência', texto: 'Requisição, Operação prejudicada, Parada iminente ou Operação parada — a mesma escala da Orcim. A cor no calendário segue a urgência.' },
-        { alvo: '.sl-tipos', titulo: 'De rotina ou pontual', texto: 'De rotina: as tarefas do checklist do posto. Pontual: só um pedido específico, como "instalar leitor no caixa 3".' },
-        { alvo: '#sl-tarefas', titulo: 'Tarefas', texto: 'Desmarque o que não precisa. Para pegar tarefas de outro checklist, use "Pegar tarefas do checklist".' },
-        { alvo: '#sl-nova', titulo: 'Outra tarefa', texto: 'Escreva aqui e clique em Adicionar (ou Enter) para incluir algo que não está no checklist.' },
-        { alvo: '#sl-desc', titulo: 'Observação', texto: 'Algum recado para o técnico, ex.: "o gerente disse que o caixa 3 trava".' },
-        { alvo: '#form-sol button[type=submit]', titulo: 'Enviar para a TI', texto: 'Enviou: o técnico é avisado no sino e a visita entra no calendário. Quando ele concluir, você recebe o aviso com o resultado de cada tarefa.' },
+        { rota: () => (ehGestor() && fazVisitas() ? '#/meu-dia' : '#/hoje'), alvo: blocoComTitulo('Visitas de hoje'), titulo: 'Visitas de hoje', texto: 'As visitas de rotina do dia (e as atrasadas). Cada uma tem o botão INICIAR VISITA.' },
+        { alvo: blocoComTitulo('Visitas pedidas'), titulo: 'Visitas pedidas pelo gestor', texto: 'Os pedidos de visita. O botão INICIAR VISITA já traz as tarefas que o gestor pediu.' },
+        { alvo: '[data-visita-sol], [data-iniciar]', titulo: 'Iniciar visita', texto: 'Clique ao chegar no posto. A hora de início já vem preenchida e o gestor é avisado.' },
+        { titulo: 'Durante a visita', texto: 'Para cada tarefa, toque em OK, NÃO OK ou N/A. Toque em "+ observação" para escrever o que viu, ex.: "nobreak apitando, bateria fraca". Cada toque já fica salvo.' },
+        { titulo: 'Concluir', texto: 'No fim, escreva os comentários gerais, as pendências (se houver; dá para criar uma atividade, com prazo de dia todo ou horário) e fotos se quiser. Toque em CONCLUIR VISITA: o gestor é avisado, o pedido se fecha e os problemas vão para o painel.' },
       ],
     },
+    // --------------------- Acompanhar e resultados ---------------------
     {
-      id: 'acompanhar', papeis: ['gestor'], icone: 'binoculars', titulo: 'Acompanhar o dia a dia',
-      resumo: 'O que olhar todo dia: pendências, visitas de hoje, resultados e avisos.',
+      id: 'acompanhar', cat: 'resultados', papeis: ['gestor'], icone: 'binoculars', titulo: 'Acompanhar o dia a dia',
+      resumo: 'O que olhar todo dia na tela de Início: pendências, visitas de hoje e o período.',
       passos: [
         { rota: '#/', alvo: blocoComTitulo('Precisa de você'), titulo: 'Precisa de você', texto: 'Tudo o que está atrasado ou com problema, do mais grave para o menos grave, com a ação ao lado (Reagendar, Criar atividade, Abrir).' },
         { alvo: blocoComTitulo('Hoje'), titulo: 'Hoje', texto: 'As visitas do dia: feitas, em andamento (com quantas tarefas faltam) e previstas.' },
         { alvo: '.ac-topo .pg-seg', titulo: 'Período', texto: 'Hoje, 7 dias, 30 dias ou o mês: muda os números e o gráfico abaixo.' },
         { alvo: () => $$('.ac-sec')[2] || null, titulo: 'Como foi o período', texto: 'Quatro números comparados com o período anterior e um gráfico de linha com as visitas feitas e os itens com problema.' },
-        { alvo: blocoComTitulo('Últimos registros'), titulo: 'Últimos registros', texto: 'O que foi feito por último: visitas, atividades e solicitações. Clique para abrir.' },
-        { alvo: '#btn-sino', titulo: 'Avisos', texto: 'O sino avisa quando uma visita pedida é concluída e quando alguém reagenda (com o motivo).' },
+        { alvo: blocoComTitulo('Últimos registros'), titulo: 'Últimos registros', texto: 'O que foi feito por último: visitas, atividades e pedidos. Clique para abrir.' },
       ],
     },
     {
-      id: 'reagendar', papeis: ['gestor', 'tecnico'], icone: 'calendar2-week', titulo: 'Reagendar com motivo',
-      resumo: 'Mudar a data de uma visita, solicitação ou atividade e avisar os outros.',
+      id: 'calendario', cat: 'resultados', papeis: ['gestor'], icone: 'calendar-week', titulo: 'Usar o calendário do Painel',
+      resumo: 'Todas as atividades, visitas e pedidos do mês: hover, lista do dia e linhas de vários dias.',
       passos: [
-        { titulo: 'Reagendar', texto: 'Gestor e técnico podem mudar a data de uma visita, de uma solicitação ou de uma atividade. O motivo é obrigatório e vai para os outros pelo sino.' },
-        { rota: '#/agenda', alvo: '[data-reag]', titulo: 'Botão Reagendar', texto: 'Aparece na agenda, no "Meu dia", na ficha do posto e na solicitação. Clique, escolha a nova data e escreva o motivo.' },
-        { alvo: '.ag-item.arrastavel, .arrastavel', titulo: 'Ou arraste', texto: 'Na agenda, dá para arrastar o item para outro dia (no celular: segure e arraste). A janela do motivo abre do mesmo jeito.' },
-        { alvo: '#btn-sino', titulo: 'Quem fica sabendo', texto: 'Todos os gestores e técnicos recebem: "Reagendado: Visita ao Posto Centro — mudou de 20/11 para 22/11. Motivo: ...". Na solicitação fica o histórico.' },
-      ],
-    },
-    {
-      id: 'painel', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados no Painel do gestor',
-      resumo: 'Números e gráficos do período: visitas, problemas encontrados, Orcim e postos.',
-      passos: [
-        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'Abre no Calendário. Depois: TI do Beija-Flor (o nosso trabalho), Orcim (chamados), Por posto e Por funcionário.' },
-        { alvo: '.pg-filtro .pg-seg', titulo: 'Escolha o período', texto: 'Dia, Semana, Mês, Ano ou Personalizado. Os gráficos acompanham: Dia mostra por hora, Semana e Mês por dia, Ano por mês.' },
-        { alvo: '.pg-filtro .pg-nav', titulo: 'Anterior e seguinte', texto: 'As setas vão para o período anterior ou o seguinte (ex.: outubro, dezembro). "Hoje" volta para o atual.' },
-        { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... O número pequeno ao lado compara com o período anterior.' },
-        { alvo: () => $('.pg-card'), titulo: 'Gráficos', texto: 'Passe o mouse (ou toque) numa coluna para ver o valor de cada parte.' },
-        { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
-        { alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período escolhido para guardar ou enviar.' },
-      ],
-    },
-    {
-      id: 'calendario', papeis: ['gestor'], icone: 'calendar-week', titulo: 'Usar o calendário',
-      resumo: 'Todas as atividades, visitas e pedidos do mês, com as cores da urgência.',
-      passos: [
-        { alvo: '.side-nav a[href="#/painel"]', titulo: 'Fica no Painel do gestor', texto: 'No menu, em Painel do Gestor - Resultados → Painel do gestor, aba "Calendário".' },
-        { rota: '#/painel?aba=calendario', alvo: '.pg-abas', titulo: 'Calendário geral', texto: 'Todas as atividades (no prazo), as visitas de rotina, as visitas pedidas e os chamados da Orcim, num mês só.' },
-        { alvo: '.cal-grade', titulo: 'O mês', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica que algo daquele dia está atrasado.' },
+        { alvo: '.side-nav a[href="#/painel"]', titulo: 'Fica no Painel do gestor', texto: 'No menu, em Painel do Gestor - Resultados → Painel do gestor. Ele já abre no Calendário.' },
+        { rota: '#/painel?aba=calendario', alvo: '.cal-grade', titulo: 'O mês', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica que algo daquele dia está atrasado.' },
         { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, laranja = parada iminente, amarelo = operação prejudicada, azul = requisição.' },
-        { alvo: '.cal-filtros', titulo: 'O que mostrar', texto: 'Chamados da Orcim, o que é da TI do Beija-Flor e "só em aberto". Atividades aparecem no prazo; visitas pedidas, no dia desejado; chamados, no dia em que foram abertos.' },
-        { alvo: '.cal-dia', titulo: 'O dia escolhido', texto: 'Clique num dia para ver aqui tudo o que foi pedido nele, do mais urgente ao menos urgente. Clique num item para abrir.' },
+        { alvo: '.cal-grade', titulo: 'Passe o mouse num dia', texto: 'O cursor vira um olho e aparece um resumo pequeno: quantos itens, quantos concluídos e os últimos comentários.' },
+        { alvo: '.cal-grade', titulo: 'Clique no dia', texto: 'Abre a lista do dia ao lado, ligada ao dia por uma linha. Passe o mouse num item para ele abrir como sanfona, com os detalhes e comentários. Clique no item para abrir.' },
+        { alvo: () => $('.cal-faixa')?.closest('.cal-cel') || $('.cal-grade'), titulo: 'Atividades de vários dias', texto: 'Aparecem como uma linha bem fina, de "início" até "entrega", na cor da urgência.' },
+        { alvo: '.cal-filtros', titulo: 'O que mostrar', texto: 'O que é da TI do Beija-Flor e "só em aberto".' },
         { alvo: '.cal-topo .btn', titulo: 'Outros meses', texto: 'Use as setas para ir ao mês anterior ou ao seguinte.' },
       ],
     },
     {
-      id: 'visita', papeis: ['tecnico', 'gestor'], icone: 'clipboard-check', titulo: 'Fazer uma visita (técnico)',
-      resumo: 'Do "Meu dia" até concluir a visita com os comentários.',
+      id: 'painel', cat: 'resultados', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados no Painel do gestor',
+      resumo: 'Números e gráficos do período: TI, postos e cada funcionário.',
       passos: [
-        { rota: () => (ehGestor() && fazVisitas() ? '#/meu-dia' : '#/hoje'), alvo: blocoComTitulo('Visitas de hoje'), titulo: 'Visitas de hoje', texto: 'As visitas de rotina do dia (e as atrasadas). Cada uma tem o botão INICIAR VISITA.' },
-        { alvo: blocoComTitulo('Visitas pedidas'), titulo: 'Visitas pedidas pelo gestor', texto: 'As solicitações de visita. O botão INICIAR VISITA já traz as tarefas que o gestor pediu.' },
-        { alvo: '[data-visita-sol], [data-iniciar]', titulo: 'Iniciar visita', texto: 'Clique ao chegar no posto. A hora de início já vem preenchida.' },
-        { titulo: 'Durante a visita', texto: 'Para cada tarefa, toque em OK, NÃO OK ou N/A. Toque em "+ observação" para escrever o que viu, ex.: "nobreak apitando, bateria fraca". Cada toque já fica salvo.' },
-        { titulo: 'Concluir', texto: 'No fim, escreva os comentários gerais, as pendências (se houver) e fotos se quiser. Toque em CONCLUIR VISITA: o gestor é avisado, a solicitação se fecha e os problemas vão para o painel.' },
+        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'Calendário, TI do Beija-Flor (o nosso trabalho), Por posto e Por funcionário. Cada aba tem uma frase dizendo o que mostra.' },
+        { alvo: '.pg-filtro .pg-seg', titulo: 'Escolha o período', texto: 'Dia, Semana, Mês, Ano ou Personalizado. Os gráficos acompanham: Dia mostra por hora, Semana e Mês por dia, Ano por mês.' },
+        { alvo: '.pg-filtro .pg-nav', titulo: 'Anterior e seguinte', texto: 'As setas vão para o período anterior ou o seguinte. "Hoje" volta para o atual.' },
+        { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... O número pequeno ao lado compara com o período anterior.' },
+        { alvo: () => $('.pg-card'), titulo: 'Gráficos de linha', texto: 'Passe o mouse (ou toque) num ponto para ver o valor.' },
+        { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
+        { rota: '#/painel?aba=funcionarios', alvo: '.fn-grade', titulo: 'Por funcionário', texto: 'Um cartão por pessoa: visitas, atividades, no prazo, em aberto, atrasadas e problemas achados. Inclui quem é gestor e técnico ao mesmo tempo.' },
+        { rota: '#/painel?aba=ti', alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período escolhido para guardar ou enviar.' },
       ],
     },
   ];
@@ -3555,11 +3831,9 @@
     if (seq !== renderSeq) return;
     const papel = ehGestor() ? 'gestor' : 'tecnico';
     const feitos = new Set(tourFeitos());
-    const lista = TUTORIAIS.filter((t) => t.papeis.includes(papel));
-    view().innerHTML = `
-      <div class="small-muted mb-3">Passo a passo guiado: a tela escurece, o lugar certo fica em destaque e um balão explica.
-        Você pode sair quando quiser (Esc) e usar as setas do teclado para avançar.</div>
-      <div class="tut-grade">${lista.map((t) => `<div class="tut-card">
+    // quem é gestor e técnico vê os dois conjuntos
+    const lista = TUTORIAIS.filter((t) => t.papeis.includes(papel) || (fazVisitas() && t.papeis.includes('tecnico')));
+    const cartao = (t) => `<div class="tut-card">
         <div class="tut-ic"><i class="bi bi-${t.icone}"></i></div>
         <div class="flex-grow-1 min-w-0">
           <div class="fw-semibold">${esc(t.titulo)} ${feitos.has(t.id) ? tag('tag-green', 'feito', 'check2') : ''}</div>
@@ -3567,7 +3841,19 @@
           <div class="small-muted mt-1">${t.passos.length} passos</div>
         </div>
         <button type="button" class="btn btn-sm ${feitos.has(t.id) ? 'btn-outline-secondary' : 'btn-brand'}" data-tour="${t.id}">${feitos.has(t.id) ? 'Rever' : 'Começar'}</button>
-      </div>`).join('')}</div>`;
+      </div>`;
+    const total = lista.length; const feitosN = lista.filter((t) => feitos.has(t.id)).length;
+    view().innerHTML = `
+      <div class="tut-topo"><div class="small-muted">Dica: Esc sai do tutorial e as setas do teclado avançam ou voltam.</div>
+        <div class="tut-prog"><div class="tut-barra"><i style="width:${total ? Math.round((feitosN / total) * 100) : 0}%"></i></div><span>${feitosN} de ${total} feitos</span></div></div>
+      ${CATEGORIAS_TUT.map(([k, nome, ic]) => {
+    const doGrupo = lista.filter((t) => t.cat === k);
+    if (!doGrupo.length) return '';
+    const f = doGrupo.filter((t) => feitos.has(t.id)).length;
+    return `<section class="tut-cat"><h3><i class="bi bi-${ic}"></i>${esc(nome)} <span class="small-muted">${f}/${doGrupo.length}</span></h3>
+      <div class="tut-grade">${doGrupo.map(cartao).join('')}</div></section>`;
+  }).join('')}
+      <div class="tut-depois small-muted"><i class="bi bi-hourglass-split"></i> Os tutoriais da parte da Orcim (chamados, visão e manutenções) entram quando a ligação com o sistema da Orcim estiver pronta.</div>`;
     $$('[data-tour]').forEach((b) => b.addEventListener('click', () => tourComecar(b.dataset.tour)));
   }
 
@@ -3599,6 +3885,8 @@
     const badge = $('#sino-badge');
     badge.textContent = r.nao_lidas > 99 ? '99+' : r.nao_lidas;
     badge.classList.toggle('d-none', !r.nao_lidas);
+    $('#top-aba-n').textContent = badge.textContent;
+    $('#top-aba-n').classList.toggle('d-none', !r.nao_lidas);
     $('#notif-list').innerHTML = r.itens.length ? r.itens.map((n) => `
       <a class="notif-item ${n.is_read ? '' : 'unread'}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
         <div class="t">${esc(n.title)}</div>${n.message ? `<div class="m">${esc(n.message)}</div>` : ''}
@@ -3627,6 +3915,7 @@
   document.addEventListener('click', (ev) => {
     if (!ev.target.closest('#notif-panel')) $('#notif-panel').classList.add('d-none');
   });
+  $('#notif-ver-todas').addEventListener('click', () => $('#notif-panel').classList.add('d-none'));
   $('#notif-ler-todas').addEventListener('click', async () => {
     await API.post('/notificacoes/lidas', {}).catch(() => {});
     buscarNotificacoes();

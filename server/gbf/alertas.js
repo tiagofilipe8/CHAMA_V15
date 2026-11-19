@@ -3,7 +3,7 @@
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
 const {
-  STATUS_CENTRAL, escopoTickets, notificar, usuariosAtivos,
+  STATUS_CENTRAL, escopoTickets, notificar, usuariosAtivos, textoPrazo,
 } = require('./common');
 
 const INTERVALO_MS = 60 * 1000;
@@ -82,24 +82,24 @@ async function verificarAtividades() {
     `UPDATE gbf_tasks SET due_soon_notified = TRUE
      WHERE status NOT IN ('concluida','cancelada') AND assignee_id IS NOT NULL
        AND due_soon_notified = FALSE AND due_at BETWEEN now() AND now() + interval '24 hours'
-     RETURNING id, title, due_at, assignee_id`);
+     RETURNING id, title, due_at, assignee_id, all_day`);
   for (const t of logo.rows) {
     await notificar([t.assignee_id], {
       kind: 'atividade_prazo', title: `Vence em breve: ${t.title}`,
-      message: `Prazo: ${fmt(t.due_at)}`, link: `#/atividades/${t.id}`,
+      message: `Prazo: ${textoPrazo(t.due_at, t.all_day)}`, link: `#/atividades/${t.id}`,
     });
   }
   // Atrasou -> avisa o responsável e os gestores
   const atrasadas = await query(
     `UPDATE gbf_tasks SET overdue_notified = TRUE
      WHERE status NOT IN ('concluida','cancelada') AND overdue_notified = FALSE AND due_at < now()
-     RETURNING id, title, due_at, assignee_id`);
+     RETURNING id, title, due_at, assignee_id, all_day`);
   if (atrasadas.rows.length) {
     const gestores = await usuariosAtivos('gestor');
     for (const t of atrasadas.rows) {
       await notificar([t.assignee_id, ...gestores], {
         kind: 'atividade_atrasada', title: `Atividade atrasada: ${t.title}`,
-        message: `Venceu em ${fmt(t.due_at)}`, link: `#/atividades/${t.id}`,
+        message: `Venceu em ${textoPrazo(t.due_at, t.all_day)}`, link: `#/atividades/${t.id}`,
       });
     }
   }

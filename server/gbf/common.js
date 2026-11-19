@@ -58,6 +58,15 @@ async function notificar(userIds, { kind, title, message = null, link = null }) 
   }
 }
 
+// Avisa a equipe (gestores e técnicos ativos) e quem mais vier em "extras", menos quem fez a ação.
+// "excluir": ids que já receberam um aviso mais específico.
+async function avisarEquipe(ator, aviso, { extras = [], excluir = [] } = {}) {
+  const fora = new Set([ator && ator.id, ...excluir].filter(Boolean).map(String));
+  const ids = [...await usuariosAtivos('gestor'), ...await usuariosAtivos('tecnico'), ...extras]
+    .filter((id) => id && !fora.has(String(id)));
+  await notificar(ids, aviso);
+}
+
 // "tecnico" inclui os gestores que também fazem visitas
 // Prazo de atividade a partir de data + horário opcional (fuso de São Paulo, UTC-3, sem horário de verão).
 // Sem horário = o dia todo: vence às 23:59:59 do dia. Devolve undefined se não veio due_date.
@@ -88,7 +97,7 @@ async function usuariosAtivos(role = null) {
 }
 
 module.exports = {
-  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA, prazoDe, textoPrazo,
+  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA, prazoDe, textoPrazo, avisarEquipe,
   getSetting, setSetting, entidadesAcompanhadas, escopoTickets, tabelaExiste,
   notificar, usuariosAtivos,
 };

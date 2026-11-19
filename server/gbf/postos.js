@@ -1,7 +1,7 @@
 // Postos (unidades visitadas pela TI) e modelos de checklist.
 const express = require('express');
 const { query, pool } = require('../db');
-const { ah, STATUS_CENTRAL, entidadesAcompanhadas } = require('./common');
+const { ah, STATUS_CENTRAL, entidadesAcompanhadas, avisarEquipe } = require('./common');
 const { queryCentral } = require('./fonte');
 
 const router = express.Router();
@@ -163,6 +163,7 @@ router.post('/postos', ah(async (req, res) => {
   const { rows } = await query(
     `INSERT INTO gbf_locations (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING id`,
     cols.map((c) => out[c]));
+  await avisarEquipe(req.gbfUser, { kind: 'posto', title: `${req.gbfUser.name} cadastrou o posto: ${out.name || 'novo posto'}`, link: `#/postos/${rows[0].id}` });
   res.status(201).json({ id: rows[0].id });
 }));
 
@@ -177,6 +178,13 @@ router.patch('/postos/:id', ah(async (req, res) => {
     `UPDATE gbf_locations SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1`,
     [req.params.id, ...cols.map((c) => out[c])]);
   if (!rowCount) return res.status(404).json({ error: 'Posto não encontrado.' });
+  const nome = (await query('SELECT name FROM gbf_locations WHERE id = $1', [req.params.id])).rows[0]?.name || 'posto';
+  const oQue = [out.next_visit_date !== undefined ? `próxima visita ${out.next_visit_date ? String(out.next_visit_date).split('-').reverse().join('/') : 'sem data'}` : null,
+    out.checklist_id !== undefined ? 'checklist' : null, out.active !== undefined ? (out.active ? 'reativou' : 'desativou') : null].filter(Boolean);
+  await avisarEquipe(req.gbfUser, {
+    kind: 'posto', title: `${req.gbfUser.name} alterou o posto: ${nome}`,
+    message: oQue.length ? oQue.join(' · ') : 'dados do posto', link: `#/postos/${req.params.id}`,
+  });
   res.json({ ok: true });
 }));
 
@@ -249,6 +257,7 @@ async function salvarChecklist(id, b) {
 router.post('/checklists', ah(async (req, res) => {
   const r = await salvarChecklist(null, req.body || {});
   if (r.erro) return res.status(r.status || 422).json({ error: r.erro });
+  await avisarEquipe(req.gbfUser, { kind: 'checklist', title: `${req.gbfUser.name} criou o checklist: ${String(req.body?.name || '').trim() || 'novo'}`, link: `#/checklists/${r.id}` });
   res.status(201).json({ id: r.id });
 }));
 
@@ -256,6 +265,7 @@ router.put('/checklists/:id', ah(async (req, res) => {
   if (!/^\d+$/.test(req.params.id)) return res.status(404).json({ error: 'Checklist não encontrado.' });
   const r = await salvarChecklist(req.params.id, req.body || {});
   if (r.erro) return res.status(r.status || 422).json({ error: r.erro });
+  await avisarEquipe(req.gbfUser, { kind: 'checklist', title: `${req.gbfUser.name} alterou o checklist: ${String(req.body?.name || '').trim() || 'checklist'}`, link: `#/checklists/${r.id}` });
   res.json({ id: r.id });
 }));
 

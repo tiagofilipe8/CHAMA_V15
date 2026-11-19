@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const config = require('../config');
 const { query, pool } = require('../db');
-const { ah, STATUS_CENTRAL, notificar, usuariosAtivos, prazoDe } = require('./common');
+const { ah, STATUS_CENTRAL, notificar, usuariosAtivos, prazoDe, avisarEquipe } = require('./common');
 const { queryCentral } = require('./fonte');
 
 const router = express.Router();
@@ -138,6 +138,11 @@ router.post('/', ah(async (req, res) => {
     }
     await client.query('COMMIT');
     res.status(201).json({ id: vid });
+    avisarEquipe(req.gbfUser, {
+      kind: 'visita', title: `${req.gbfUser.name} iniciou a visita: ${loc.name}`,
+      message: solic ? `Visita pedida · ${itens.length} tarefa(s)` : (nomeChecklist ? `Checklist: ${nomeChecklist}` : null),
+      link: `#/visitas/${vid}`,
+    }, { extras: solic ? [solic.requested_by] : [] }).catch((e) => console.error('[gbf] aviso:', e.message));
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -293,6 +298,10 @@ router.post('/:id/cancelar', ah(async (req, res) => {
   if (!v) return res.status(404).json({ error: 'Visita não encontrada.' });
   if (!podeEditar(req.gbfUser, v)) return res.status(403).json({ error: 'Esta visita não pode mais ser alterada.' });
   await query(`UPDATE gbf_visits SET status = 'cancelada', finished_at = now(), updated_at = now() WHERE id = $1`, [v.id]);
+  await avisarEquipe(req.gbfUser, {
+    kind: 'visita', title: `${req.gbfUser.name} cancelou a visita: ${v.location_name}`,
+    message: v.request_id ? 'O pedido voltou para "a fazer".' : null, link: `#/postos/${v.location_id}`,
+  });
   // a solicitação volta para "a fazer" (a visita não aconteceu)
   if (v.request_id) {
     await query(`UPDATE gbf_requests SET status = 'a_fazer', visit_id = NULL, started_at = NULL, updated_at = now()

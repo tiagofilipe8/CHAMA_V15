@@ -6,7 +6,7 @@
 // Situações: A FAZER -> EM ANDAMENTO -> CONCLUÍDA (ou CANCELADA).
 const express = require('express');
 const { query, withTransaction } = require('../db');
-const { ah, notificar, usuariosAtivos } = require('./common');
+const { ah, notificar, usuariosAtivos, avisarEquipe } = require('./common');
 
 const router = express.Router();
 const STATUS = { a_fazer: 'A fazer', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
@@ -146,13 +146,14 @@ router.post('/', ah(async (req, res) => {
     if (kind === 'visita') await gravarTarefas(q, novo, tarefas);
     return novo;
   });
-  await notificar((await usuariosAtivos('tecnico')), {
+  await avisarEquipe(u, {
     kind: 'solicitacao',
     title: kind === 'visita' ? `${out.visit_type === 'pontual' ? 'Visita pontual' : 'Visita de rotina'} pedida: ${out.title.split(' — ').pop()}` : `Nova solicitação: ${out.title}`,
     message: [u.name, out.desired_date ? `para ${dataBR(out.desired_date)}` : null, PRIORIDADE[out.priority || 1],
       kind === 'visita' ? `${tarefas.length} tarefa(s)` : null].filter(Boolean).join(' · '),
     link: `#/solicitacoes/${id}`,
   });
+  // (quem pediu não recebe o próprio aviso)
   res.status(201).json({ id });
 }));
 
@@ -207,6 +208,15 @@ router.patch('/:id', ah(async (req, res) => {
     if (sets.length) await q(`UPDATE gbf_requests SET ${sets.join(', ')}, updated_at = now() WHERE id = $1`, params);
     if (tarefas) await gravarTarefas(q, r.id, tarefas);
   });
+  const mudouAlgo = sets.some((x) => !/^(updated_at|completed_at|started_at)/.test(x)) || tarefas;
+  if (!concluiu && mudouAlgo) {
+    const cancelou = b.status === 'cancelada';
+    await avisarEquipe(u, {
+      kind: 'solicitacao', title: `${u.name} ${cancelou ? 'cancelou' : 'alterou'} o pedido: ${r.title}`,
+      message: cancelou ? (b.response ? String(b.response).slice(0, 200) : null) : (tarefas ? `${tarefas.length} tarefa(s)` : null),
+      link: `#/solicitacoes/${r.id}`,
+    }, { extras: [r.requested_by, r.handled_by] });
+  }
   if (concluiu && r.requested_by && String(r.requested_by) !== String(u.id)) {
     await notificar([r.requested_by], {
       kind: 'solicitacao', title: `Solicitação concluída: ${r.title}`,

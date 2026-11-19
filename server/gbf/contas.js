@@ -96,8 +96,13 @@ privado.post('/auth/senha', ah(async (req, res) => {
 
 // ---------------------------- Notificações ---------------------------
 privado.get('/notificacoes', ah(async (req, res) => {
+  const lim = Math.min(Math.max(parseInt(req.query.limite, 10) || 60, 1), 300);
+  const conds = ['user_id = $1'];
+  const params = [req.gbfUser.id];
+  if (req.query.nao_lidas === '1') conds.push('is_read = FALSE');
+  if (/^[a-z_]{2,30}$/.test(String(req.query.tipo || ''))) { params.push(req.query.tipo); conds.push(`kind = $${params.length}`); }
   const [lista, cont] = await Promise.all([
-    query(`SELECT * FROM gbf_notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 60`, [req.gbfUser.id]),
+    query(`SELECT * FROM gbf_notifications WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT ${lim}`, params),
     query(`SELECT count(*)::int AS n FROM gbf_notifications WHERE user_id = $1 AND is_read = FALSE`, [req.gbfUser.id]),
   ]);
   res.json({ nao_lidas: cont.rows[0].n, itens: lista.rows });
