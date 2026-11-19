@@ -180,7 +180,13 @@ body {
   position: sticky; top: 0; z-index: 20;
 }
 .topbar h2 { font-size: 1.15rem; font-weight: 700; margin: 0; }
-.topbar-left { display: flex; align-items: center; gap: 8px; }
+.topbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Titulo da pagina + frase curta dizendo para que ela serve */
+.page-head { min-width: 0; }
+.page-head-row { display: flex; align-items: center; gap: 8px; }
+.page-desc { display: block; color: var(--muted); font-size: .76rem; line-height: 1.3; margin-top: 2px; }
+.page-desc:empty { display: none; }
+@media (max-width: 575px) { .page-desc { font-size: .7rem; } }
 .topbar-right { display: flex; align-items: center; gap: 6px; }
 .topbar .icon-btn { color: var(--muted); }
 .topbar .icon-btn:hover { background: var(--primary-soft); color: var(--primary); }

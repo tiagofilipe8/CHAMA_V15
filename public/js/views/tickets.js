@@ -60,13 +60,9 @@ Views.tickets = async function tickets(el, opts = {}) {
   let locs = [];
 
   el.innerHTML = `
-    ${opts.watching ? `<p class="page-hint"><i class="bi bi-eye"></i> Chamados em que você foi adicionado(a) como observador(a).</p>`
-      : opts.mine ? `<p class="page-hint"><i class="bi bi-person-lines-fill"></i> Os chamados que você abriu e os que estão com você. <i class="bi bi-bell-fill text-warning"></i> = teve novidade.</p>`
-      : isClient ? `<div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
-          <p class="page-hint mb-0"><i class="bi bi-info-circle"></i> ${opts.team
-            ? 'Todos os chamados das empresas que você acompanha.' : 'Os chamados que você abriu.'}</p>
-          ${isManager ? `<a class="btn btn-sm btn-outline-primary" href="${opts.team ? '#/tickets' : '#/team-tickets'}">
-              <i class="bi ${opts.team ? 'bi-person-lines-fill' : 'bi-people'}"></i> ${opts.team ? 'Meus chamados' : 'Chamados da equipe'}</a>` : ''}
+    ${(isManager && !opts.watching && !opts.mine) ? `<div class="d-flex justify-content-end mb-2">
+          <a class="btn btn-sm btn-outline-primary" href="${opts.team ? '#/tickets' : '#/team-tickets'}">
+            <i class="bi ${opts.team ? 'bi-person-lines-fill' : 'bi-people'}"></i> ${opts.team ? 'Meus chamados' : 'Chamados da equipe'}</a>
         </div>` : ''}
 
     <div class="board-toolbar">

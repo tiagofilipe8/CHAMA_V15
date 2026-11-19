@@ -73,7 +73,7 @@ function pageTitleFromPath() {
     '/inventory/agents': 'Agentes',
     '/new': 'Abrir Chamado',
     '/admin/users': 'Usuários',
-    '/admin/entities': 'Dados da empresa',
+    '/admin/entities': window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas',
     '/admin/categories': 'Categorias e opções',
     '/admin/settings': 'Configurações',
     '/admin/roles': 'Perfis e permissões',
@@ -82,6 +82,38 @@ function pageTitleFromPath() {
   if (path.startsWith('/tickets/')) return 'Chamado';
   if (path.startsWith('/inventory/')) return 'Ativo';
   return map[path] || 'Sistema';
+}
+
+// Frase curta embaixo do titulo: para que serve a pagina aberta
+function pageDescFromPath() {
+  const u = currentUser();
+  const path = (location.hash.replace(/^#/, '') || '/dashboard').split('?')[0];
+  const listaTickets = Roles.can(u, 'ticket.view_all')
+    ? 'Todos os chamados, para acompanhar, distribuir e atender.'
+    : (Roles.can(u, 'ticket.view_company') && !Roles.isClient(u))
+      ? 'Todos os chamados da sua empresa.'
+      : 'Os chamados que você abriu e o andamento de cada um.';
+  const map = {
+    '/dashboard': 'Resumo do atendimento: chamados abertos, urgências e o que precisa ficar pronto em cada dia.',
+    '/tickets': listaTickets,
+    '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
+    '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
+    '/watching': 'Chamados em que você foi incluído como observador: você acompanha, mas não é o responsável.',
+    '/new': 'Conte o problema e onde ele está. A equipe de TI recebe o chamado na hora.',
+    '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão e quem usa.',
+    '/inventory/agents': 'Programas instalados nos computadores que enviam o inventário sozinhos.',
+    '/admin/locations': 'Lugares atendidos (lojas, postos, setores). Cada chamado e equipamento fica ligado a um local.',
+    '/admin/users': 'Quem acessa o sistema, de qual empresa e local, e com qual perfil.',
+    '/admin/entities': window.EMPRESA_UNICA ? 'Nome, logo e contatos da empresa.' : 'Empresas atendidas: nome, logo e contatos de cada uma.',
+    '/admin/materials': 'Itens que podem ser pedidos no chamado "Pedido de material" (toner, mouse, cabo...).',
+    '/admin/categories': 'Tipos de problema, níveis de urgência e causas de encerramento usados nos chamados.',
+    '/admin/roles': 'O que cada perfil (Técnico, Gestor, Usuário...) pode ver e fazer no sistema.',
+    '/admin/settings': 'Opções gerais: nome do sistema, avisos por e-mail e WhatsApp, backup.',
+    '/perfil': 'Seus dados de contato e sua senha.',
+  };
+  if (/^\/tickets\/\d+/.test(path)) return 'Situação, conversa e histórico do chamado.';
+  if (/^\/inventory\/\d+/.test(path)) return 'Dados do equipamento e os chamados ligados a ele.';
+  return map[path] || '';
 }
 
 // Grupos do menu que o usuario deixou fechados (padrao: Cadastros e Sistema fechados)
@@ -184,6 +216,8 @@ function marcarModulo() {
   const [nome, cor, icone] = moduloAtual();
   el.className = `tg page-modulo ${cor}`;
   el.innerHTML = `<i class="bi ${icone}"></i>${nome}`;
+  const desc = document.getElementById('page-desc');
+  if (desc) desc.textContent = pageDescFromPath();
 }
 
 // Modo escuro: guardado no navegador
