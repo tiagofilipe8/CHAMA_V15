@@ -313,6 +313,28 @@ router.get('/calendar/load', async (req, res) => {
 });
 
 // Chamados que o usuario ve, pela data de necessidade (painel)
+// Ultimos comentarios de varios chamados (previa no calendario: passar o mouse num dia).
+// So chamados que a pessoa pode ver; notas internas so para quem pode le-las.
+router.get('/comments-preview', async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').filter((x) => /^\d+$/.test(x)).slice(0, 500).map(Number);
+  if (!ids.length) return res.json({});
+  const scope = scopeConditions(req.user, 2);
+  const kinds = canInternal(req.user) ? "'comment','note','internal'" : "'comment','note'";
+  const { rows } = await query(
+    `SELECT ticket_id, quem, texto, quando FROM (
+       SELECT m.ticket_id, u.name AS quem, m.content AS texto, m.created_at AS quando,
+              row_number() OVER (PARTITION BY m.ticket_id ORDER BY m.created_at DESC) AS n
+       FROM ticket_messages m
+       JOIN users u ON u.id = m.user_id
+       JOIN tickets t ON t.id = m.ticket_id
+       WHERE m.ticket_id = ANY($1::bigint[]) AND m.kind IN (${kinds})
+       ${scope.sql ? 'AND ' + scope.sql : ''}
+     ) x WHERE n <= 3 ORDER BY ticket_id, quando DESC`, [ids, ...scope.params]);
+  const out = {};
+  rows.forEach((r) => { (out[r.ticket_id] = out[r.ticket_id] || []).push({ quem: r.quem, texto: r.texto, quando: r.quando }); });
+  res.json(out);
+});
+
 router.get('/calendar', async (req, res) => {
   const range = rangeFrom(req);
   if (!range) return res.status(422).json({ error: 'Período inválido.' });
