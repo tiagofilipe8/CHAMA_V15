@@ -1012,6 +1012,50 @@
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
       });
     };
+    // Hover num dia: popup animado com a lista do dia e se cada item está concluído
+    if (window.matchMedia('(hover: hover)').matches) {
+      let pop = document.getElementById('cal-pop');
+      if (!pop) {
+        pop = document.createElement('div');
+        pop.id = 'cal-pop';
+        pop.setAttribute('role', 'tooltip');
+        pop.innerHTML = '<div class="cal-pop-in"></div>';
+        document.body.appendChild(pop);
+        window.addEventListener('hashchange', () => pop.classList.remove('on'));
+      }
+      const esconder = () => { pop.classList.remove('on'); diaPop = null; };
+      let diaPop = null;
+      const grade = $('#cal-dias');
+      grade.addEventListener('mouseover', (ev) => {
+        const cel = ev.target.closest('[data-dia]');
+        if (!cel || cel.dataset.dia === diaPop) return;
+        diaPop = cel.dataset.dia;
+        const lst = (porDia().get(diaPop) || []).slice()
+          .sort((a, b) => Number(a.feito) - Number(b.feito) || b.prioridade - a.prioridade || (a.hora || '').localeCompare(b.hora || ''));
+        const titDia = new Date(`${diaPop}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
+        const feitos = lst.filter((i) => i.feito).length;
+        pop.firstElementChild.innerHTML = `<div class="cal-pop-cab"><b>${esc(titDia)}</b>
+            <span>${lst.length ? `${feitos}/${lst.length} concluído(s)` : ''}</span></div>
+          ${lst.length ? `<ul>${lst.slice(0, 8).map((i, n) => `<li style="--n:${n}">
+              <i class="cal-num ${COR_URG[i.prioridade]}"></i>
+              <span class="t">${esc(i.titulo)}</span>
+              ${i.feito ? tag('tag-green', 'Concluída') : i.atrasado ? tag('tag-red', 'Atrasada') : i.aberto ? tag('tag-blue', 'Em aberto') : tag('tag-gray', i.situacao)}
+            </li>`).join('')}</ul>${lst.length > 8 ? `<div class="cal-pop-mais">+${lst.length - 8} — clique no dia para ver tudo</div>` : ''}`
+    : '<div class="cal-pop-vazio">Nada neste dia.</div>'}`;
+        const r = cel.getBoundingClientRect();
+        const pw = pop.offsetWidth || 300; const ph = pop.offsetHeight || 120;
+        let x = r.right + 10; if (x + pw > innerWidth - 8) x = Math.max(8, r.left - pw - 10);
+        let y = r.top - 6; if (y + ph > innerHeight - 8) y = Math.max(8, innerHeight - ph - 8);
+        const primeira = !pop.classList.contains('on');
+        if (primeira) pop.classList.add('sem-mov'); // na primeira vez aparece no lugar, sem deslizar
+        pop.style.transform = `translate(${x}px, ${y}px)`;
+        pop.firstElementChild.classList.remove('troca'); void pop.offsetWidth; pop.firstElementChild.classList.add('troca');
+        requestAnimationFrame(() => { pop.classList.add('on'); if (primeira) requestAnimationFrame(() => pop.classList.remove('sem-mov')); });
+      });
+      grade.addEventListener('mouseleave', esconder);
+      grade.addEventListener('click', esconder);
+    }
+
     $$('.cal-filtros [data-f]').forEach((b) => b.addEventListener('click', () => {
       filtro[b.dataset.f] = !filtro[b.dataset.f];
       if (!filtro.orcim && !filtro.ti) filtro[b.dataset.f === 'orcim' ? 'ti' : 'orcim'] = true; // sempre mostra pelo menos um

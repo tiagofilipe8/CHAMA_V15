@@ -728,3 +728,26 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 #ag-pop dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; border-top: 1px solid var(--line); padding-top: 6px; }
 #ag-pop dt { color: var(--muted); font-weight: 500; }
 #ag-pop dd { margin: 0; color: var(--ink); word-break: break-word; }
+
+/* Calendário do Painel do gestor: popup do dia no hover (aparece suave e desliza de um dia para o outro) */
+#cal-pop { position: fixed; left: 0; top: 0; z-index: 3500; width: 310px; pointer-events: none;
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1); will-change: transform; }
+#cal-pop.sem-mov { transition: none; }
+#cal-pop .cal-pop-in { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .18); font-size: .8rem;
+  opacity: 0; transform: translateY(6px) scale(.97); transform-origin: top left;
+  transition: opacity .18s ease, transform .22s cubic-bezier(.2, .8, .2, 1); }
+#cal-pop.on .cal-pop-in { opacity: 1; transform: none; }
+.cal-pop-cab { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+.cal-pop-cab b { font-size: .86rem; color: var(--ink); }
+.cal-pop-cab span { color: var(--muted); font-size: .74rem; white-space: nowrap; }
+#cal-pop ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#cal-pop li { display: flex; align-items: center; gap: 7px; padding: 4px 0; border-top: 1px solid var(--line-soft, #f1f5f9); }
+#cal-pop li .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+#cal-pop li .tag { flex: none; font-size: .68rem; }
+#cal-pop .cal-num { flex: none; width: 9px; height: 9px; min-width: 0; padding: 0; border-radius: 50%; display: inline-block; }
+#cal-pop .urg-4 { background: #d7263d; } #cal-pop .urg-3 { background: #ec7a1c; } #cal-pop .urg-2 { background: #d9a400; } #cal-pop .urg-1 { background: #4c7dd9; }
+#cal-pop .troca li { animation: calPopItem .26s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--n) * 25ms); }
+@keyframes calPopItem { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+.cal-pop-mais, .cal-pop-vazio { color: var(--muted); font-size: .74rem; margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { #cal-pop, #cal-pop .cal-pop-in, #cal-pop .troca li { transition: none; animation: none; } }
