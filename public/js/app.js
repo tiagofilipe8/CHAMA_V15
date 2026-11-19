@@ -13,11 +13,15 @@ function buildNav(u) {
   const items = [];
   // Abrir chamado: a acao principal do sistema, sempre no topo do menu e em destaque
   if (can('ticket.create')) items.push({ cta: true, href: '#/new', icon: 'bi-plus-lg', label: 'Abrir chamado' });
+  // Meus chamados (os que abri e os que estao comigo), logo abaixo, com sininho de novidade.
+  // Para o cliente a lista "Chamados" ja e a dele: o atalho aponta para ela e ela sai do grupo.
+  const listaJaEMinha = client || (!can('ticket.view_all') && !can('ticket.view_company'));
+  items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-person-lines-fill', label: 'Meus chamados' });
   const orcim = [];
   if (can('dashboard.view')) orcim.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados'
     : (can('ticket.view_company') && !client) ? 'Chamados da empresa' : 'Meus Chamados';
-  orcim.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
+  if (!listaJaEMinha) orcim.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
   if (client && can('ticket.view_company')) orcim.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe' });
   orcim.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
   if (can('inventory.view')) orcim.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
@@ -120,6 +124,7 @@ function pageTitleFromPath() {
     '/tickets': 'Chamados',
     '/team-tickets': 'Chamados da Equipe',
     '/watching': 'Chamados a observar',
+    '/mine': 'Meus chamados',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
@@ -160,6 +165,9 @@ function renderNav() {
   items.forEach((it) => {
     if (it.cta) {
       html += `<a class="nav-cta" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`;
+    } else if (it.top) {
+      html += `<a class="nav-item nav-top" id="nav-mine" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
+        + '<span class="nav-bell d-none" title="Seus chamados tiveram novidade"><i class="bi bi-bell-fill"></i><b></b></span></a>';
     } else if (it.group) {
       fecha();
       const fechado = fechados.includes(it.g);
@@ -184,6 +192,7 @@ function renderNav() {
     if (fechado) lista.push(sec.dataset.sec);
     try { localStorage.setItem('nav_fechados', JSON.stringify(lista)); } catch {}
   }));
+  pintarNovidades();
 
   // identities
   const name = user.name || user.username;
@@ -272,6 +281,7 @@ const routes = [
   { re: /^#\/tickets$/, view: () => Views.tickets },
   { re: /^#\/team-tickets$/, view: () => (el) => Views.tickets(el, { team: true }) },
   { re: /^#\/watching$/, view: () => (el) => Views.tickets(el, { watching: true }) },
+  { re: /^#\/mine$/, view: () => (el) => Views.tickets(el, { mine: true }) },
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },
@@ -294,6 +304,11 @@ async function router() {
   activeNav();
   const hash = location.hash || '#/dashboard';
   const viewEl = document.getElementById('view');
+  // abriu um chamado: as notificacoes dele contam como lidas (some o sininho dele)
+  const aberto = hash.match(/^#\/tickets\/(\d+)/);
+  if (aberto && novidades.includes(Number(aberto[1]))) {
+    API.post('/notifications/read', { ticket_id: Number(aberto[1]) }).then(loadBell).catch(() => {});
+  }
   if (/^#\/ti(\/|\?|$)/.test(hash)) {
     if (TI.navegar(hash)) return;
   } else {
@@ -345,7 +360,7 @@ function connectSocket() {
       Views.dashboard(document.getElementById('view'), { silent: true });
     } else if (location.hash === `#/tickets/${tk.id}`) {
       Views.ticketDetail(tk.id)(document.getElementById('view'), { silent: true });
-    } else if (/^#\/(tickets|team-tickets|watching)$/.test(location.hash) && Views.tickets.refresh) {
+    } else if (/^#\/(tickets|team-tickets|watching|mine)$/.test(location.hash) && Views.tickets.refresh) {
       Views.tickets.refresh();
     }
   });
@@ -357,9 +372,27 @@ function connectSocket() {
   });
 }
 
+// Chamados meus (abertos por mim ou comigo) com notificacao nao lida
+let novidades = [];
+function pintarNovidades() {
+  const n = novidades.length;
+  const b = document.querySelector('#nav-mine .nav-bell');
+  if (b) {
+    b.classList.toggle('d-none', n === 0);
+    b.querySelector('b').textContent = n > 99 ? '99+' : String(n);
+    b.title = n === 1 ? '1 chamado seu teve novidade' : `${n} chamados seus tiveram novidade`;
+  }
+  document.querySelectorAll('[data-tk-novidade]').forEach((el) => {
+    el.classList.toggle('d-none', !novidades.includes(Number(el.dataset.tkNovidade)));
+  });
+}
+window.temNovidade = (id) => novidades.includes(Number(id));
+
 async function loadBell() {
   try {
     const data = await API.get('/notifications');
+    novidades = Array.isArray(data.mine_tickets) ? data.mine_tickets : [];
+    pintarNovidades();
     const countEl = document.getElementById('notif-count');
     const listEl = document.getElementById('notif-list');
     countEl.classList.toggle('d-none', data.unread === 0);

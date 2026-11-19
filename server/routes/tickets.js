@@ -271,6 +271,8 @@ router.get('/', async (req, res) => {
   else if (assigned === 'none') frag(`t.assigned_user_id IS NULL`, []);
   if (requester === 'me') frag(`t.requester_id = ?`, req.user.id);
   else if (requester && /^\d+$/.test(requester)) frag(`t.requester_id = ?`, parseInt(requester, 10));
+  // "Meus chamados": os que eu abri e os que estao comigo (tecnico)
+  if (req.query.mine === 'me') frag(`(t.requester_id = ? OR t.assigned_user_id = ?)`, [req.user.id, req.user.id]);
   if (watching === 'me') {
     frag(`EXISTS (SELECT 1 FROM ticket_watchers w2 WHERE w2.ticket_id = t.id AND w2.user_id = ?)`, req.user.id);
   }

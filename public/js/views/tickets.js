@@ -48,7 +48,7 @@ Views.tickets = async function tickets(el, opts = {}) {
     return;
   }
 
-  const prefKey = opts.watching ? 'watching' : opts.team ? 'team' : 'main';
+  const prefKey = opts.watching ? 'watching' : opts.team ? 'team' : opts.mine ? 'mine' : 'main';
   const prefs = Object.assign({
     view: 'board', group: 'status', sort: 'urgency', q: '',
     locations: [], impacts: [], assigned: '', entity: '', showClosed: false,
@@ -61,6 +61,7 @@ Views.tickets = async function tickets(el, opts = {}) {
 
   el.innerHTML = `
     ${opts.watching ? `<p class="page-hint"><i class="bi bi-eye"></i> Chamados em que você foi adicionado(a) como observador(a).</p>`
+      : opts.mine ? `<p class="page-hint"><i class="bi bi-person-lines-fill"></i> Os chamados que você abriu e os que estão com você. <i class="bi bi-bell-fill text-warning"></i> = teve novidade.</p>`
       : isClient ? `<div class="d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
           <p class="page-hint mb-0"><i class="bi bi-info-circle"></i> ${opts.team
             ? 'Todos os chamados das empresas que você acompanha.' : 'Os chamados que você abriu.'}</p>
@@ -185,6 +186,7 @@ Views.tickets = async function tickets(el, opts = {}) {
     p.set('status', prefs.showClosed ? 'all' : 'open');
     p.set('limit', '500');
     if (opts.watching) p.set('watching', 'me');
+    else if (opts.mine) p.set('mine', 'me');
     else if (isClient && !opts.team) p.set('requester', 'me');
     if (prefs.assigned) p.set('assigned', prefs.assigned);
     if (prefs.entity) p.set('entity_id', prefs.entity);
@@ -242,6 +244,7 @@ Views.tickets = async function tickets(el, opts = {}) {
         <header>
           <span class="kurg"><i></i>${esc(t.impact_name || LABELS.priority[t.priority] || '')}</span>
           <span class="knum" title="Chamado ${esc(t.number)} · aberto em ${fmt.dateTime(t.created_at)}">${esc(shortNum)} · ${fmt.timeAgo(t.created_at)}</span>
+          <span class="knovo ${window.temNovidade && window.temNovidade(t.id) ? '' : 'd-none'}" data-tk-novidade="${t.id}" title="Teve novidade desde a última vez que você abriu"><i class="bi bi-bell-fill"></i></span>
         </header>
         <h4>${esc(t.title)}</h4>
         ${(t.location_name || cat || prefs.group !== 'status') ? `
@@ -475,7 +478,8 @@ Views.tickets = async function tickets(el, opts = {}) {
           <tbody>
             ${list.map((t) => `
               <tr class="ticket-row ${URGENCY_TONE[t.priority] || ''}" data-id="${t.id}">
-                <td><span class="fw-semibold text-primary">${esc(t.number)}</span><br>${esc(t.title)}
+                <td><span class="fw-semibold text-primary">${esc(t.number)}</span>
+                  <span class="knovo ${window.temNovidade && window.temNovidade(t.id) ? '' : 'd-none'}" data-tk-novidade="${t.id}" title="Teve novidade desde a última vez que você abriu"><i class="bi bi-bell-fill"></i></span><br>${esc(t.title)}
                   <br><small class="text-muted">${esc(t.display_category || '')}</small></td>
                 <td>${badgeStatus(t.status)}</td>
                 <td>${badgeImpact(t)}</td>
