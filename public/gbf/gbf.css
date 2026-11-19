@@ -966,3 +966,10 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .cal-lista .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: .86rem; }
 .cal-lista .cal-num { flex: none; min-width: 0; width: 9px; height: 9px; padding: 0; border-radius: 50%; display: inline-block; }
 .cal-lista-dica { font-size: .7rem; margin-top: 8px; }
+
+/* Semana de domingo a sábado: fim de semana um pouco mais cinza */
+.calpg .cal-cel.fds:not(.sel) { background: #f1f4f7; }
+.calpg .cal-cel.fds.fora:not(.sel) { background: #eef1f5; }
+.calpg .cal-sem.fds, .cal-mes-cab .fds { color: #9aa6b5; }
+.cal-semana .cal-dia.fds:not(.hoje) { background: #e4e9ef; }
+.cal-mes .cal-cel.fds:not(.hoje) { background: #f1f4f7; }

@@ -68,9 +68,9 @@ function montarEixo(de, ate, pedida) {
     const iso = v.slice(0, 10);
     if (escala === 'dia') return iso;
     if (escala === 'mes') return `${iso.slice(0, 7)}-01`;
-    // semana começando na segunda-feira (limitada ao início do período)
+    // semana começando no domingo (limitada ao início do período)
     const dow = new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = domingo
-    const seg = somaDias(iso, -((dow + 6) % 7));
+    const seg = somaDias(iso, -dow);
     return seg < de ? de : seg;
   };
   const baldes = [];
@@ -464,7 +464,7 @@ router.get('/', requireGestor, ah(async (req, res) => {
 // GET /api/gbf/painel-gestor/calendario?mes=AAAA-MM
 // Orcim: chamados (hoje pela cópia da Central; depois pela API da Orcim).
 // TI do Beija-Flor: solicitações do gestor para a TI (tabelas do Painel).
-// Devolve a grade inteira do mês (de segunda a domingo), inclusive os dias das pontas.
+// Devolve a grade inteira do mês (de domingo a sábado), inclusive os dias das pontas.
 // ---------------------------------------------------------------------
 router.get('/calendario', requireGestor, ah(async (req, res) => {
   const hoje = diaSP(new Date());
@@ -472,9 +472,9 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
   const primeiro = `${mes}-01`;
   const ultimo = somaDias(`${somaDias(primeiro, 32).slice(0, 7)}-01`, -1);
   const dowPrimeiro = new Date(`${primeiro}T12:00:00Z`).getUTCDay(); // 0 = domingo
-  const inicio = somaDias(primeiro, -((dowPrimeiro + 6) % 7));
+  const inicio = somaDias(primeiro, -dowPrimeiro);
   const dowUltimo = new Date(`${ultimo}T12:00:00Z`).getUTCDay();
-  const fim = somaDias(ultimo, (7 - dowUltimo) % 7);
+  const fim = somaDias(ultimo, 6 - dowUltimo);
   const INI = `($1::date::timestamp AT TIME ZONE '${TZ}')`;
   const FIM = `(($2::date + 1)::timestamp AT TIME ZONE '${TZ}')`;
   const DIA = (col) => `to_char(${col} AT TIME ZONE '${TZ}', 'YYYY-MM-DD')`;

@@ -719,7 +719,7 @@
     if (tipo === 'dia') return { de: ref, ate: ref, escala: 'hora' };
     if (tipo === 'semana') {
       const dow = new Date(`${ref}T12:00:00Z`).getUTCDay();
-      const seg = isoSoma(ref, -((dow + 6) % 7));
+      const seg = isoSoma(ref, -dow); // semana de domingo a sábado
       return { de: seg, ate: isoSoma(seg, 6), escala: 'dia' };
     }
     if (tipo === 'ano') return { de: `${ref.slice(0, 4)}-01-01`, ate: `${ref.slice(0, 4)}-12-31`, escala: 'mes' };
@@ -986,7 +986,7 @@
       <div class="cal-nota small-muted">TI: atividades no prazo, visitas de rotina e visitas pedidas no dia desejado. Orcim: dia em que o chamado foi aberto${c.orcim_ok ? '' : ' — não consegui ler os chamados agora'}.</div>
       <div class="cal-corpo">
         <div class="cal-grade" role="grid" aria-label="Calendário geral">
-          ${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((d) => `<div class="cal-sem" role="columnheader">${d}</div>`).join('')}
+          ${['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'].map((d, i) => `<div class="cal-sem${i === 0 || i === 6 ? ' fds' : ''}" role="columnheader">${d}</div>`).join('')}
           <div id="cal-dias" style="display:contents"></div>
         </div>
         <aside class="cal-dia" id="cal-dia" aria-live="polite"></aside>
@@ -1057,7 +1057,7 @@
         const fora = d.slice(0, 7) !== c.mes;
         const atrasados = lst.filter((i) => i.atrasado).length;
         const nfx = faixasDoDia(d, fx).length ? Math.max(...faixasDoDia(d, fx).map((x) => x.pista)) + 1 : 0;
-        return `<button type="button" class="cal-cel${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}${nfx ? ' com-faixa' : ''}" data-dia="${d}" style="--nf:${nfx}"
+        return `<button type="button" class="cal-cel${[0, 6].includes(new Date(`${d}T12:00:00Z`).getUTCDay()) ? ' fds' : ''}${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}${nfx ? ' com-faixa' : ''}" data-dia="${d}" style="--nf:${nfx}"
           aria-label="${fmtIso(d)}: ${lst.length} item(ns)" aria-pressed="${d === diaSel}">
           <span class="cal-cab-d"><span class="cal-d">${Number(d.slice(8, 10))}</span><span class="cal-and">${htmlAndamento(andamento(doDia(d, m)))}</span></span>
           ${atrasados ? `<span class="cal-atr" title="${atrasados} atrasada(s)"><i class="bi bi-alarm"></i>${atrasados}</span>` : ''}
@@ -2094,7 +2094,7 @@ function itemHistorico(e) {
     return d.toISOString().slice(0, 10);
   };
   const diaSemana = (iso) => new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = domingo
-  const segunda = (iso) => isoMais(iso, -((diaSemana(iso) + 6) % 7));
+  const segunda = (iso) => isoMais(iso, -diaSemana(iso)); // início da semana: domingo
   const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const dataCurta = (iso) => (iso ? `${SEMANA[diaSemana(iso)]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '—');
@@ -2527,7 +2527,7 @@ function itemHistorico(e) {
       corpo = `<div class="small-muted mb-2"><i class="bi bi-arrows-move"></i> Arraste um bloco para outro dia (no celular, segure o bloco um instante antes de arrastar). O <strong>+</strong> cria uma atividade no dia.</div>
         <div class="cal-semana">${[0, 1, 2, 3, 4, 5, 6].map((n) => {
         const d = isoMais(de, n);
-        return `<div class="cal-dia ${d === hoje ? 'hoje' : ''}" data-drop-dia="${d}">
+        return `<div class="cal-dia ${d === hoje ? 'hoje' : ''} ${[0, 6].includes(diaSemana(d)) ? 'fds' : ''}" data-drop-dia="${d}">
           <div class="cal-dia-cab"><a class="cal-dia-tit" href="${ir({ modo: 'dia', data: d })}">${dataCurta(d)}</a>${btnMais(d)}</div>
           <div data-drop-lista>${(porDia[d] || []).map(itemAgenda).join('')}</div></div>`;
       }).join('')}</div>`;
@@ -2535,10 +2535,10 @@ function itemHistorico(e) {
       const dias = [];
       for (let d = de; d <= ate; d = isoMais(d, 1)) dias.push(d);
       corpo = `<div class="small-muted mb-2"><i class="bi bi-arrows-move"></i> Arraste para outro dia · clique no item para abrir · <strong>+</strong> cria atividade.</div>
-        <div class="cal-mes"><div class="cal-mes-cab">${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((s) => `<div>${s}</div>`).join('')}</div>
+        <div class="cal-mes"><div class="cal-mes-cab">${['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'].map((s, i) => `<div class="${i === 0 || i === 6 ? 'fds' : ''}">${s}</div>`).join('')}</div>
         <div class="cal-mes-grade">${dias.map((d) => {
     const its = porDia[d] || [];
-    return `<div class="cal-cel ${d.slice(0, 7) !== base.slice(0, 7) ? 'fora' : ''} ${d === hoje ? 'hoje' : ''}" data-drop-dia="${d}">
+    return `<div class="cal-cel ${d.slice(0, 7) !== base.slice(0, 7) ? 'fora' : ''} ${d === hoje ? 'hoje' : ''} ${[0, 6].includes(diaSemana(d)) ? 'fds' : ''}" data-drop-dia="${d}">
             <div class="cal-cel-cab"><a class="n" href="${ir({ modo: 'dia', data: d })}" title="Ver o dia">${Number(d.slice(8, 10))}</a>${btnMais(d)}</div>
             <div data-drop-lista class="cal-cel-itens">
             ${its.slice(0, 4).map((i) => `<span class="mini st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}" data-pop="${dadosPop(i)}"
