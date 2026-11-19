@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const config = require('../config');
 const { query, pool } = require('../db');
-const { ah, STATUS_CENTRAL, notificar, usuariosAtivos } = require('./common');
+const { ah, STATUS_CENTRAL, notificar, usuariosAtivos, prazoDe } = require('./common');
 const { queryCentral } = require('./fonte');
 
 const router = express.Router();
@@ -219,6 +219,8 @@ router.post('/:id/concluir', ah(async (req, res) => {
     'SELECT count(*)::int AS n FROM gbf_visit_answers WHERE visit_id = $1 AND answer IS NULL', [v.id])).rows[0].n;
   if (faltam) return res.status(422).json({ error: `Faltam ${faltam} item(ns) do checklist. Marque OK, NÃO OK ou N/A.` });
   const pend = b.pendencia && String(b.pendencia.title || '').trim();
+  const pzPend = pend ? prazoDe(b.pendencia) : undefined;
+  if (pzPend && pzPend.erro) return res.status(422).json({ error: pzPend.erro });
 
   const client = await pool.connect();
   let proxima;
@@ -252,10 +254,11 @@ router.post('/:id/concluir', ah(async (req, res) => {
     }
     if (pend) {
       await client.query(
-        `INSERT INTO gbf_tasks (title, description, assignee_id, created_by, location_id, visit_id, due_at, ticket_id)
-         VALUES ($1,$2,$3,$3,$4,$5,$6,$7)`,
+        `INSERT INTO gbf_tasks (title, description, assignee_id, created_by, location_id, visit_id, due_at, ticket_id, all_day)
+         VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8)`,
         [pend.slice(0, 200), String(b.pendencia.description || '').trim() || null, u.id, v.location_id, v.id,
-          b.pendencia.due_at || null, /^\d+$/.test(String(b.pendencia.ticket_id || '')) ? b.pendencia.ticket_id : null]);
+          pzPend ? pzPend.due_at : (b.pendencia.due_at || null), /^\d+$/.test(String(b.pendencia.ticket_id || '')) ? b.pendencia.ticket_id : null,
+          pzPend ? pzPend.all_day : false]);
     }
     await client.query('COMMIT');
   } catch (e) {

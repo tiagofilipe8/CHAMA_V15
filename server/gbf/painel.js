@@ -12,7 +12,7 @@
 const express = require('express');
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
-const { ah, escopoTickets, STATUS_CENTRAL, PRIORIDADE_CENTRAL } = require('./common');
+const { ah, escopoTickets, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA } = require('./common');
 const { requireGestor } = require('./auth');
 const { DEMANDA_SELECT, enriquecer } = require('./demandas');
 
@@ -357,8 +357,14 @@ router.get('/', requireGestor, ah(async (req, res) => {
     query(`SELECT u.id, u.name AS nome,
              (SELECT count(*)::int FROM gbf_visits v WHERE v.user_id = u.id AND v.status = 'concluida' AND ${ENTRE('v.finished_at')}) AS visitas,
              (SELECT count(*)::int FROM gbf_requests r WHERE r.handled_by = u.id AND r.status = 'concluida' AND ${ENTRE('r.completed_at')}) AS solicitacoes,
-             (SELECT count(*)::int FROM gbf_tasks t WHERE t.assignee_id = u.id AND t.status NOT IN ('concluida','cancelada')) AS em_aberto
-           FROM gbf_users u WHERE u.active ORDER BY u.name`, p),
+             (SELECT count(*)::int FROM gbf_tasks t WHERE t.assignee_id = u.id AND t.status NOT IN ('concluida','cancelada')) AS em_aberto,
+             (SELECT count(*)::int FROM gbf_tasks t WHERE t.assignee_id = u.id AND t.status NOT IN ('concluida','cancelada') AND t.due_at < now()) AS atrasadas,
+             (SELECT count(*)::int FROM gbf_requests r WHERE r.requested_by = u.id AND ${ENTRE('r.created_at')}) AS pediu,
+             (SELECT count(*)::int FROM gbf_visit_answers a JOIN gbf_visits v ON v.id = a.visit_id
+                WHERE v.user_id = u.id AND a.answer = 'nao_ok' AND v.status = 'concluida' AND ${ENTRE('v.finished_at')}) AS nao_ok,
+             (SELECT count(*)::int FROM gbf_reschedules g WHERE g.user_id = u.id AND ${ENTRE('g.created_at')}) AS reagendou,
+             u.role, u.faz_visitas
+           FROM gbf_users u WHERE u.active AND u.role <> 'unidade' ORDER BY u.name`, p),
     query(`SELECT l.id, l.name, l.central_location_id, l.next_visit_date::text AS proxima,
                   (${HOJE} - l.next_visit_date)::int AS dias_atraso,
                   (SELECT max(v.finished_at) FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'concluida') AS ultima_visita,
@@ -418,6 +424,16 @@ router.get('/', requireGestor, ah(async (req, res) => {
       em_aberto: u.em_aberto,
     };
   }).filter((t) => t.visitas || t.atividades || t.solicitacoes || t.em_aberto);
+  ti.funcionarios = pessoas.rows.map((u) => {
+    const minhas = td.filter((t) => String(t.assignee_id) === String(u.id));
+    const comPrazo = minhas.filter((t) => t.com_prazo);
+    const papeis = u.role === 'gestor' ? (u.faz_visitas ? ['Gestor', 'Técnico'] : ['Gestor']) : [u.role === 'tecnico' ? 'Técnico' : u.role];
+    return {
+      id: u.id, nome: u.nome, papeis, visitas: u.visitas, atividades: minhas.length, solicitacoes: u.solicitacoes,
+      tempo_medio: media(minhas.map((t) => t.tempo)), no_prazo_pct: pctDe(comPrazo.filter((t) => t.no_prazo).length, comPrazo.length),
+      em_aberto: u.em_aberto, atrasadas: u.atrasadas, pediu: u.pediu, nao_ok: u.nao_ok, reagendou: u.reagendou,
+    };
+  });
 
   const postos = postosRows.rows.map((l) => {
     const c = chamadosPorPosto && l.central_location_id ? chamadosPorPosto.get(String(l.central_location_id)) : null;
@@ -522,6 +538,36 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
       detalhe: [r.posto, visita ? `${r.tarefas} tarefa(s)` : null, r.status === 'concluida' && r.problemas ? `${r.problemas} com problema` : null]
         .filter(Boolean).join(' · '),
       responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`,
+    });
+  }
+
+  const [tarefas, rotina] = await Promise.all([
+    query(`SELECT t.id, t.title, t.priority, t.status, t.all_day, ${DIA('t.due_at')} AS dia,
+              CASE WHEN t.all_day THEN '' ELSE ${HORA('t.due_at')} END AS hora, (t.due_at < now()) AS vencida,
+              l.name AS posto, u.name AS responsavel
+       FROM gbf_tasks t
+       LEFT JOIN gbf_locations l ON l.id = t.location_id
+       LEFT JOIN gbf_users u ON u.id = t.assignee_id
+       WHERE t.status <> 'cancelada' AND t.due_at >= ${INI} AND t.due_at < ${FIM}`, [inicio, fim]),
+    query(`SELECT l.id, l.name, l.next_visit_date::text AS dia, COALESCE(to_char(l.next_visit_time, 'HH24:MI'), '') AS hora,
+              c.name AS checklist
+       FROM gbf_locations l LEFT JOIN gbf_checklists c ON c.id = l.checklist_id
+       WHERE l.active AND l.next_visit_date BETWEEN $1::date AND $2::date`, [inicio, fim]),
+  ]);
+  for (const t of tarefas.rows) {
+    const aberto = !['concluida', 'cancelada'].includes(t.status);
+    itens.push({
+      fonte: 'ti', tipo: 'atividade', id: t.id, numero: `A-${String(t.id).padStart(4, '0')}`, titulo: t.title, dia: t.dia, hora: t.hora,
+      prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
+      atrasado: aberto && t.vencida, detalhe: ['Atividade', t.posto].filter(Boolean).join(' · '),
+      responsavel: t.responsavel, link: `#/atividades/${t.id}`,
+    });
+  }
+  for (const l of rotina.rows) {
+    itens.push({
+      fonte: 'ti', tipo: 'rotina', id: l.id, numero: 'Rotina', titulo: `Visita de rotina — ${l.name}`, dia: l.dia, hora: l.hora,
+      prioridade: 1, situacao: 'Visita prevista', aberto: true, feito: false, atrasado: l.dia < hoje,
+      detalhe: l.checklist || '', responsavel: null, link: `#/postos/${l.id}`,
     });
   }
 

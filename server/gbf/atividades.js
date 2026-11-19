@@ -3,7 +3,7 @@ const express = require('express');
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
 const {
-  ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets,
+  ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets, prazoDe, textoPrazo,
 } = require('./common');
 
 const router = express.Router();
@@ -161,21 +161,27 @@ router.post('/', ah(async (req, res) => {
     visitId = v.rows[0].id;
   }
 
+  // prazo: data + horário opcional (sem horário = o dia todo); due_at direto continua aceito
+  const pz = prazoDe(b);
+  if (pz && pz.erro) return res.status(422).json({ error: pz.erro });
+  const dueAt = pz ? pz.due_at : (b.due_at || null);
+  const allDay = pz ? pz.all_day : false;
+
   const { rows } = await query(
-    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id, visit_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [
+    `INSERT INTO gbf_tasks (title, description, priority, assignee_id, created_by, ticket_id, location, due_at, location_id, visit_id, all_day)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [
       title.slice(0, 200), String(b.description || '').trim() || null,
       Math.min(Math.max(parseInt(b.priority, 10) || 1, 1), 4),
-      assignee, u.id, tk.id, String(b.location || '').trim() || null, b.due_at || null,
+      assignee, u.id, tk.id, String(b.location || '').trim() || null, dueAt,
       /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null,
-      visitId,
+      visitId, allDay,
     ]);
   const id = rows[0].id;
   await evento(id, u.id, `${u.name} criou a atividade.`);
   if (assignee && assignee !== u.id) {
     await notificar([assignee], {
       kind: 'atividade', title: `Nova atividade para você: ${title}`,
-      message: b.due_at ? `Prazo: ${new Date(b.due_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : null,
+      message: dueAt ? `Prazo: ${textoPrazo(dueAt, allDay)}` : null,
       link: `#/atividades/${id}`,
     });
   }
@@ -202,13 +208,16 @@ router.patch('/:id', ah(async (req, res) => {
   if (b.location !== undefined) set('location', String(b.location).trim() || null);
   if (b.location_id !== undefined) set('location_id', /^\d+$/.test(String(b.location_id || '')) ? Number(b.location_id) : null);
   if (b.priority !== undefined) set('priority', Math.min(Math.max(parseInt(b.priority, 10) || 2, 1), 4));
-  if (b.due_at !== undefined) {
-    set('due_at', b.due_at || null);
+  const pz = prazoDe(b);
+  if (pz && pz.erro) return res.status(422).json({ error: pz.erro });
+  if (pz || b.due_at !== undefined) {
+    const dueAt = pz ? pz.due_at : (b.due_at || null);
+    const allDay = pz ? pz.all_day : false;
+    set('due_at', dueAt);
+    set('all_day', allDay);
     set('due_soon_notified', false);
     set('overdue_notified', false);
-    mudancas.push(b.due_at
-      ? `prazo para ${new Date(b.due_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
-      : 'removeu o prazo');
+    mudancas.push(dueAt ? `prazo para ${textoPrazo(dueAt, allDay)}` : 'removeu o prazo');
   }
   if (b.ticket_id !== undefined) {
     const tk = await validarTicket(b.ticket_id);

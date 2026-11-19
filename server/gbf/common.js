@@ -59,6 +59,24 @@ async function notificar(userIds, { kind, title, message = null, link = null }) 
 }
 
 // "tecnico" inclui os gestores que também fazem visitas
+// Prazo de atividade a partir de data + horário opcional (fuso de São Paulo, UTC-3, sem horário de verão).
+// Sem horário = o dia todo: vence às 23:59:59 do dia. Devolve undefined se não veio due_date.
+function prazoDe(b) {
+  if (!b || b.due_date === undefined) return undefined;
+  if (!b.due_date) return { due_at: null, all_day: false };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.due_date))) return { erro: 'Data do prazo inválida.' };
+  const hora = /^\d{2}:\d{2}$/.test(String(b.due_time || '')) ? b.due_time : null;
+  const due = new Date(`${b.due_date}T${hora ? `${hora}:00` : '23:59:59'}-03:00`);
+  if (Number.isNaN(due.getTime())) return { erro: 'Prazo inválido.' };
+  return { due_at: due.toISOString(), all_day: !hora };
+}
+const textoPrazo = (dueAt, allDay) => {
+  const d = new Date(dueAt);
+  return allDay
+    ? `${d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}, o dia todo`
+    : d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
 async function usuariosAtivos(role = null) {
   let filtro = '';
   if (role === 'tecnico') filtro = "AND (role = 'tecnico' OR (role = 'gestor' AND faz_visitas))";
@@ -70,7 +88,7 @@ async function usuariosAtivos(role = null) {
 }
 
 module.exports = {
-  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA,
+  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA, prazoDe, textoPrazo,
   getSetting, setSetting, entidadesAcompanhadas, escopoTickets, tabelaExiste,
   notificar, usuariosAtivos,
 };

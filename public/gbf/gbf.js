@@ -37,6 +37,11 @@
     return new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
   const deInputLocal = (v) => (v ? new Date(v).toISOString() : null);
+  // Prazo de atividade: sem horário = o dia todo
+  const prazoTxt = (t) => (!t || !t.due_at ? '—' : (t.all_day ? `${fmtDia(t.due_at)} · dia todo` : fmtData(t.due_at)));
+  const diaDoPrazo = (t) => (t && t.due_at ? new Date(t.due_at).toLocaleDateString('en-CA', { timeZone: TZ }) : '');
+  const horaDoPrazo = (t) => (!t || !t.due_at || t.all_day ? ''
+    : new Date(t.due_at).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }));
   const iniciais = (n) => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -296,7 +301,7 @@
       ['#/solicitacoes', 'megaphone', 'Visitas pedidas', 'visitas_pedidas'],
       ['#/postos', 'geo-alt', 'Postos'],
       ['#/atividades', 'kanban', g ? 'Atividades' : 'Minhas atividades', 'atividades'],
-      ...(g ? [['grp', 'Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
+      ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
       ['grp', 'Orcim'],
       ['#/demandas', 'inboxes', 'Chamados'],
       ['#/orcim', 'speedometer2', 'Visão Orcim'],
@@ -381,7 +386,7 @@
       else if (a === 'hoje') { marcarMenu(ehGestor() ? '#/' : '#/'); await vHoje(seq); }
       else if (a === 'meu-dia') { marcarMenu(ehGestor() ? '#/meu-dia' : '#/'); await vHoje(seq, true); }
       else if (a === 'painel' && ehGestor()) { marcarMenu('#/painel'); await vPainelGestor(qs, seq); }
-      else if (a === 'calendario' && ehGestor()) { marcarMenu('#/agenda'); await vCalendarioPainel(qs, seq, abasAgenda('calendario')); }
+      else if (a === 'calendario' && ehGestor()) { location.replace(`#/painel?aba=calendario${qs.get('mes') ? `&mes=${encodeURIComponent(qs.get('mes'))}` : ''}`); }
       else if (a === 'orcim') { marcarMenu('#/orcim'); await vVisao(seq); }
       else if (a === 'agenda') { marcarMenu('#/agenda'); await vAgenda(qs, seq); }
       else if (a === 'postos' && b === 'novo') { marcarMenu('#/postos'); await vFormPosto(null, seq); }
@@ -629,7 +634,7 @@
   // Painel do gestor: abas compactas. TI do Beija-Flor usa os dados do Painel; Orcim, Por posto e
   // Calendário usam os dados da Orcim (hoje pela cópia da Central; depois pela API da Orcim).
   // Números pequenos numa faixa no topo, listas com barrinha e tabelas; nada de cartão grande.
-  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto']];
+  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['funcionarios', 'Por funcionário'], ['calendario', 'Calendário']];
 
   // variação contra o período anterior: "+6", "−4h"; verde quando melhorou
   function variacao(atual, antes, { menorMelhor = false, tempo = false, pp = false } = {}) {
@@ -693,7 +698,6 @@
 
   async function vPainelGestor(qs, seq) {
     titulo('Painel do gestor');
-    if (qs.get('aba') === 'calendario') { location.replace(`#/calendario${qs.get('mes') ? `?mes=${encodeURIComponent(qs.get('mes'))}` : ''}`); return; }
     let aba = qs.get('aba') || store.get('gbf_painel_aba') || 'ti';
     if (!ABAS_PAINEL.some(([k]) => k === aba)) aba = 'ti';
     store.set('gbf_painel_aba', aba);
@@ -710,6 +714,8 @@
     } else per = periodoPainel(tipo, ref);
     const url = (x) => `#/painel?${new URLSearchParams({ aba, per: tipo, ...(tipo === 'livre' ? { de: per.de, ate: per.ate } : { ref }), ...x })}`;
     const abasHtml = () => `<nav class="pg-abas" aria-label="Abas do painel">${ABAS_PAINEL.map(([k, nome]) => `<a href="${url({ aba: k })}" class="${k === aba ? 'on' : ''}">${nome}</a>`).join('')}</nav>`;
+    // Calendário geral: todas as atividades, visitas e pedidos do mês (sem o filtro de período)
+    if (aba === 'calendario') { await vCalendarioPainel(qs, seq, abasHtml(), url({ aba: 'calendario' })); return; }
 
     const d = await API.get(`/painel-gestor?${new URLSearchParams({ de: per.de, ate: per.ate, escala: per.escala })}`);
     if (seq !== renderSeq) return;
@@ -717,7 +723,7 @@
     store.set('gbf_painel_filtro', JSON.stringify({ per: tipo, ref, de: per.de, ate: per.ate }));
     const contemHoje = per.de <= hojeSP() && hojeSP() <= per.ate;
 
-    const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos }[aba](d);
+    const conteudo = { ti: abaTi, orcim: abaOrcim, postos: abaPostos, funcionarios: abaFuncionarios }[aba](d);
     view().innerHTML = `
       ${abasHtml()}
       <div class="pg-filtro">
@@ -772,15 +778,32 @@
     : '<div class="small-muted py-1">Nenhum problema encontrado nas visitas do período.</div>', 'com o comentário deixado na visita')}
       <div class="pg-duas">
         ${blocoPg('Tarefas que mais dão problema', listaBarras(d.ti.nao_ok_por_item, { vazio: 'Nenhum item NÃO OK no período.' }), 'vezes NÃO OK')}
-        ${blocoPg('Atividades abertas por idade', listaBarras(d.ti.abertas_por_idade, {
-    max: 4, vazio: 'Nenhuma atividade em aberto.', cor: (x) => (x.nome.startsWith('mais') ? '#dc2626' : x.nome.startsWith('3') ? '#f59e0b' : ''),
-  }), pr.planejado + pr.reativo ? `planejado ${pr.planejado_pct}% · reativo ${100 - pr.planejado_pct}%` : '')}
+        ${blocoPg('Planejado × reativo', listaBarras([
+    { nome: 'Planejado (rotina e atividades)', total: pr.planejado },
+    { nome: 'Reativo (visitas pedidas)', total: pr.reativo },
+  ], { vazio: 'Nada entregue no período.' }), pr.planejado + pr.reativo ? `${pr.planejado_pct}% planejado` : '')}
       </div>
-      ${blocoPg('Por técnico', d.ti.tecnicos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
-        <thead><tr><th>Técnico</th><th>Visitas</th><th>Atividades</th><th>Solicitações</th><th>Tempo médio</th><th>No prazo</th><th>Em aberto</th></tr></thead>
-        <tbody>${d.ti.tecnicos.map((t) => `<tr><td>${esc(t.nome)}</td><td>${t.visitas}</td><td>${t.atividades}</td><td>${t.solicitacoes}</td>
-          <td>${dur(t.tempo_medio)}</td><td>${pctTxt(t.no_prazo_pct)}</td><td>${t.em_aberto}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="small-muted">Nenhuma entrega no período.</div>')}`;
+      <a class="pg-link-cal" href="#/painel?aba=calendario"><i class="bi bi-calendar3"></i> Ver todas as atividades no calendário</a>`;
+  }
+
+  // Por funcionário: todo mundo do time (gestor e técnico), um cartão por pessoa
+  function abaFuncionarios(d) {
+    const fs = d.ti.funcionarios || [];
+    if (!fs.length) return vazio('Nenhum usuário ativo.', 'people');
+    const n = (v, t, cls = '') => `<div class="fn-n ${cls}"><b>${v}</b><span>${t}</span></div>`;
+    return `<div class="fn-grade">${fs.map((p) => `<div class="fn-card">
+      <div class="fn-topo"><span class="avatar">${esc(iniciais(p.nome))}</span>
+        <div class="min-w-0"><div class="fw-semibold text-truncate">${esc(p.nome)}</div>
+        <div>${p.papeis.map((x) => tag(x === 'Gestor' ? 'tag-blue' : 'tag-teal', x)).join(' ')}</div></div></div>
+      <div class="fn-nums">
+        ${n(p.visitas, 'visitas feitas')}${n(p.atividades, 'atividades concluídas')}${n(pctTxt(p.no_prazo_pct), 'no prazo')}
+        ${n(p.em_aberto, 'em aberto agora')}${n(p.atrasadas, 'atrasadas agora', p.atrasadas ? 'ruim' : '')}${n(p.nao_ok, 'problemas achados')}
+      </div>
+      <div class="small-muted">${[p.pediu ? `pediu ${plural(p.pediu, 'visita', 'visitas')}` : '', p.reagendou ? `reagendou ${p.reagendou}x` : '',
+    p.tempo_medio ? `tempo médio ${dur(p.tempo_medio)}` : ''].filter(Boolean).join(' · ') || '—'}</div>
+      <a class="small" href="#/atividades?responsavel=${p.id}">Ver atividades de ${esc(p.nome.split(' ')[0])} →</a>
+    </div>`).join('')}</div>
+    <div class="small-muted mt-2">Números do período escolhido; "agora" é a situação neste momento. Inclui gestores, para quem também faz visitas.</div>`;
   }
 
   function abaOrcim(d) {
@@ -858,15 +881,16 @@
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   };
 
-  async function vCalendarioPainel(qs, seq, abasHtml = '') {
-    titulo('Agenda');
+  async function vCalendarioPainel(qs, seq, abasHtml = '', base = '#/painel?aba=calendario') {
+    titulo('Painel do gestor');
+    base = base.replace(/&(mes|dia)=[^&]*/g, '');
     const mes = /^\d{4}-\d{2}$/.test(qs.get('mes') || '') ? qs.get('mes') : hojeSP().slice(0, 7);
     const c = await API.get(`/painel-gestor/calendario?mes=${mes}`);
     if (seq !== renderSeq) return;
     const filtro = calFiltro();
     let diaSel = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('dia') || '') ? qs.get('dia') : (c.hoje.slice(0, 7) === c.mes ? c.hoje : c.primeiro);
     const [ano, mesNum] = c.mes.split('-').map(Number);
-    const irMes = (m) => `#/calendario?mes=${m}`;
+    const irMes = (m) => `${base}&mes=${m}`;
 
     const visiveis = () => c.itens.filter((i) => filtro[i.fonte] && (!filtro.abertos || i.aberto));
     const porDia = () => {
@@ -893,9 +917,9 @@
         </div>
       </div>
       <div class="cal-legenda">${[4, 3, 2, 1].map((p) => `<span><i class="cal-num ${COR_URG[p]}">n</i>${esc(c.urgencias[p])}</span>`).join('')}
-        <span class="ms-auto small-muted">Orcim: dia em que o chamado foi aberto${c.orcim_ok ? ' (cópia da Central; depois, API da Orcim)' : ' — não consegui ler os chamados agora'}. TI: dia desejado da visita.</span></div>
+        <span class="ms-auto small-muted">TI: atividades no prazo, visitas de rotina e visitas pedidas no dia desejado. Orcim: dia em que o chamado foi aberto${c.orcim_ok ? '' : ' — não consegui ler os chamados agora'}.</span></div>
       <div class="cal-corpo">
-        <div class="cal-grade" role="grid" aria-label="Calendário de solicitações">
+        <div class="cal-grade" role="grid" aria-label="Calendário geral">
           ${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((d) => `<div class="cal-sem" role="columnheader">${d}</div>`).join('')}
           <div id="cal-dias" style="display:contents"></div>
         </div>
@@ -914,7 +938,7 @@
         const fora = d.slice(0, 7) !== c.mes;
         const atrasados = lst.filter((i) => i.atrasado).length;
         return `<button type="button" class="cal-cel${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}" data-dia="${d}"
-          aria-label="${fmtIso(d)}: ${lst.length} solicitação(ões)" aria-pressed="${d === diaSel}">
+          aria-label="${fmtIso(d)}: ${lst.length} item(ns)" aria-pressed="${d === diaSel}">
           <span class="cal-d">${Number(d.slice(8, 10))}</span>
           ${atrasados ? `<span class="cal-atr" title="${atrasados} atrasada(s)"><i class="bi bi-alarm"></i>${atrasados}</span>` : ''}
           <span class="cal-nums">${cont.map(([p, n]) => `<i class="cal-num ${COR_URG[p]}" title="${esc(c.urgencias[p])}">${n}</i>`).join('')}</span>
@@ -922,7 +946,7 @@
       }).join('');
       $$('#cal-dias [data-dia]').forEach((b) => b.addEventListener('click', () => {
         diaSel = b.dataset.dia;
-        history.replaceState(null, '', `#/calendario?mes=${c.mes}&dia=${diaSel}`);
+        history.replaceState(null, '', `${base}&mes=${c.mes}&dia=${diaSel}`);
         pintar();
         if (window.matchMedia('(max-width: 900px)').matches) $('#cal-dia').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }));
@@ -930,19 +954,19 @@
       const lista = (m.get(diaSel) || []).slice().sort((a, b) => b.prioridade - a.prioridade || Number(b.atrasado) - Number(a.atrasado) || a.hora.localeCompare(b.hora));
       const dataLonga = new Date(`${diaSel}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
       $('#cal-dia').innerHTML = `<h3>${esc(dataLonga)}${diaSel === c.hoje ? ' <span class="tag tag-teal">hoje</span>' : ''}</h3>
-        <div class="small-muted mb-2">${lista.length ? `${lista.length} solicitação(ões) · ${lista.filter((i) => i.aberto).length} em aberto` : 'Nada pedido neste dia.'}</div>
+        <div class="small-muted mb-2">${lista.length ? `${plural(lista.length, 'item', 'itens')} · ${lista.filter((i) => i.aberto).length} em aberto` : 'Nada neste dia.'}</div>
         ${lista.map((i) => `<div class="cal-item" data-href="${i.link}">
           <i class="cal-num ${COR_URG[i.prioridade]}" title="${esc(c.urgencias[i.prioridade])}"></i>
           <div class="flex-grow-1 min-w-0">
             <div class="t">${esc(i.titulo)}</div>
-            <div class="small-muted">${i.fonte === 'orcim' ? 'Orcim' : 'TI'} · ${esc(i.numero)} · ${esc(i.hora)}${i.detalhe ? ` · ${esc(i.detalhe)}` : ''}${i.responsavel ? ` · ${esc(i.responsavel)}` : ''}</div>
+            <div class="small-muted">${i.fonte === 'orcim' ? 'Orcim' : 'TI'} · ${esc(i.numero)} · ${esc(i.hora || 'dia todo')}${i.detalhe ? ` · ${esc(i.detalhe)}` : ''}${i.responsavel ? ` · ${esc(i.responsavel)}` : ''}</div>
           </div>
           <div class="text-end text-nowrap">${i.atrasado ? tag('tag-red', 'Atrasado') : ''} ${tag(i.feito ? 'tag-green' : i.aberto ? 'tag-blue' : 'tag-gray', i.situacao)}</div>
         </div>`).join('')}`;
       $$('#cal-dia [data-href]').forEach((x) => x.addEventListener('click', () => { location.hash = x.dataset.href; }));
 
       const doMes = visiveis().filter((i) => i.dia.slice(0, 7) === c.mes);
-      $('#cal-resumo').innerHTML = `No mês: ${doMes.length} solicitação(ões) · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
+      $('#cal-resumo').innerHTML = `No mês: ${plural(doMes.length, 'item', 'itens')} · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
       $$('.cal-filtros [data-f]').forEach((b) => {
         b.classList.toggle('on', !!filtro[b.dataset.f]);
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
@@ -1255,7 +1279,7 @@
         </div>
         <div class="card-x"><h3><i class="bi bi-kanban"></i>Nossas atividades nesta demanda</h3>
           ${d.atividades.length ? d.atividades.map((t) => `<div class="task" data-href="#/atividades/${t.id}"><div class="ttl">${esc(t.title)}</div>
-            <div class="meta">${tagTarefa(t.status)}${t.assignee_name ? `<span>${esc(t.assignee_name)}</span>` : ''}${t.due_at ? `<span>· prazo ${fmtData(t.due_at)}</span>` : ''}</div></div>`).join('')
+            <div class="meta">${tagTarefa(t.status)}${t.assignee_name ? `<span>${esc(t.assignee_name)}</span>` : ''}${t.due_at ? `<span>· prazo ${prazoTxt(t)}</span>` : ''}</div></div>`).join('')
     : vazio('Nenhuma atividade nossa ligada a esta demanda.', 'kanban')}
         </div>
       </div>`;
@@ -1296,14 +1320,14 @@
     return usuariosAtivos;
   }
 
-  function cartaoTarefa(t) {
+  function cartaoTarefa(t, arrastar = false) {
     const cls = t.prazo === 'atrasada' ? 'late' : t.prazo === 'vence_logo' ? 'soon' : '';
-    return `<div class="task ${cls}" data-href="#/atividades/${t.id}">
+    return `<div class="task ${cls}" data-href="#/atividades/${t.id}"${arrastar ? ` data-drag="${esc(JSON.stringify({ kanban: 1, id: t.id, status: t.status }))}" title="Arraste para outra coluna"` : ''}>
       <div class="ttl">${esc(t.title)}</div>
       <div class="meta">
         ${t.priority >= 3 ? tag(TAG_PRIO[t.priority], PRIO_TAREFA[t.priority]) : ''}
         ${tagPrazoTarefa(t.prazo)}
-        ${t.due_at ? `<span><i class="bi bi-calendar"></i> ${fmtData(t.due_at)}</span>` : ''}
+        ${t.due_at ? `<span><i class="bi bi-calendar"></i> ${prazoTxt(t)}</span>` : ''}
         ${t.ticket_number ? `<span><i class="bi bi-link-45deg"></i>${esc(t.ticket_number)}</span>` : ''}
         ${t.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(t.location_name)}</span>` : ''}
         ${ehGestor() && t.assignee_name ? `<span><i class="bi bi-person"></i> ${esc(t.assignee_name)}</span>` : ''}
@@ -1327,14 +1351,14 @@
       corpo = `<div class="board">${cols.map(([s, nome]) => {
         let itens = lista.filter((t) => t.status === s);
         if (s === 'concluida') itens = itens.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at)).slice(0, 10);
-        return `<div class="col"><h4><span>${nome}</span><span class="muted">${itens.length}</span></h4>${itens.map(cartaoTarefa).join('') || '<div class="small-muted px-1">—</div>'}</div>`;
+        return `<div class="col" data-drop-status="${s}"><h4><span>${nome}</span><span class="muted">${itens.length}</span></h4>${itens.map((t) => cartaoTarefa(t, true)).join('') || '<div class="small-muted px-1 vazio-col">Solte aqui</div>'}</div>`;
       }).join('')}</div>`;
     } else {
       corpo = lista.length ? `<div class="card-x p-0"><div class="table-wrap"><table class="table-x">
         <thead><tr><th>Atividade</th><th>Status</th><th class="hide-mobile">Responsável</th><th>Prazo</th><th class="hide-mobile">Demanda</th></tr></thead><tbody>
         ${lista.map((t) => `<tr class="click" data-href="#/atividades/${t.id}"><td><div class="fw-semibold">${esc(t.title)}</div>${t.location ? `<div class="small-muted">${esc(t.location)}</div>` : ''}</td>
           <td>${tagTarefa(t.status)}</td><td class="hide-mobile">${esc(t.assignee_name || '—')}</td>
-          <td class="text-nowrap">${t.due_at ? fmtData(t.due_at) : '—'} ${tagPrazoTarefa(t.prazo)}</td>
+          <td class="text-nowrap">${prazoTxt(t)} ${tagPrazoTarefa(t.prazo)}</td>
           <td class="hide-mobile">${t.ticket_number ? `<span class="num">${esc(t.ticket_number)}</span>` : '—'}</td></tr>`).join('')}
         </tbody></table></div></div>` : `<div class="card-x">${vazio('Nenhuma atividade aqui.', 'check2-all')}</div>`;
     }
@@ -1356,6 +1380,7 @@
     };
     $$('[data-modo]').forEach((b) => b.addEventListener('click', () => ir({ situacao: b.dataset.modo === 'quadro' ? '' : b.dataset.modo })));
     $('#resp-at')?.addEventListener('change', (e) => ir({ responsavel: e.target.value }));
+    if (modo === 'quadro') ativarArrasto(view());
     let t;
     const busca = $('#busca-at');
     busca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => ir({ q: busca.value.trim() }), 500); });
@@ -1387,7 +1412,10 @@
         <div class="mb-3"><label class="form-label">Detalhes</label>
           <textarea class="form-control" name="description" rows="4">${esc(t?.description || '')}</textarea></div>
         <div class="row g-3 mb-3">
-          <div class="col-sm-6"><label class="form-label">Prazo</label><input type="datetime-local" class="form-control" name="due_at" value="${paraInputLocal(t?.due_at)}"></div>
+          <div class="col-sm-6"><label class="form-label">Prazo</label><div class="d-flex gap-2">
+            <input type="date" class="form-control" name="due_date" value="${diaDoPrazo(t)}" aria-label="Dia do prazo">
+            <input type="time" class="form-control" name="due_time" value="${horaDoPrazo(t)}" aria-label="Horário (opcional)" style="max-width:9rem"></div>
+            <div class="form-text">Sem horário = o dia todo.</div></div>
           <div class="col-sm-6"><label class="form-label">Urgência</label><select class="form-select" name="priority">
             ${[1, 2, 3, 4].map((p) => `<option value="${p}" ${(t?.priority || 1) === p ? 'selected' : ''}>${PRIO_TAREFA[p]}</option>`).join('')}</select></div>
           ${ehGestor() ? `<div class="col-sm-6"><label class="form-label">Responsável</label><select class="form-select" name="assignee_id">
@@ -1407,7 +1435,7 @@
       const fd = new FormData(ev.target);
       const body = {
         title: fd.get('title'), description: fd.get('description'), priority: Number(fd.get('priority')),
-        due_at: deInputLocal(fd.get('due_at')), location: fd.get('location'), ticket_id: fd.get('ticket_id') || null,
+        due_date: fd.get('due_date') || '', due_time: fd.get('due_time') || '', location: fd.get('location'), ticket_id: fd.get('ticket_id') || null,
         location_id: fd.get('location_id') || null,
       };
       if (!id && fd.get('visit_id')) body.visit_id = fd.get('visit_id');
@@ -1451,7 +1479,7 @@
         <div class="card-x">
           <dl class="kv">
             <dt>Responsável</dt><dd>${esc(t.assignee_name || 'Sem responsável')}</dd>
-            <dt>Prazo</dt><dd>${fmtData(t.due_at)}</dd>
+            <dt>Prazo</dt><dd>${prazoTxt(t)}</dd>
             <dt>Posto</dt><dd>${t.location_id ? `<a href="#/postos/${t.location_id}">${esc(t.location_name)}</a>` : '—'}${t.visit_id ? ` · <a href="#/visitas/${t.visit_id}">pendência de visita</a>` : ''}</dd>
             <dt>Local</dt><dd>${esc(t.location || '—')}</dd>
             <dt>Criada por</dt><dd>${esc(t.created_by_name || '—')} em ${fmtData(t.created_at)}</dd>
@@ -1828,7 +1856,7 @@
     janela('Reagendar', `
       <label class="form-label" for="rg-data">Nova data</label>
       <input type="date" class="form-control form-control-lg mb-3" id="rg-data" name="data" value="${esc(novaData || alvo.data || hojeISO())}">
-      ${comHora ? `<label class="form-label" for="rg-hora">Novo horário</label>
+      ${comHora ? `<label class="form-label" for="rg-hora">Novo horário <span class="small-muted">(opcional)</span></label>
       <input type="time" class="form-control form-control-lg mb-3" id="rg-hora" name="hora" value="${esc(alvo.hora || '')}">` : ''}
       <label class="form-label" for="rg-motivo">Motivo *</label>
       <textarea class="form-control" id="rg-motivo" name="motivo" rows="3" maxlength="1000" placeholder="Ex.: posto fechado para inventário; gerente pediu outro dia"></textarea>
@@ -1948,7 +1976,7 @@
       ? btnIniciar({ id: i.posto_id, name: i.local }, null, false) : '';
     return `<div class="ag-item ag-${i.tipo} st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}"
         ${arrastavel(i) ? `data-drag="${dadosArrasto(i)}" title="Arraste para outro dia"` : ''}>
-      <div class="ag-hora">${i.hora || '<span class="muted">dia</span>'}</div>
+      <div class="ag-hora">${i.hora || '<span class="muted">dia todo</span>'}</div>
       <div class="ag-body min-w-0">
         <div class="ag-tit"><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.titulo)}</div>
         <div class="small-muted">${tag(...(STATUS_AG[i.status] || ['tag-gray', i.status]))} ${esc(TIPO_AG[i.tipo][1])}${i.local && i.tipo !== 'visita' && i.tipo !== 'visita_realizada' ? ` · ${esc(i.local)}` : ''}${i.obs ? ` · ${esc(i.obs)}` : ''}</div>
@@ -1963,7 +1991,7 @@
   function moverPara(alvo, novoDia) {
     if (!alvo || !/^\d{4}-\d{2}-\d{2}$/.test(novoDia || '') || alvo.data === novoDia) return null;
     if (alvo.tipo === 'posto') return { url: `/postos/${alvo.id}`, corpo: { next_visit_date: novoDia, next_visit_time: alvo.hora || null } };
-    if (alvo.tipo === 'atividade') return { url: `/atividades/${alvo.id}`, corpo: { due_at: deInputLocal(`${novoDia}T${alvo.hora || '09:00'}`) } };
+    if (alvo.tipo === 'atividade') return { url: `/atividades/${alvo.id}`, corpo: { due_date: novoDia, due_time: alvo.hora || '' } };
     if (alvo.tipo === 'solicitacao') return { url: `/solicitacoes/${alvo.id}`, corpo: { desired_date: novoDia } };
     return null;
   }
@@ -1974,12 +2002,13 @@
    * Toque (iPhone): segurar ~0,4 s para pegar; antes disso o dedo só rola a tela.
    */
   let suprimirClique = false;
+  const STATUS_TAREFA_NOME = { a_fazer: 'A fazer', em_andamento: 'Em andamento', aguardando: 'Aguardando', concluida: 'Concluída' };
   function ativarArrasto(raiz) {
     // #view é o mesmo elemento em todas as telas: registra os eventos uma vez só (delegação)
     if (raiz.dataset.arrastoAtivo) return;
     raiz.dataset.arrastoAtivo = '1';
     let a = null;
-    const alvoEm = (x, y) => document.elementFromPoint(x, y)?.closest('[data-drop-dia]') || null;
+    const alvoEm = (x, y) => document.elementFromPoint(x, y)?.closest(a?.dados?.kanban ? '[data-drop-status]' : '[data-drop-dia]') || null;
     const marcar = (el) => {
       $$('.drop-alvo', raiz).forEach((d) => d !== el && d.classList.remove('drop-alvo'));
       if (el) el.classList.add('drop-alvo');
@@ -2017,6 +2046,16 @@
       suprimirClique = true;
       setTimeout(() => { suprimirClique = false; }, 50);
       limpar();
+      if (dados.kanban) { // quadro de atividades: muda o status
+        const novo = destino?.dataset.dropStatus;
+        if (!novo || novo === dados.status) return;
+        try {
+          await API.patch(`/atividades/${dados.id}`, { status: novo });
+          toast(`Atividade movida para "${STATUS_TAREFA_NOME[novo] || novo}".`);
+        } catch (e) { toast(e.message, true); }
+        render();
+        return;
+      }
       const chamada = destino && moverPara(dados, destino.dataset.dropDia);
       if (!chamada || !el) return;
       // pede o motivo antes de mudar a data (e avisa os outros)
@@ -2080,7 +2119,7 @@
       <input class="form-control form-control-lg mb-3" id="na-tit" maxlength="200">
       <div class="row g-2 mb-3">
         <div class="col-6"><label class="form-label" for="na-dia">Dia</label><input type="date" class="form-control" id="na-dia" value="${dia}"></div>
-        <div class="col-6"><label class="form-label" for="na-hora">Horário</label><input type="time" class="form-control" id="na-hora" value="09:00"></div>
+        <div class="col-6"><label class="form-label" for="na-hora">Horário <span class="small-muted">(vazio = dia todo)</span></label><input type="time" class="form-control" id="na-hora" value=""></div>
       </div>
       <label class="form-label" for="na-posto">Posto</label>
       <select class="form-select mb-3" id="na-posto"><option value="">Nenhum</option>${postos.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
@@ -2095,7 +2134,7 @@
         const d = el.querySelector('#na-dia').value || dia;
         const body = {
           title: titulo, description: el.querySelector('#na-desc').value,
-          due_at: deInputLocal(`${d}T${el.querySelector('#na-hora').value || '09:00'}`),
+          due_date: d, due_time: el.querySelector('#na-hora').value || '',
           location_id: el.querySelector('#na-posto').value || null,
         };
         if (ehGestor()) body.assignee_id = el.querySelector('#na-resp').value || null;
@@ -2108,9 +2147,7 @@
   }
 
   // Agenda e Calendário são a mesma "Agenda" no menu, com duas abas (o calendário é só do gestor)
-  const abasAgenda = (atual) => (ehGestor() ? `<nav class="pg-abas" aria-label="Agenda">
-    <a href="#/agenda" class="${atual === 'agenda' ? 'on' : ''}">Visitas e atividades</a>
-    <a href="#/calendario" class="${atual === 'calendario' ? 'on' : ''}">Pedidos por urgência</a></nav>` : '');
+  const abasAgenda = () => '';
 
   async function vAgenda(qs, seq) {
     titulo('Agenda');
@@ -2292,7 +2329,7 @@
         </div>
         <div class="card-x"><h3><i class="bi bi-check2-square"></i>Atividades abertas <a class="sub" href="#/atividades/nova?posto=${p.id}">+ nova</a></h3>
           ${p.atividades.length ? p.atividades.map((t) => `<div class="task" data-href="#/atividades/${t.id}"><div class="ttl">${esc(t.title)}</div>
-            <div class="meta">${tagTarefa(t.status)}${t.due_at ? `<span>${fmtData(t.due_at)}</span>` : ''}</div></div>`).join('') : vazio('Nenhuma atividade aberta.', 'check2-all')}
+            <div class="meta">${tagTarefa(t.status)}${t.due_at ? `<span>${prazoTxt(t)}</span>` : ''}</div></div>`).join('') : vazio('Nenhuma atividade aberta.', 'check2-all')}
         </div>
         <div class="card-x"><h3><i class="bi bi-megaphone"></i>Solicitações abertas ${ehGestor() ? `<a class="sub" href="#/solicitacoes/nova?posto=${p.id}">+ nova</a>` : ''}</h3>
           ${p.solicitacoes.length ? p.solicitacoes.map((s) => `<div class="task" data-href="#/solicitacoes/${s.id}"><div class="ttl">${esc(s.title)}</div>
@@ -2440,7 +2477,9 @@
         <div id="vs-ativ" class="d-none mt-2">
           <input class="form-control mb-2" id="vs-ativ-tit" placeholder="Título da atividade">
           <label class="form-label small" for="vs-ativ-prazo">Prazo</label>
-          <input type="datetime-local" class="form-control" id="vs-ativ-prazo">
+          <div class="d-flex gap-2"><input type="date" class="form-control" id="vs-ativ-prazo">
+          <input type="time" class="form-control" id="vs-ativ-hora" aria-label="Horário (opcional)" style="max-width:9rem"></div>
+          <div class="form-text">Sem horário = o dia todo.</div>
         </div>
       </div>
       <div class="card-x mb-3">
@@ -2520,7 +2559,7 @@
       const body = { notes: $('#vs-obs').value, pending_notes: $('#vs-pend').value };
       if ($('#vs-criar').checked) {
         if (!$('#vs-ativ-tit').value.trim()) { toast('Dê um título para a atividade da pendência.', true); return; }
-        body.pendencia = { title: $('#vs-ativ-tit').value, due_at: deInputLocal($('#vs-ativ-prazo').value), description: $('#vs-pend').value };
+        body.pendencia = { title: $('#vs-ativ-tit').value, due_date: $('#vs-ativ-prazo').value || '', due_time: $('#vs-ativ-hora').value || '', description: $('#vs-pend').value };
       }
       try {
         const r = await API.post(`/visitas/${v.id}/concluir`, body);
@@ -3095,13 +3134,13 @@
     },
     {
       id: 'calendario', papeis: ['gestor'], icone: 'calendar-week', titulo: 'Usar o calendário',
-      resumo: 'Tudo o que foi pedido em cada dia, com as cores da urgência.',
+      resumo: 'Todas as atividades, visitas e pedidos do mês, com as cores da urgência.',
       passos: [
-        { alvo: '.side-nav a[href="#/agenda"]', titulo: 'Fica na Agenda', texto: 'No menu, em Visitas → Agenda, aba "Pedidos por urgência".' },
-        { rota: '#/calendario', alvo: '.pg-abas', titulo: 'Duas abas', texto: '"Visitas e atividades" mostra o que está agendado para a TI; "Pedidos por urgência" mostra tudo o que foi pedido em cada dia.' },
+        { alvo: '.side-nav a[href="#/painel"]', titulo: 'Fica no Painel do gestor', texto: 'No menu, em Painel do Gestor - Resultados → Painel do gestor, aba "Calendário".' },
+        { rota: '#/painel?aba=calendario', alvo: '.pg-abas', titulo: 'Calendário geral', texto: 'Todas as atividades (no prazo), as visitas de rotina, as visitas pedidas e os chamados da Orcim, num mês só.' },
         { alvo: '.cal-grade', titulo: 'O mês', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica que algo daquele dia está atrasado.' },
         { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, laranja = parada iminente, amarelo = operação prejudicada, azul = requisição.' },
-        { alvo: '.cal-filtros', titulo: 'O que mostrar', texto: 'Chamados da Orcim, visitas pedidas à TI do Beija-Flor e "só em aberto". As visitas aparecem no dia desejado; os chamados, no dia em que foram abertos.' },
+        { alvo: '.cal-filtros', titulo: 'O que mostrar', texto: 'Chamados da Orcim, o que é da TI do Beija-Flor e "só em aberto". Atividades aparecem no prazo; visitas pedidas, no dia desejado; chamados, no dia em que foram abertos.' },
         { alvo: '.cal-dia', titulo: 'O dia escolhido', texto: 'Clique num dia para ver aqui tudo o que foi pedido nele, do mais urgente ao menos urgente. Clique num item para abrir.' },
         { alvo: '.cal-topo .btn', titulo: 'Outros meses', texto: 'Use as setas para ir ao mês anterior ou ao seguinte.' },
       ],

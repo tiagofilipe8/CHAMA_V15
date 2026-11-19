@@ -255,3 +255,6 @@ CREATE INDEX IF NOT EXISTS idx_gbf_reschedules_ref ON gbf_reschedules(kind, ref_
 
 -- Papéis: um gestor também pode fazer visitas (ser técnico). Ex.: o Lucas é gestor e técnico.
 ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS faz_visitas BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Atividade sem horário = o dia todo (vence às 23:59 daquele dia)
+ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE;

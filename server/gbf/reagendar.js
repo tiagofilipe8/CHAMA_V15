@@ -63,9 +63,10 @@ router.post('/', ah(async (req, res) => {
   } else if (tipo === 'solicitacao') {
     await query('UPDATE gbf_requests SET desired_date = $2, updated_at = now() WHERE id = $1', [a.id, b.data]);
   } else {
-    await query(`UPDATE gbf_tasks SET due_at = (($2::date + $3::time)::timestamp AT TIME ZONE '${TZ}'),
+    // sem horário = o dia todo (vence 23:59:59)
+    await query(`UPDATE gbf_tasks SET due_at = (($2::date + $3::time)::timestamp AT TIME ZONE '${TZ}'), all_day = $4,
                    due_soon_notified = FALSE, overdue_notified = FALSE, updated_at = now() WHERE id = $1`,
-    [a.id, b.data, b.hora || '09:00']);
+    [a.id, b.data, b.hora || '23:59:59', !b.hora]);
   }
   await query('INSERT INTO gbf_reschedules (kind, ref_id, old_date, new_date, reason, user_id) VALUES ($1, $2, $3, $4, $5, $6)',
     [tipo, a.id, a.data || null, b.data, motivo.slice(0, 1000), u.id]);

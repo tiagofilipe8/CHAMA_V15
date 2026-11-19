@@ -647,3 +647,37 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .papel { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; margin: 0; }
 .papel input { accent-color: var(--brand); }
 .papel:has(input:checked) { background: var(--brand-50); border-color: var(--brand); font-weight: 600; }
+
+/* Por funcionário (Painel do gestor) */
+.fn-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.fn-card { background: #fff; border: 1px solid var(--line, #e5e7eb); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.fn-topo { display: flex; align-items: center; gap: 10px; }
+.fn-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.fn-n { background: #f8fafc; border-radius: 8px; padding: 6px 8px; }
+.fn-n b { display: block; font-size: 1.05rem; }
+.fn-n span { font-size: .72rem; color: #64748b; line-height: 1.1; display: block; }
+.fn-n.ruim b { color: #d7263d; }
+.pg-link-cal { display: inline-flex; gap: 6px; align-items: center; margin-top: 4px; font-weight: 600; text-decoration: none; }
+
+/* Quadro de atividades: cartão arrastável como post-it */
+.board .task[data-drag] { cursor: grab; touch-action: pan-y; }
+.board .col { min-height: 120px; border-radius: 10px; transition: background .15s; }
+.board .col .vazio-col { border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px 8px; text-align: center; }
+.task.ag-fantasma { transform-origin: top left; box-shadow: 0 12px 28px rgba(0,0,0,.18); rotate: -2deg; }
+
+/* Notebook (telas até ~1440 x 800): painel mais compacto */
+@media (min-width: 992px) and (max-height: 900px), (min-width: 992px) and (max-width: 1440px) {
+  .pg-abas { margin: 2px 0 8px; }
+  .pg-abas a { padding: 6px 12px; font-size: .9rem; }
+  .pg-filtro { gap: 6px 10px; padding: 5px 8px; border-radius: 10px; }
+  .pg-seg a { padding: 3px 10px; font-size: .78rem; }
+  .pg-seta { width: 26px; height: 26px; }
+  .pg-filtro .pg-nome { min-width: 150px; font-size: .86rem; }
+  .pg-filtro .btn-sm { padding: 2px 8px; font-size: .78rem; }
+  .pg-compara { margin-bottom: 8px; }
+  .calpg .cal-topo { margin-bottom: 4px; }
+  .calpg .cal-legenda { margin-bottom: 6px; }
+  .calpg .cal-cel { min-height: 54px !important; padding: 2px 4px; }
+  .calpg .cal-corpo { gap: 12px; }
+  .fn-card { padding: 10px; gap: 8px; }
+}

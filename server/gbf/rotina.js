@@ -43,7 +43,8 @@ router.get('/agenda', ah(async (req, res) => {
                   l.name AS location_name, l.id AS location_id, u.name AS user_name
            FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
            WHERE v.status <> 'cancelada' AND ${DIA('v.started_at')} BETWEEN $1::date AND $2::date`, [de, ate]),
-    query(`SELECT t.id, t.title, t.status, t.description, ${DIA('t.due_at')}::text AS data, ${HORA('t.due_at')} AS hora,
+    query(`SELECT t.id, t.title, t.status, t.description, ${DIA('t.due_at')}::text AS data,
+                  CASE WHEN t.all_day THEN NULL ELSE ${HORA('t.due_at')} END AS hora, t.all_day,
                   t.due_at < now() AS atrasada, l.name AS location_name, u.name AS assignee_name
            FROM gbf_tasks t LEFT JOIN gbf_locations l ON l.id = t.location_id LEFT JOIN gbf_users u ON u.id = t.assignee_id
            WHERE t.status <> 'cancelada' AND t.due_at IS NOT NULL
@@ -247,7 +248,7 @@ router.get('/acompanhamento', requireGestorFn, ah(async (req, res) => {
                   EXTRACT(EPOCH FROM (now() - t.due_at))::int AS atraso_s, u.name AS responsavel, l.name AS local
            FROM gbf_tasks t LEFT JOIN gbf_users u ON u.id = t.assignee_id LEFT JOIN gbf_locations l ON l.id = t.location_id
            WHERE t.status NOT IN ('concluida','cancelada') AND t.due_at < now()`),
-    query(`SELECT t.id, t.title, ${HORA('t.due_at')} AS hora, u.name AS responsavel, l.name AS local
+    query(`SELECT t.id, t.title, ${HORA('t.due_at')} AS hora, t.all_day, u.name AS responsavel, l.name AS local
            FROM gbf_tasks t LEFT JOIN gbf_users u ON u.id = t.assignee_id LEFT JOIN gbf_locations l ON l.id = t.location_id
            WHERE t.status NOT IN ('concluida','cancelada') AND t.due_at >= now() AND ${DIA('t.due_at')} = ${HOJE}`),
     query(`SELECT r.id, r.title, r.desired_date::text AS data, ur.name AS pedido_por, l.name AS local,
@@ -313,7 +314,7 @@ router.get('/acompanhamento', requireGestorFn, ah(async (req, res) => {
   }));
   ativHoje.rows.forEach((t) => atencao.push({
     nivel: 'medio', rotulo: 'Vence hoje', peso: 0,
-    titulo: t.title, detalhe: [`Até ${t.hora}`, t.responsavel || 'sem responsável', t.local].filter(Boolean).join(' · '),
+    titulo: t.title, detalhe: [t.all_day ? 'Hoje, o dia todo' : `Até ${t.hora}`, t.responsavel || 'sem responsável', t.local].filter(Boolean).join(' · '),
     link: `#/atividades/${t.id}`, acao: { texto: 'Abrir', href: `#/atividades/${t.id}` },
   }));
   const ordemNivel = { alto: 0, medio: 1 };
