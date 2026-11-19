@@ -2029,12 +2029,49 @@
   const arrastavel = (i) => !!i.reagendar && !['concluida', 'em_andamento'].includes(i.status);
   const dadosArrasto = (i) => esc(JSON.stringify({ tipo: i.reagendar, id: i.posto_id || i.id, data: i.data, hora: i.hora || null }));
 
+  // Popup do hover na Agenda: resumo do item (responsável, quem pediu, urgência...)
+  const dadosPop = (i) => esc(JSON.stringify({
+    t: i.titulo, tipo: TIPO_AG[i.tipo] ? TIPO_AG[i.tipo][1] : '', st: (STATUS_AG[i.status] || ['tag-gray', i.status]),
+    q: `${dataCurta(i.data)}${i.hora ? ` · ${i.hora}` : ' · dia todo'}`, p: i.prioridade || null,
+    info: (i.info || []).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+  }));
+  function ativarPopAgenda() {
+    if (document.body.dataset.popAg || !window.matchMedia('(hover: hover)').matches) return;
+    document.body.dataset.popAg = '1';
+    const pop = document.createElement('div');
+    pop.id = 'ag-pop';
+    pop.setAttribute('role', 'tooltip');
+    document.body.appendChild(pop);
+    let atual = null;
+    const esconder = () => { pop.classList.remove('on'); atual = null; };
+    document.addEventListener('mouseover', (ev) => {
+      const el = ev.target.closest('[data-pop]');
+      if (el === atual) return;
+      if (!el || document.body.classList.contains('arrastando')) { esconder(); return; }
+      atual = el;
+      let d;
+      try { d = JSON.parse(el.dataset.pop); } catch { return; }
+      pop.innerHTML = `<div class="ag-pop-tit">${esc(d.t)}</div>
+        <div class="ag-pop-sub">${tag(...d.st)} <span>${esc(d.tipo)}</span> <span>· ${esc(d.q)}</span>${d.p ? ` <i class="cal-num urg-${d.p}"></i>` : ''}</div>
+        ${d.info.length ? `<dl>${d.info.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}`;
+      pop.classList.add('on');
+      const r = el.getBoundingClientRect();
+      const pw = pop.offsetWidth; const ph = pop.offsetHeight;
+      let x = r.right + 8; if (x + pw > innerWidth - 8) x = Math.max(8, r.left - pw - 8);
+      let y = r.top; if (y + ph > innerHeight - 8) y = Math.max(8, innerHeight - ph - 8);
+      pop.style.transform = `translate(${x}px, ${y}px)`;
+    });
+    document.addEventListener('scroll', esconder, true);
+    window.addEventListener('hashchange', esconder);
+    document.addEventListener('pointerdown', esconder);
+  }
+
   function itemAgenda(i) {
     const reag = arrastavel(i) ? btnReag({ tipo: i.reagendar, id: i.posto_id || i.id, data: i.data, hora: i.hora }) : '';
     const iniciar = i.tipo === 'visita' && i.status !== 'em_andamento'
       ? btnIniciar({ id: i.posto_id, name: i.local }, null, false) : '';
-    return `<div class="ag-item ag-${i.tipo} st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}"
-        ${arrastavel(i) ? `data-drag="${dadosArrasto(i)}" title="Arraste para outro dia"` : ''}>
+    return `<div class="ag-item ag-${i.tipo} st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}" data-pop="${dadosPop(i)}"
+        ${arrastavel(i) ? `data-drag="${dadosArrasto(i)}"` : ''}>
       <div class="ag-hora">${i.hora || '<span class="muted">dia todo</span>'}</div>
       <div class="ag-body min-w-0">
         <div class="ag-tit"><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.titulo)}</div>
@@ -2264,7 +2301,7 @@
     return `<div class="cal-cel ${d.slice(0, 7) !== base.slice(0, 7) ? 'fora' : ''} ${d === hoje ? 'hoje' : ''}" data-drop-dia="${d}">
             <div class="cal-cel-cab"><a class="n" href="${ir({ modo: 'dia', data: d })}" title="Ver o dia">${Number(d.slice(8, 10))}</a>${btnMais(d)}</div>
             <div data-drop-lista class="cal-cel-itens">
-            ${its.slice(0, 4).map((i) => `<span class="mini st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}" title="${esc(i.titulo)}"
+            ${its.slice(0, 4).map((i) => `<span class="mini st-${i.status} ${arrastavel(i) ? 'arrastavel' : ''}" data-href="${i.link}" data-pop="${dadosPop(i)}"
                 ${arrastavel(i) ? `data-drag="${dadosArrasto(i)}"` : ''}><i class="bi bi-${TIPO_AG[i.tipo][0]}"></i> ${esc(i.hora ? `${i.hora} ` : '')}${esc(i.tipo === 'atividade' || i.tipo === 'solicitacao' ? i.titulo : (i.local || i.titulo))}</span>`).join('')}
             ${its.length > 4 ? `<a class="mini mais" href="${ir({ modo: 'dia', data: d })}">+${its.length - 4} mais</a>` : ''}</div></div>`;
   }).join('')}</div></div>`;
@@ -2296,6 +2333,7 @@
       novaAtividadeNoDia(b.dataset.addDia).catch((e) => toast(e.message, true));
     }));
     if (modo === 'semana' || modo === 'mes') ativarArrasto(view());
+    ativarPopAgenda();
   }
 
   // -------------------------------- Postos ------------------------------

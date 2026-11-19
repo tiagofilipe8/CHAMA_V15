@@ -715,3 +715,16 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .side-nav a[class*="sec-"].active { background: color-mix(in srgb, var(--sec) 24%, transparent); color: #fff;
   box-shadow: inset 3px 0 0 var(--sec); }
 .side-nav a[class*="sec-"].active > i { color: #fff; }
+
+/* Agenda: popup do hover */
+#ag-pop { position: fixed; left: 0; top: 0; z-index: 3500; width: 290px; background: #fff; border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, .18); padding: 10px 12px; font-size: .8rem;
+  pointer-events: none; opacity: 0; transition: opacity .12s; }
+#ag-pop.on { opacity: 1; }
+#ag-pop .ag-pop-tit { font-weight: 700; font-size: .88rem; color: var(--ink); line-height: 1.25; }
+#ag-pop .ag-pop-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--muted); margin: 4px 0 6px; }
+#ag-pop .cal-num { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+#ag-pop .urg-4 { background: #d7263d; } #ag-pop .urg-3 { background: #ec7a1c; } #ag-pop .urg-2 { background: #d9a400; } #ag-pop .urg-1 { background: #4c7dd9; }
+#ag-pop dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; border-top: 1px solid var(--line); padding-top: 6px; }
+#ag-pop dt { color: var(--muted); font-weight: 500; }
+#ag-pop dd { margin: 0; color: var(--ink); word-break: break-word; }

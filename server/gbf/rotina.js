@@ -1,7 +1,7 @@
 // Agenda, "Meu dia" e acompanhamento do gestor (rotina do técnico).
 const express = require('express');
 const { query } = require('../db');
-const { ah } = require('./common');
+const { ah, PRIORIDADE_TAREFA, STATUS_TAREFA } = require('./common');
 const { requireGestor: requireGestorFn } = require('./auth');
 const sincronizar = () => require('./postos').sincronizarPostos().catch(() => {});
 
@@ -33,47 +33,74 @@ router.get('/agenda', ah(async (req, res) => {
   const fT = filtroTarefas(u, pT);
   const [previstas, atrasadas, realizadas, tarefas, solic] = await Promise.all([
     query(`SELECT l.id, l.name, l.address, l.next_visit_date::text AS data, to_char(l.next_visit_time,'HH24:MI') AS hora, l.notes,
+                  c.name AS checklist,
+                  (SELECT to_char(max(v.finished_at) AT TIME ZONE ${TZ}, 'DD/MM/YYYY') FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'concluida') AS ultima,
+                  (SELECT uu.name FROM gbf_visits v JOIN gbf_users uu ON uu.id = v.user_id WHERE v.location_id = l.id AND v.status = 'concluida' ORDER BY v.finished_at DESC LIMIT 1) AS ultimo_tecnico,
                   (SELECT v.id FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento' LIMIT 1) AS visita_id
-           FROM gbf_locations l WHERE l.active AND l.next_visit_date BETWEEN $1::date AND $2::date`, [de, ate]),
+           FROM gbf_locations l LEFT JOIN gbf_checklists c ON c.id = l.checklist_id WHERE l.active AND l.next_visit_date BETWEEN $1::date AND $2::date`, [de, ate]),
     query(`SELECT l.id, l.name, l.address, l.next_visit_date::text AS data, to_char(l.next_visit_time,'HH24:MI') AS hora, l.notes,
+                  c.name AS checklist,
+                  (SELECT to_char(max(v.finished_at) AT TIME ZONE ${TZ}, 'DD/MM/YYYY') FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'concluida') AS ultima,
+                  (SELECT uu.name FROM gbf_visits v JOIN gbf_users uu ON uu.id = v.user_id WHERE v.location_id = l.id AND v.status = 'concluida' ORDER BY v.finished_at DESC LIMIT 1) AS ultimo_tecnico,
                   (SELECT v.id FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento' LIMIT 1) AS visita_id
-           FROM gbf_locations l WHERE l.active AND l.next_visit_date < ${HOJE} AND $1::date <= ${HOJE}
+           FROM gbf_locations l LEFT JOIN gbf_checklists c ON c.id = l.checklist_id WHERE l.active AND l.next_visit_date < ${HOJE} AND $1::date <= ${HOJE}
            ORDER BY l.next_visit_date`, [de]),
     query(`SELECT v.id, v.status, ${DIA('v.started_at')}::text AS data, ${HORA('v.started_at')} AS hora,
-                  l.name AS location_name, l.id AS location_id, u.name AS user_name
+                  l.name AS location_name, l.id AS location_id, u.name AS user_name,
+                  ${HORA('v.finished_at')} AS fim,
+                  (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id AND a.answer = 'nao_ok') AS nao_ok
            FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
            WHERE v.status <> 'cancelada' AND ${DIA('v.started_at')} BETWEEN $1::date AND $2::date`, [de, ate]),
     query(`SELECT t.id, t.title, t.status, t.description, ${DIA('t.due_at')}::text AS data,
                   CASE WHEN t.all_day THEN NULL ELSE ${HORA('t.due_at')} END AS hora, t.all_day,
-                  t.due_at < now() AS atrasada, l.name AS location_name, u.name AS assignee_name
+                  t.due_at < now() AS atrasada, l.name AS location_name, u.name AS assignee_name,
+                  t.priority, uc.name AS criador
            FROM gbf_tasks t LEFT JOIN gbf_locations l ON l.id = t.location_id LEFT JOIN gbf_users u ON u.id = t.assignee_id
+           LEFT JOIN gbf_users uc ON uc.id = t.created_by
            WHERE t.status <> 'cancelada' AND t.due_at IS NOT NULL
              AND ${DIA('t.due_at')} BETWEEN $1::date AND $2::date AND ${fT}`, pT),
-    query(`SELECT r.id, r.title, r.status, r.desired_date::text AS data, l.name AS location_name
+    query(`SELECT r.id, r.title, r.status, r.desired_date::text AS data, l.name AS location_name,
+                  r.priority, r.visit_type, r.description, up.name AS pedido_por, uh.name AS atendente,
+                  (SELECT count(*)::int FROM gbf_request_items i WHERE i.request_id = r.id) AS tarefas
            FROM gbf_requests r LEFT JOIN gbf_locations l ON l.id = r.location_id
+           LEFT JOIN gbf_users up ON up.id = r.requested_by LEFT JOIN gbf_users uh ON uh.id = r.handled_by
            WHERE r.status <> 'cancelada' AND r.desired_date BETWEEN $1::date AND $2::date`, [de, ate]),
   ]);
 
+  const curto = (t, n = 140) => (t && String(t).length > n ? `${String(t).slice(0, n - 1)}…` : (t || null));
   const itens = [];
   const visita = (p, atrasada) => ({
     tipo: 'visita', id: p.id, titulo: `Visita — ${p.name}`, data: p.data, hora: p.hora,
     local: p.name, obs: p.address || p.notes, status: p.visita_id ? 'em_andamento' : (atrasada ? 'atrasada' : 'agendada'),
     link: p.visita_id ? `#/visitas/${p.visita_id}` : `#/postos/${p.id}`, posto_id: p.id, reagendar: 'posto',
+    info: [['Tipo', 'Visita de rotina'], ['Checklist', p.checklist], ['Endereço', p.address],
+      ['Última visita', p.ultima ? `${p.ultima}${p.ultimo_tecnico ? ` por ${p.ultimo_tecnico}` : ''}` : 'nunca visitado'],
+      ['Observações', curto(p.notes)]],
   });
   previstas.rows.forEach((p) => itens.push(visita(p, p.data < hoje)));
   realizadas.rows.forEach((v) => itens.push({
     tipo: 'visita_realizada', id: v.id, titulo: `Visita — ${v.location_name}`, data: v.data, hora: v.hora,
     local: v.location_name, obs: v.user_name, status: v.status, link: `#/visitas/${v.id}`,
+    info: [['Técnico', v.user_name], ['Situação', v.status === 'concluida' ? `Concluída${v.fim ? ` às ${v.fim}` : ''}` : 'Em andamento'],
+      ['Problemas', v.nao_ok ? `${v.nao_ok} item(ns) NÃO OK` : 'nenhum']],
   }));
   tarefas.rows.forEach((t) => itens.push({
     tipo: 'atividade', id: t.id, titulo: t.title, data: t.data, hora: t.hora, local: t.location_name,
     obs: t.assignee_name, status: t.status === 'concluida' ? 'concluida' : (t.atrasada ? 'atrasada' : t.status),
     link: `#/atividades/${t.id}`, reagendar: 'atividade',
+    info: [['Responsável', t.assignee_name || 'sem responsável'], ['Urgência', PRIORIDADE_TAREFA[t.priority]],
+      ['Situação', STATUS_TAREFA[t.status]], ['Prazo', t.all_day ? 'o dia todo' : `até ${t.hora}`], ['Posto', t.location_name],
+      ['Criada por', t.criador], ['Detalhes', curto(t.description)]],
+    prioridade: t.priority,
   }));
   solic.rows.forEach((r) => itens.push({
     tipo: 'solicitacao', id: r.id, titulo: r.title, data: r.data, hora: null, local: r.location_name,
     status: r.status === 'concluida' ? 'concluida' : (r.data < hoje ? 'atrasada' : r.status),
     link: `#/solicitacoes/${r.id}`, reagendar: 'solicitacao',
+    info: [['Pedida por', r.pedido_por], ['Quem atende', r.atendente || 'ainda ninguém'], ['Urgência', PRIORIDADE_TAREFA[r.priority]],
+      ['Tipo', r.visit_type === 'pontual' ? 'Visita pontual' : r.visit_type === 'rotina' ? 'Visita de rotina' : 'Solicitação'],
+      ['Posto', r.location_name], ['Tarefas', r.tarefas ? `${r.tarefas}` : null], ['Detalhes', curto(r.description)]],
+    prioridade: r.priority,
   }));
   itens.sort((a, b) => (a.data + (a.hora || '99:99')).localeCompare(b.data + (b.hora || '99:99')));
   res.json({ hoje, de, ate, itens, visitas_atrasadas: atrasadas.rows.map((p) => visita(p, true)) });
