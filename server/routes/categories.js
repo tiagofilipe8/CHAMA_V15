@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../db');
 const { requireAuth, requireRoles, isStaff, has, canAccessEntity } = require('../middleware/auth');
+const { perfilDaEmpresa, lerPerfil, doPerfil, travaPadrao, PADRAO_TRAVADO } = require('./optionProfiles');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -18,13 +19,16 @@ const SELECT = `
           WHERE (t.category_id = c.id OR t.simple_category_id = c.id) AND t.status NOT IN (6,7)) AS open_tickets
   FROM categories c`;
 
-// Lista (todas, ou ?kind=simple|complex)
+// Lista de um perfil de opções (?profile_id=; sem ele = Padrão) e opcionalmente ?kind=simple|complex.
+// As complexas (arvore antiga) so existem no Padrao.
 router.get('/', async (req, res) => {
   const { kind } = req.query;
-  const params = [];
-  let where = '';
-  if (kind === 'simple' || kind === 'complex') { params.push(kind); where = 'WHERE c.kind = $1'; }
-  const { rows } = await query(`${SELECT} ${where} ORDER BY c.kind, c.sort_order, c.name`, params);
+  const p = await lerPerfil(req.query.profile_id);
+  if (p.error) return res.status(404).json({ error: p.error });
+  const params = [p.id];
+  const conds = [doPerfil('c', 1)];
+  if (kind === 'simple' || kind === 'complex') { params.push(kind); conds.push(`c.kind = $${params.length}`); }
+  const { rows } = await query(`${SELECT} WHERE ${conds.join(' AND ')} ORDER BY c.kind, c.sort_order, c.name`, params);
   res.json(rows);
 });
 
@@ -36,10 +40,12 @@ router.get('/for-entity/:entityId', async (req, res) => {
   const ent = await query('SELECT category_mode FROM entities WHERE id = $1', [entityId]);
   if (!ent.rows.length) return res.status(404).json({ error: 'Empresa não encontrada.' });
   // Só categorias simples, para todos (equipe e usuários)
+  // ... do perfil de opções que a empresa usa
   const mode = 'simple';
+  const perfil = await perfilDaEmpresa(entityId);
   const { rows } = await query(
-    `${SELECT} WHERE c.active AND c.kind = 'simple' ORDER BY c.sort_order, c.name`);
-  res.json({ mode, entity_mode: ent.rows[0].category_mode, categories: rows });
+    `${SELECT} WHERE c.active AND c.kind = 'simple' AND ${doPerfil('c', 1)} ORDER BY c.sort_order, c.name`, [perfil]);
+  res.json({ mode, entity_mode: ent.rows[0].category_mode, profile_id: perfil, categories: rows });
 });
 
 function readBody(b = {}) {
@@ -84,14 +90,17 @@ async function validate(b, currentKind, selfId) {
 router.post('/', requireRoles('admin'), async (req, res) => {
   const b = readBody(req.body);
   if (!b.name) return res.status(422).json({ error: 'Informe o nome da categoria.' });
+  // só dá para criar dentro de um perfil de opções (o Padrão não muda)
+  const p = await lerPerfil(req.body?.profile_id);
+  if (p.error) return res.status(422).json({ error: p.error });
+  if (!p.id) return res.status(403).json({ error: PADRAO_TRAVADO });
   const err = await validate(b, null, null);
   if (err) return res.status(422).json({ error: err });
-  const kind = b.kind || 'simple';
+  const kind = 'simple';
   const { rows } = await query(
-    `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order)
-     VALUES ($1, $2, COALESCE($3, TRUE), $4, $5, $6, $7, $8, COALESCE($9, 0)) RETURNING id`,
-    [b.name, kind === 'complex' ? (b.parent_id || null) : null, b.active, kind,
-     null, b.icon || null, b.description || null, b.examples || null, b.sort_order]);
+    `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order, profile_id)
+     VALUES ($1, NULL, COALESCE($2, TRUE), $3, NULL, $4, $5, $6, COALESCE($7, 0), $8) RETURNING id`,
+    [b.name, b.active, kind, b.icon || null, b.description || null, b.examples || null, b.sort_order, p.id]);
   const full = await query(`${SELECT} WHERE c.id = $1`, [rows[0].id]);
   res.status(201).json(full.rows[0]);
 });
@@ -99,6 +108,7 @@ router.post('/', requireRoles('admin'), async (req, res) => {
 router.patch('/:id', requireRoles('admin'), async (req, res) => {
   const cur = await query('SELECT * FROM categories WHERE id = $1', [req.params.id]);
   if (!cur.rows.length) return res.status(404).json({ error: 'Categoria não encontrada.' });
+  if (cur.rows[0].profile_id == null) return res.status(403).json({ error: PADRAO_TRAVADO });
   const b = readBody(req.body);
   if (b.kind && b.kind !== cur.rows[0].kind) {
     return res.status(422).json({ error: 'Não é possível trocar o tipo de uma categoria existente. Crie uma nova.' });
@@ -122,6 +132,8 @@ router.patch('/:id', requireRoles('admin'), async (req, res) => {
 });
 
 router.delete('/:id', requireRoles('admin'), async (req, res) => {
+  const trava = await travaPadrao('categories', req.params.id);
+  if (trava) return res.status(403).json({ error: trava });
   const used = await query(
     `SELECT (SELECT count(*)::int FROM tickets WHERE category_id = $1 OR simple_category_id = $1) AS t,
             (SELECT count(*)::int FROM categories WHERE maps_to_id = $1 OR parent_id = $1) AS c`, [req.params.id]);

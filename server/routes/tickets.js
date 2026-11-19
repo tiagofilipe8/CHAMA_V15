@@ -14,6 +14,12 @@ const {
 const notify = require('../services/notify');
 const settingsStore = require('../services/settingsStore');
 const realtime = require('../services/realtime');
+const { perfilDaEmpresa } = require('./optionProfiles');
+
+// A opção (categoria, urgência ou causa) é do perfil de opções da empresa?
+// perfil undefined = não confere (compatibilidade); null = Padrão.
+const mesmoPerfil = (linha, perfil) => perfil === undefined
+  || String(linha.profile_id ?? '') === String(perfil ?? '');
 
 const router = express.Router();
 // ?token= para links de arquivo (a tag <a>/<img> nao envia Authorization)
@@ -159,21 +165,23 @@ async function claimModerator(ticket, user) {
 
 // Resolve a categoria: aceita uma simples (grava na complexa correspondente)
 // ou uma complexa. Retorna { category_id, simple_category_id } ou { error }.
-async function resolveCategory(categoryId, simpleCategoryId) {
+async function resolveCategory(categoryId, simpleCategoryId, perfil) {
   const id = simpleCategoryId || categoryId;
   if (!id) return { category_id: null, simple_category_id: null };
-  const { rows } = await query('SELECT id, kind, maps_to_id, active FROM categories WHERE id = $1', [id]);
+  const { rows } = await query('SELECT id, kind, maps_to_id, active, profile_id FROM categories WHERE id = $1', [id]);
   if (!rows.length || !rows[0].active) return { error: 'Categoria inválida.' };
   const c = rows[0];
+  if (!mesmoPerfil(c, perfil)) return { error: 'Essa categoria não é do perfil de opções desta empresa.' };
   // Só categorias simples: o chamado grava direto na simples escolhida
   if (c.kind === 'simple') return { category_id: c.id, simple_category_id: c.id };
   return { category_id: c.id, simple_category_id: null };
 }
 
-async function resolveImpact(impactId) {
+async function resolveImpact(impactId, perfil) {
   if (!impactId) return null;
-  const { rows } = await query('SELECT id, name, priority FROM impact_levels WHERE id = $1 AND active', [impactId]);
-  return rows[0] || null;
+  const { rows } = await query('SELECT id, name, priority, profile_id FROM impact_levels WHERE id = $1 AND active', [impactId]);
+  if (!rows.length || !mesmoPerfil(rows[0], perfil)) return null;
+  return rows[0];
 }
 
 async function resolveLocation(locationId, entityId) {
@@ -200,13 +208,13 @@ const EQUIPMENT_ACTIONS = {
 };
 
 // Formulario de encerramento: o que aconteceu, causa, acao no equipamento e nota do usuario
-async function readResolution(body = {}) {
+async function readResolution(body = {}, perfil) {
   const notes = String(body.resolution_notes || body.comment || '').trim();
   if (notes.length < 5) return { error: 'Descreva o que aconteceu e o que foi feito.' };
   const causeId = body.resolution_cause_id;
   if (!causeId) return { error: 'Escolha a causa do problema.' };
-  const c = await query('SELECT id, name FROM resolution_causes WHERE id = $1 AND active', [causeId]);
-  if (!c.rows.length) return { error: 'Causa inválida.' };
+  const c = await query('SELECT id, name, profile_id FROM resolution_causes WHERE id = $1 AND active', [causeId]);
+  if (!c.rows.length || !mesmoPerfil(c.rows[0], perfil)) return { error: 'Causa inválida.' };
   const action = String(body.equipment_action || '');
   if (!EQUIPMENT_ACTIONS[action]) return { error: 'Informe o que aconteceu com o equipamento.' };
   const rating = body.requester_rating;
@@ -394,8 +402,9 @@ router.post('/', async (req, res) => {
   }
   if (!entId) return res.status(422).json({ error: 'Informe a empresa do chamado.' });
 
-  // Categoria (obrigatoria)
-  const cat = await resolveCategory(category_id, simple_category_id);
+  // Categoria (obrigatoria), do perfil de opções da empresa
+  const perfilEnt = await perfilDaEmpresa(entId);
+  const cat = await resolveCategory(category_id, simple_category_id, perfilEnt);
   if (cat.error) return res.status(422).json({ error: cat.error });
   if (!cat.category_id) return res.status(422).json({ error: 'Escolha a categoria do chamado.' });
   const catMat = await query('SELECT is_material FROM categories WHERE id = $1', [cat.simple_category_id || cat.category_id]);
@@ -404,11 +413,13 @@ router.post('/', async (req, res) => {
   }
 
   // Urgencia (obrigatoria). Compatibilidade: se vier so a prioridade antiga, converte.
-  let impact = await resolveImpact(impact_id);
+  let impact = await resolveImpact(impact_id, perfilEnt);
   if (!impact && priority) {
     const { rows } = await query(
-      'SELECT id, name, priority FROM impact_levels WHERE active AND priority = $1 ORDER BY sort_order LIMIT 1',
-      [Math.min(Math.max(parseInt(priority, 10) || 2, 1), 4)]);
+      `SELECT id, name, priority FROM impact_levels
+       WHERE active AND priority = $1 AND COALESCE(profile_id, 0) = COALESCE($2::bigint, 0)
+       ORDER BY sort_order LIMIT 1`,
+      [Math.min(Math.max(parseInt(priority, 10) || 2, 1), 4), perfilEnt]);
     impact = rows[0] || null;
   }
   if (!impact) return res.status(422).json({ error: 'Informe se isso está afetando a operação (urgência).' });
@@ -585,8 +596,11 @@ router.patch('/:id', async (req, res) => {
     add('description = ?', String(description));
     changes.push(['description', null, null]);
   }
+  // categoria e urgência: do perfil de opções da empresa (a nova, se a triagem trocar a empresa agora)
+  const perfilAlvo = (category_id !== undefined || simple_category_id !== undefined || impact_id !== undefined)
+    ? await perfilDaEmpresa(req.body?.entity_id || ticket.entity_id) : undefined;
   if (category_id !== undefined || simple_category_id !== undefined) {
-    const cat = await resolveCategory(category_id, simple_category_id);
+    const cat = await resolveCategory(category_id, simple_category_id, perfilAlvo);
     if (cat.error) return res.status(422).json({ error: cat.error });
     if (!cat.category_id) return res.status(422).json({ error: 'O chamado precisa de uma categoria.' });
     if (String(cat.category_id) !== String(ticket.category_id)
@@ -600,7 +614,7 @@ router.patch('/:id', async (req, res) => {
     }
   }
   if (impact_id !== undefined) {
-    const impact = await resolveImpact(impact_id);
+    const impact = await resolveImpact(impact_id, perfilAlvo);
     if (!impact) return res.status(422).json({ error: 'Urgência inválida.' });
     if (String(impact.id) !== String(ticket.impact_id)) {
       add('impact_id = ?', impact.id);
@@ -899,7 +913,7 @@ router.post('/:id/status', async (req, res) => {
   }
   let resolution = null;
   if (toStatus === 5) {
-    resolution = await readResolution(req.body);
+    resolution = await readResolution(req.body, await perfilDaEmpresa(ticket.entity_id));
     if (resolution.error) return res.status(422).json({ error: resolution.error, resolution_form: true });
   }
 
@@ -954,7 +968,7 @@ router.post('/:id/approval', async (req, res) => {
       entity_required: true,
     });
   }
-  const resolution = await readResolution(req.body);
+  const resolution = await readResolution(req.body, await perfilDaEmpresa(ticket.entity_id));
   if (resolution.error) return res.status(422).json({ error: resolution.error, resolution_form: true });
   const solution = resolution.notes;
 

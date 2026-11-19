@@ -26,6 +26,7 @@ const impactLevelRoutes = require('./routes/impactLevels');
 const resolutionCauseRoutes = require('./routes/resolutionCauses');
 const permissionRoutes = require('./routes/permissions');
 const materialRoutes = require('./routes/materials');
+const optionProfileRoutes = require('./routes/optionProfiles');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
 
@@ -70,6 +71,7 @@ app.use('/api/impact-levels', impactLevelRoutes);
 app.use('/api/resolution-causes', resolutionCauseRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/materials', materialRoutes);
+app.use('/api/option-profiles', optionProfileRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -86,7 +88,8 @@ function wrapRouter(r) {
 }
 [authRoutes, userRoutes, entityRoutes, categoryRoutes, ticketRoutes,
  dashboardRoutes, settingRoutes, notificationRoutes, backupRoutes, whatsappRoutes, inventoryRoutes,
- locationRoutes, impactLevelRoutes, resolutionCauseRoutes, permissionRoutes, materialRoutes].forEach(wrapRouter);
+ locationRoutes, impactLevelRoutes, resolutionCauseRoutes, permissionRoutes, materialRoutes,
+ optionProfileRoutes].forEach(wrapRouter);
 
 process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err?.message || err);

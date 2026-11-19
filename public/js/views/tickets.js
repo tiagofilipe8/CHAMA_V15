@@ -151,12 +151,17 @@ Views.tickets = async function tickets(el, opts = {}) {
     return `<button type="button" class="f-chip ${tone || ''} ${active ? 'on' : ''}" ${attrs}>${label}</button>`;
   }
 
+  // Urgências de todos os perfis de opções: mostra as do Padrão (ativas) e as que algum chamado
+  // da lista usa; as de outro perfil levam o nome do perfil para não confundir.
+  const urgVisivel = (l, usada) => !!usada || (!l.profile_id && l.active);
+  const nomeUrg = (l) => (l.profile_name ? `${l.name} (${l.profile_name})` : l.name);
+
   function paintChips() {
     const counts = (key) => all.reduce((m, t) => { m[t[key]] = (m[t[key]] || 0) + 1; return m; }, {});
     const byImpact = counts('impact_id');
-    $('#f-impacts').innerHTML = levels.filter((l) => l.active || byImpact[l.id]).slice().sort((a, b) => b.priority - a.priority || b.sort_order - a.sort_order).map((l) =>
+    $('#f-impacts').innerHTML = levels.filter((l) => urgVisivel(l, byImpact[l.id])).slice().sort((a, b) => b.priority - a.priority || b.sort_order - a.sort_order).map((l) =>
       chip(prefs.impacts.includes(String(l.id)),
-        `<span class="dot"></span>${esc(l.name)} <b>${byImpact[l.id] || 0}</b>`,
+        `<span class="dot"></span>${esc(nomeUrg(l))} <b>${byImpact[l.id] || 0}</b>`,
         `data-impact="${l.id}"`, URGENCY_TONE[l.priority])).join('');
     const byLoc = counts('location_id');
     const usedLocs = locs.filter((l) => byLoc[l.id] || prefs.locations.includes(String(l.id)));
@@ -207,8 +212,8 @@ Views.tickets = async function tickets(el, opts = {}) {
   // ---------------- colunas ----------------
   function columns(list) {
     if (prefs.group === 'impact') {
-      const cols = levels.filter((l) => l.active || list.some((t) => String(t.impact_id) === String(l.id))).slice().sort((a, b) => b.priority - a.priority || b.sort_order - a.sort_order).map((l) => ({
-        key: String(l.id), label: l.name, tone: URGENCY_TONE[l.priority], drop: { impact_id: l.id },
+      const cols = levels.filter((l) => urgVisivel(l, list.some((t) => String(t.impact_id) === String(l.id)))).slice().sort((a, b) => b.priority - a.priority || b.sort_order - a.sort_order).map((l) => ({
+        key: String(l.id), label: nomeUrg(l), tone: URGENCY_TONE[l.priority], drop: { impact_id: l.id },
       }));
       if (list.some((t) => !t.impact_id)) cols.push({ key: 'none', label: 'Sem urgência', drop: null });
       return cols.map((c) => ({ ...c, items: list.filter((t) => String(t.impact_id || 'none') === c.key) }));
@@ -426,7 +431,7 @@ Views.tickets = async function tickets(el, opts = {}) {
 
   try {
     [levels, locs] = await Promise.all([
-      API.get('/impact-levels?all=true').catch(() => []),
+      API.get('/impact-levels?all=true&todos=true').catch(() => []),
       API.get('/locations').catch(() => []),
     ]);
   } catch {}

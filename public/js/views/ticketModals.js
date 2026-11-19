@@ -127,10 +127,13 @@ const TicketModals = (() => {
       f('zero').addEventListener('click', () => { rating = 0; paintStars(); });
 
       const causeSel = f('cause');
-      API.get('/resolution-causes').then((causes) => {
+      // causas do perfil de opções da empresa do chamado
+      const carregarCausas = () => API.get(`/resolution-causes?entity_id=${encodeURIComponent(t.entity_id || '')}`).then((causes) => {
         causeSel.innerHTML = '<option value="">— escolha —</option>' +
           causes.map((c) => `<option value="${c.id}" data-help="${esc(c.description || '')}">${esc(c.name)}</option>`).join('');
+        f('cause-help').textContent = '';
       }).catch(() => {});
+      carregarCausas();
       causeSel.addEventListener('change', () => {
         f('cause-help').textContent = causeSel.selectedOptions[0]?.dataset.help || '';
       });
@@ -154,6 +157,7 @@ const TicketModals = (() => {
             t.entity_id = novo;
             t.entity_name = empSel.selectedOptions[0].textContent;
             empresaOk = true;
+            carregarCausas(); // a empresa nova pode usar outro perfil de opções
             const box = f('empresa-box');
             box.className = 'alert alert-success mb-3';
             box.innerHTML = `<i class="bi bi-check-circle me-1"></i>Empresa atribuída: <b>${esc(t.entity_name)}</b>. Agora você pode resolver.`;

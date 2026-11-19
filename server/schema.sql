@@ -607,3 +607,36 @@ UPDATE users SET role = 'client', client_level = 2 WHERE role = 'admin_local';
 -- Dia a dia da TI saiu da Central (era outro sistema, 2026-11-19): some das permissoes.
 -- As tabelas gbf_* nao sao apagadas aqui (os dados ficam guardados no banco).
 DELETE FROM role_permissions WHERE permission IN ('ti.view', 'ti.manage');
+
+-- =====================================================================
+-- Perfis de opções (2026-11-19)
+-- O que já existe (profile_id NULL) é o perfil "Padrão", que não pode ser alterado.
+-- Cada perfil novo começa como cópia do Padrão (categorias, urgências e causas) e
+-- pode ser editado. Cada empresa escolhe o perfil que usa (option_profile_id NULL = Padrão).
+-- Apagar um perfil marca deleted_at e devolve as empresas ao Padrão; as opções dele ficam
+-- guardadas porque os chamados antigos continuam apontando para elas.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS option_profiles (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT        NOT NULL,
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ
+);
+ALTER TABLE categories        ADD COLUMN IF NOT EXISTS profile_id BIGINT REFERENCES option_profiles(id);
+ALTER TABLE impact_levels     ADD COLUMN IF NOT EXISTS profile_id BIGINT REFERENCES option_profiles(id);
+ALTER TABLE resolution_causes ADD COLUMN IF NOT EXISTS profile_id BIGINT REFERENCES option_profiles(id);
+ALTER TABLE entities          ADD COLUMN IF NOT EXISTS option_profile_id BIGINT REFERENCES option_profiles(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_categories_profile ON categories(profile_id);
+CREATE INDEX IF NOT EXISTS idx_impact_levels_profile ON impact_levels(profile_id);
+CREATE INDEX IF NOT EXISTS idx_resolution_causes_profile ON resolution_causes(profile_id);
+-- o nome passa a ser único dentro de cada perfil (antes era único no sistema todo)
+ALTER TABLE impact_levels DROP CONSTRAINT IF EXISTS impact_levels_name_key;
+ALTER TABLE resolution_causes DROP CONSTRAINT IF EXISTS resolution_causes_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_impact_levels_perfil_nome ON impact_levels (COALESCE(profile_id, 0), name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_resolution_causes_perfil_nome ON resolution_causes (COALESCE(profile_id, 0), name);
+-- empresa apontando para perfil apagado volta ao Padrão
+UPDATE entities e SET option_profile_id = NULL
+ WHERE option_profile_id IS NOT NULL
+   AND EXISTS (SELECT 1 FROM option_profiles p WHERE p.id = e.option_profile_id AND p.deleted_at IS NOT NULL);

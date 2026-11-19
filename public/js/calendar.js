@@ -273,10 +273,7 @@ const CalendarUI = (() => {
       || Number(b.atrasado) - Number(a.atrasado) || a.t.id - b.t.id;
     const doDia = (d) => (porDia().get(d) || []).slice().sort(ordena);
 
-    const etiqueta = (i) => (i.atrasado ? '<span class="tg tg-red">Atrasado</span>'
-      : i.feito ? `<span class="tg tg-green">${esc(LABELS.status[i.t.status] || 'Resolvido')}</span>`
-        : i.aberto ? `<span class="tg tg-blue">${esc(LABELS.status[i.t.status] || 'Em aberto')}</span>`
-          : `<span class="tg tg-gray">${esc(LABELS.status[i.t.status] || '')}</span>`);
+    const etiqueta = (i) => (i.atrasado ? '<span class="tg tg-red">Atrasado</span>' : badgeStatus(i.t.status)); // mesma etiqueta de status do resto do sistema
 
     function pintar() {
       salvar();

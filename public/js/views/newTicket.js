@@ -164,8 +164,11 @@ Views.newTicket = async function newTicket(el) {
 
   // ---------- urgencia (cada opção na cor da sua urgência) ----------
   const URG_ICON = { 4: 'bi-sign-stop-fill', 3: 'bi-exclamation-triangle-fill', 2: 'bi-hourglass-split', 1: 'bi-clipboard-check' };
+  // as urgências vêm do perfil de opções da empresa: recarrega quando a empresa muda
+  async function loadImpacts(entityId) {
   try {
-    const levels = await API.get('/impact-levels');
+    pickedImpact = null;
+    const levels = await API.get('/impact-levels' + (entityId ? `?entity_id=${encodeURIComponent(entityId)}` : ''));
     const box = document.getElementById('nt-impact-box');
     box.innerHTML = levels.slice().sort((a, b) => b.sort_order - a.sort_order).map((l) => `
       <div class="col-6">
@@ -181,6 +184,7 @@ Views.newTicket = async function newTicket(el) {
       box.querySelectorAll('.choice-card').forEach((c) => c.classList.toggle('sel', c.contains(r) && r.checked));
     }));
   } catch (e) { showError(e); }
+  }
 
   // ---------- dependentes da empresa ----------
   const currentEntity = () => (chooseEntity ? document.getElementById('nt-entity').value : String(user.entity_id || ''));
@@ -268,7 +272,7 @@ Views.newTicket = async function newTicket(el) {
 
   const onEntity = async () => {
     const id = currentEntity();
-    await Promise.all([loadCategories(id), loadLocations(id), loadAssets(id)]);
+    await Promise.all([loadCategories(id), loadImpacts(id), loadLocations(id), loadAssets(id)]);
     updateWhere();
   };
 

@@ -571,7 +571,7 @@ Views.ticketDetail = function ticketDetail(id) {
       }
       const eImpact = el.querySelector('#e-impact');
       if (eImpact) {
-        API.get('/impact-levels').then((levels) => {
+        API.get(`/impact-levels?entity_id=${encodeURIComponent(t.entity_id || '')}`).then((levels) => {
           eImpact.innerHTML = levels.map((l) => `<option value="${l.id}" ${String(l.id) === String(t.impact_id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
         }).catch(() => {});
       }

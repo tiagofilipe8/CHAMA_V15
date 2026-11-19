@@ -335,6 +335,7 @@ Views.adminEntities = async function adminEntities(el) {
                 <div><i class="bi bi-envelope me-1"></i>${esc(e.email || '—')}</div>
                 <div><i class="bi bi-geo-alt me-1"></i>${esc(e.address || '—')}</div>
                 <div><i class="bi bi-stopwatch me-1"></i>SLA: ${e.sla_days || 0}d ${e.sla_hours || 0}h</div>
+                <div><i class="bi bi-sliders me-1"></i>Perfil de opções: <a href="#/admin/categories">${esc(e.option_profile_name || 'Padrão')}</a></div>
               </div>
               <div class="d-flex flex-wrap gap-3 mt-2 small">
                 <span><b>${e.open_tickets}</b> chamados abertos</span>
@@ -367,6 +368,9 @@ Views.adminEntities = async function adminEntities(el) {
   async function openEntityModal(id) {
     let e = null;
     if (id) { try { e = (await API.get('/entities')).find((x) => String(x.id) === String(id)); } catch {} }
+    let perfis = [];
+    try { perfis = await API.get('/option-profiles'); } catch {}
+    const perfilAtual = String((e && e.option_profile_name && e.option_profile_id) || '');
     const m = document.createElement('div');
     m.className = 'modal fade';
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
@@ -400,6 +404,11 @@ Views.adminEntities = async function adminEntities(el) {
             <input class="form-control" id="e-sla-hours" type="number" min="0" max="23" value="${esc(String((e && e.sla_hours) ?? 0))}"></div>
         </div>
         <div class="form-text mb-2">Prazo padrão para chamados desta entidade. Ex.: 2 dias e 4 horas → vencimento automático.</div>
+        <div class="mb-2"><label class="form-label small">Perfil de opções</label>
+          <select class="form-select" id="e-perfil">
+            ${(perfis.length ? perfis : [{ id: null, name: 'Padrão' }]).map((p) => `<option value="${p.id ?? ''}" ${String(p.id ?? '') === perfilAtual ? 'selected' : ''}>${esc(p.name)}${p.padrao ? ' (opções originais)' : ''}</option>`).join('')}
+          </select>
+          <div class="form-text">Quais categorias, urgências e causas de encerramento esta empresa usa. Os perfis são criados em <a href="#/admin/categories">Categorias e opções</a>.</div></div>
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="e-active" ${e ? (e.active ? 'checked' : '') : 'checked'}>
           <label class="form-check-label small">Ativa</label>
@@ -447,6 +456,7 @@ Views.adminEntities = async function adminEntities(el) {
         sla_days: parseInt(m.querySelector('#e-sla-days').value, 10) || 0,
         sla_hours: parseInt(m.querySelector('#e-sla-hours').value, 10) || 0,
         category_mode: 'simple',
+        option_profile_id: m.querySelector('#e-perfil').value || null,
       };
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
       try {
@@ -469,7 +479,21 @@ Views.adminCategories = async function adminCategories(el) {
   if (!(await guardRole('admin'))) return;
   let tab = sessionStorage.getItem('cat_tab') || 'simple';
   if (tab === 'complex') tab = 'simple';
+  // Perfis de opções: "Padrão" (travado) + perfis criados, que começam como cópia do Padrão.
+  // Cada empresa escolhe o perfil em Cadastros > Empresas.
+  let perfis = [];
+  let perfilSel = sessionStorage.getItem('cat_perfil') || '';
+  const travado = () => !perfilSel;
+  const qsPerfil = (sep = '?') => (perfilSel ? `${sep}profile_id=${encodeURIComponent(perfilSel)}` : '');
   el.innerHTML = `
+    <div class="card panel-card mb-3 op-perfis"><div class="card-body py-2">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="small text-muted">Perfil de opções:</span>
+        <div class="op-chips d-flex flex-wrap gap-1" id="op-chips"></div>
+        <button class="btn btn-sm btn-outline-primary ms-auto" id="op-novo"><i class="bi bi-plus-lg"></i> Novo perfil</button>
+      </div>
+      <div class="op-info small mt-2" id="op-info"></div>
+    </div></div>
     <ul class="nav nav-tabs mb-3" id="cat-tabs">
       <li class="nav-item"><a class="nav-link" href="#" data-tab="simple">Categorias</a></li>
       <li class="nav-item"><a class="nav-link" href="#" data-tab="impact">Urgência</a></li>
@@ -484,15 +508,117 @@ Views.adminCategories = async function adminCategories(el) {
     render();
   }));
 
+  // ---- barra dos perfis ----
+  async function carregarPerfis() {
+    perfis = await API.get('/option-profiles');
+    if (perfilSel && !perfis.some((p) => String(p.id) === String(perfilSel))) perfilSel = '';
+    pintarPerfis();
+  }
+  function pintarPerfis() {
+    const atual = perfis.find((p) => String(p.id ?? '') === String(perfilSel)) || perfis[0];
+    el.querySelector('#op-chips').innerHTML = perfis.map((p) => `
+      <button type="button" class="op-chip ${String(p.id ?? '') === String(perfilSel) ? 'on' : ''}" data-perfil="${p.id ?? ''}">
+        ${p.padrao ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-sliders"></i>'} ${esc(p.name)}
+        <span class="op-n" title="Empresas usando">${p.empresas.length}</span>
+      </button>`).join('');
+    const empresas = atual.empresas.length
+      ? atual.empresas.map((e) => `<span class="tg ${e.active ? 'tg-blue' : 'tg-gray'}">${esc(e.name)}</span>`).join(' ')
+      : `<span class="text-muted">${atual.padrao ? 'nenhuma' : 'nenhuma empresa ainda — escolha o perfil em <a href="#/admin/entities">Empresas</a>'}</span>`;
+    el.querySelector('#op-info').innerHTML = `
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span><b>Usado por:</b> ${empresas}</span>
+        ${atual.padrao ? '' : `<span class="ms-auto d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary" id="op-renomear"><i class="bi bi-pencil"></i> Renomear</button>
+          <button class="btn btn-sm btn-outline-danger" id="op-apagar"><i class="bi bi-trash"></i> Apagar perfil</button></span>`}
+      </div>
+      ${atual.padrao ? `<div class="op-trava mt-2"><i class="bi bi-lock-fill"></i> O <b>Padrão</b> são as opções originais do sistema e não pode ser alterado.
+        Para ter categorias, urgências ou causas diferentes, clique em <b>Novo perfil</b>: ele começa como cópia do Padrão e você edita à vontade.
+        Empresas sem perfil escolhido usam o Padrão.</div>`
+    : `<div class="text-muted mt-1">${esc(atual.description || 'Perfil criado a partir do Padrão.')} · ${atual.categorias} categorias · ${atual.urgencias} urgências · ${atual.causas} causas</div>`}`;
+    el.querySelectorAll('#op-chips [data-perfil]').forEach((b) => b.addEventListener('click', () => {
+      perfilSel = b.dataset.perfil;
+      try { sessionStorage.setItem('cat_perfil', perfilSel); } catch {}
+      pintarPerfis();
+      render();
+    }));
+    const ren = el.querySelector('#op-renomear');
+    if (ren) ren.onclick = () => modalPerfil(atual);
+    const apg = el.querySelector('#op-apagar');
+    if (apg) {
+      apg.onclick = async () => {
+        const n = atual.empresas.length;
+        const ok = await confirmDialog({
+          title: `Apagar o perfil "${atual.name}"`,
+          body: `${n ? `${n === 1 ? 'A empresa que usa' : `As ${n} empresas que usam`} este perfil ${n === 1 ? 'volta' : 'voltam'} para o Padrão. ` : ''}Os chamados antigos continuam com as opções que já tinham.`,
+          confirmText: 'Apagar perfil', danger: true,
+        });
+        if (!ok) return;
+        try {
+          const r = await API.del('/option-profiles/' + atual.id);
+          toast(r.message || 'Perfil apagado.', 'warning');
+          perfilSel = '';
+          try { sessionStorage.setItem('cat_perfil', ''); } catch {}
+          await carregarPerfis(); render();
+        } catch (e) { showError(e); }
+      };
+    }
+  }
+  // criar (p = null) ou renomear um perfil
+  function modalPerfil(p) {
+    const m = document.createElement('div');
+    m.className = 'modal fade';
+    m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h6>${p ? 'Renomear perfil' : 'Novo perfil de opções'}</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        ${p ? '' : `<p class="small text-muted">O perfil novo começa como uma <b>cópia do Padrão</b> (categorias, urgências e causas).
+          Depois é só editar e escolher, em <b>Empresas</b>, quais empresas usam ele.</p>`}
+        <div class="mb-2"><label class="form-label small">Nome *</label>
+          <input class="form-control" id="op-nome" maxlength="60" value="${esc((p && p.name) || '')}" placeholder="Ex.: Lojas, Escritório, Postos"></div>
+        <div class="mb-2"><label class="form-label small">Descrição</label>
+          <input class="form-control" id="op-desc" maxlength="200" value="${esc((p && p.description) || '')}" placeholder="Para que serve este perfil"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="op-salvar">${p ? 'Salvar' : 'Criar perfil'}</button></div>
+    </div></div>`;
+    document.body.appendChild(m);
+    const modal = new bootstrap.Modal(m);
+    m.addEventListener('hidden.bs.modal', () => m.remove());
+    m.querySelector('#op-salvar').onclick = async () => {
+      const body = { name: m.querySelector('#op-nome').value.trim(), description: m.querySelector('#op-desc').value.trim() };
+      if (!body.name) { toast('Dê um nome ao perfil.', 'warning'); return; }
+      try {
+        const r = p ? await API.patch('/option-profiles/' + p.id, body) : await API.post('/option-profiles', body);
+        modal.hide();
+        if (!p) {
+          perfilSel = String(r.id);
+          try { sessionStorage.setItem('cat_perfil', perfilSel); } catch {}
+          toast('Perfil criado como cópia do Padrão. Agora é só editar as opções.', 'success');
+        } else toast('Perfil salvo.', 'success');
+        await carregarPerfis(); render();
+      } catch (e) { showError(e); }
+    };
+    modal.show();
+    setTimeout(() => m.querySelector('#op-nome').focus(), 300);
+  }
+  el.querySelector('#op-novo').onclick = () => modalPerfil(null);
+
+  // no Padrão (travado) some tudo que edita
+  function aplicarTrava(body) {
+    if (!travado()) return;
+    body.querySelectorAll('#btn-new-simple, #btn-new-impact, #btn-new-cause, .cat-edit, .cat-del, .imp-edit, .imp-del, .cause-edit, .cause-del')
+      .forEach((b) => b.remove());
+    body.querySelectorAll('th.text-end').forEach((th) => { th.textContent = ''; });
+  }
+
   async function render() {
     el.querySelectorAll('#cat-tabs a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
     const body = document.getElementById('cat-tab-body');
     body.innerHTML = spinner();
     try {
-      if (tab === 'impact') return renderImpact(body);
-      if (tab === 'causes') return renderCauses(body);
-      const cats = await API.get('/categories');
-      renderSimple(body, cats);
+      if (tab === 'impact') await renderImpact(body);
+      else if (tab === 'causes') await renderCauses(body);
+      else renderSimple(body, await API.get('/categories' + qsPerfil()));
+      aplicarTrava(body);
     } catch (e) { body.innerHTML = emptyState('Erro ao carregar', e.message, 'bi-exclamation-triangle'); }
   }
 
@@ -624,12 +750,13 @@ Views.adminCategories = async function adminCategories(el) {
       } else {
         body.parent_id = parseInt(m.querySelector('#c-parent').value, 10) || null;
       }
-      if (!c) body.kind = kind;
+      if (!c) { body.kind = kind; body.profile_id = perfilSel; }
       try {
         if (c) await API.patch('/categories/' + c.id, body);
         else await API.post('/categories', body);
         modal.hide();
         toast('Categoria salva.', 'success');
+        await carregarPerfis();
         render();
       } catch (e) { showError(e); }
     };
@@ -637,7 +764,7 @@ Views.adminCategories = async function adminCategories(el) {
   }
 
   async function renderImpact(body) {
-    const levels = await API.get('/impact-levels?all=true');
+    const levels = await API.get('/impact-levels?all=true' + qsPerfil('&'));
     body.innerHTML = `
       <div class="alert alert-info small">
         <i class="bi bi-info-circle me-1"></i> Opções da pergunta <b>"Isso está afetando a operação?"</b> ao abrir chamado.
@@ -671,7 +798,7 @@ Views.adminCategories = async function adminCategories(el) {
   }
 
   async function renderCauses(body) {
-    const causes = await API.get('/resolution-causes?all=true');
+    const causes = await API.get('/resolution-causes?all=true' + qsPerfil('&'));
     body.innerHTML = `
       <div class="alert alert-info small">
         <i class="bi bi-info-circle me-1"></i> Opções da pergunta <b>"Qual foi a causa?"</b> no formulário de encerramento do chamado.
@@ -718,7 +845,7 @@ Views.adminCategories = async function adminCategories(el) {
         };
         if (!b.name) { toast('Informe o nome.', 'warning'); return; }
         try {
-          if (c) await API.patch('/resolution-causes/' + c.id, b); else await API.post('/resolution-causes', b);
+          if (c) await API.patch('/resolution-causes/' + c.id, b); else await API.post('/resolution-causes', { ...b, profile_id: perfilSel });
           modal.hide(); toast('Salvo.', 'success'); render();
         } catch (e) { showError(e); }
       };
@@ -779,7 +906,7 @@ Views.adminCategories = async function adminCategories(el) {
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
       try {
         if (l) await API.patch('/impact-levels/' + l.id, body);
-        else await API.post('/impact-levels', body);
+        else await API.post('/impact-levels', { ...body, profile_id: perfilSel });
         modal.hide();
         toast('Salvo.', 'success');
         render();
@@ -788,6 +915,7 @@ Views.adminCategories = async function adminCategories(el) {
     modal.show();
   }
 
+  try { await carregarPerfis(); } catch (e) { showError(e); }
   render();
 };
 

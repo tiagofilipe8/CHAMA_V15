@@ -22,7 +22,7 @@
   --u-stop: #d7263d;   /* Operação parada */
   --u-soon: #ec7a1c;   /* Parada iminente */
   --u-slow: #d9a400;   /* Operação prejudicada */
-  --u-req:  #4c7dd9;   /* Requisição */
+  --u-req:  #2563eb;   /* Requisição (azul forte) */
   /* Bootstrap no mesmo tom */
   --bs-primary: #0e7c66;
   --bs-primary-rgb: 14, 124, 102;
@@ -263,7 +263,7 @@ body {
 
 .bd-new { background: #dbeafe; color: #1d4ed8; }
 .bd-assigned { background: #ede9fe; color: #6d28d9; }
-.bd-progress { background: #cffafe; color: #0e7490; }
+.bd-progress { background: #0f766e; color: #fff; }  /* Em andamento: verde-petróleo sólido, diferente dos azuis */
 .bd-pending { background: #fef3c7; color: #b45309; }
 .bd-solved { background: #dcfce7; color: #15803d; }
 .bd-closed { background: #e2e8f0; color: #475569; }
@@ -793,7 +793,7 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 /* tags de status: mesma cor de cada status, fundo translúcido */
 [data-bs-theme="dark"] .bd-new { background: var(--c-blue-bg); color: var(--c-blue-tx); }
 [data-bs-theme="dark"] .bd-assigned { background: var(--c-violet-bg); color: var(--c-violet-tx); }
-[data-bs-theme="dark"] .bd-progress { background: rgba(6,182,212,.18); color: #67e8f9; }
+[data-bs-theme="dark"] .bd-progress { background: #14b8a6; color: #042f2e; }
 [data-bs-theme="dark"] .bd-pending, [data-bs-theme="dark"] .bd-pending-approval, [data-bs-theme="dark"] .bd-approval-pending { background: var(--c-amber-bg); color: var(--c-amber-tx); }
 [data-bs-theme="dark"] .bd-solved, [data-bs-theme="dark"] .bd-approval-approved { background: var(--c-green-bg); color: var(--c-green-tx); }
 [data-bs-theme="dark"] .bd-closed { background: var(--c-gray-bg); color: var(--c-gray-tx); }
@@ -1046,3 +1046,16 @@ abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; curs
   #cg-pop, .cg-pop-in, .cg-pop-in.troca li, .cg-pop-det, #cg-linha path { transition: none; animation: none; }
   #cg-linha path { stroke-dashoffset: 0; }
 }
+
+/* Perfis de opções (Categorias e opções) */
+.op-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text);
+  border-radius: 999px; padding: 3px 6px 3px 11px; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.op-chip:hover { border-color: var(--primary); }
+.op-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.op-chip .bi { font-size: .78rem; opacity: .8; }
+.op-n { background: var(--surface-3); color: var(--muted); border-radius: 999px; min-width: 20px; padding: 0 6px; font-size: .7rem; text-align: center; }
+.op-chip.on .op-n { background: rgba(255,255,255,.25); color: #fff; }
+.op-info .tg { margin: 1px 2px; }
+.op-trava { background: var(--surface-2); border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px; color: var(--muted); }
+.op-trava .bi { color: var(--primary); }
+.cg-pop-lin .badge, .cg-item-tg .badge { font-size: .68rem; font-weight: 600; }

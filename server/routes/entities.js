@@ -3,6 +3,7 @@ const multer = require('multer');
 const config = require('../config');
 const { query } = require('../db');
 const { requireAuth, requireRoles } = require('../middleware/auth');
+const { lerPerfil } = require('./optionProfiles');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -33,8 +34,10 @@ router.get('/', async (req, res) => {
             (SELECT count(*) FROM locations l WHERE l.entity_id = e.id AND l.active) AS locations_count,
             (SELECT count(*) FROM assets a WHERE a.entity_id = e.id AND a.type = 'COMPUTER' AND a.status <> 'DISPOSED') AS computers_count,
             (SELECT count(*) FROM assets a WHERE a.entity_id = e.id AND a.type = 'SERVER' AND a.status <> 'DISPOSED') AS servers_count,
-            (SELECT count(*) FROM assets a WHERE a.entity_id = e.id AND a.type = 'NOTEBOOK' AND a.status <> 'DISPOSED') AS notebooks_count
+            (SELECT count(*) FROM assets a WHERE a.entity_id = e.id AND a.type = 'NOTEBOOK' AND a.status <> 'DISPOSED') AS notebooks_count,
+            op.name AS option_profile_name
      FROM entities e
+     LEFT JOIN option_profiles op ON op.id = e.option_profile_id AND op.deleted_at IS NULL
      ORDER BY e.name`);
   res.json(rows);
 });
@@ -52,12 +55,14 @@ router.post('/', requireRoles('admin'), async (req, res) => {
   const mode = category_mode === 'complex' ? 'complex' : 'simple';
   const sd = Math.max(0, parseInt(sla_days, 10) || 0);
   const sh = Math.max(0, Math.min(23, parseInt(sla_hours, 10) || 0));
+  const perfil = await lerPerfil(req.body?.option_profile_id);
+  if (perfil.error) return res.status(422).json({ error: perfil.error });
   try {
     const { rows } = await query(
-      `INSERT INTO entities (name, description, email, phone, address, logo, active, sla_days, sla_hours, category_mode)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), $8, $9, $10)
+      `INSERT INTO entities (name, description, email, phone, address, logo, active, sla_days, sla_hours, category_mode, option_profile_id)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), $8, $9, $10, $11)
        RETURNING *`, [name, description || null, email || null, phone || null,
-                       address || null, logo || null, active === undefined ? true : !!active, sd, sh, mode]);
+                       address || null, logo || null, active === undefined ? true : !!active, sd, sh, mode, perfil.id]);
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(400).json({ error: 'Não foi possível criar a entidade.', details: err.message });
@@ -82,6 +87,12 @@ router.patch('/:id', requireRoles('admin'), async (req, res) => {
   if (category_mode !== undefined) {
     if (!['simple', 'complex'].includes(category_mode)) return res.status(422).json({ error: 'Modo de categorias inválido.' });
     add('category_mode = ?', category_mode);
+  }
+  // perfil de opções (categorias, urgências e causas); vazio = Padrão
+  if (req.body?.option_profile_id !== undefined) {
+    const perfil = await lerPerfil(req.body.option_profile_id);
+    if (perfil.error) return res.status(422).json({ error: perfil.error });
+    add('option_profile_id = ?', perfil.id);
   }
   if (!fields.length) return res.status(422).json({ error: 'Nenhum campo para atualizar.' });
   try {

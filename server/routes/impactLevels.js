@@ -1,15 +1,35 @@
 const express = require('express');
 const { query } = require('../db');
 const { requireAuth, requireRoles } = require('../middleware/auth');
+const { perfilDaEmpresa, lerPerfil, doPerfil, travaPadrao, PADRAO_TRAVADO } = require('./optionProfiles');
 
 const router = express.Router();
 router.use(requireAuth);
 
 // Niveis de urgencia ("Isso está afetando a operação?")
+// Lista do perfil de opções: ?entity_id= (o perfil que a empresa usa) ou ?profile_id=;
+// sem nenhum dos dois = Padrão. ?all=true inclui os desativados.
+// ?todos=true: os níveis de todos os perfis (quadro de chamados de várias empresas),
+// com o nome do perfil quando não for o Padrão.
 router.get('/', async (req, res) => {
   const onlyActive = req.query.all !== 'true';
+  if (req.query.todos === 'true') {
+    const { rows } = await query(
+      `SELECT il.*, op.name AS profile_name FROM impact_levels il
+       LEFT JOIN option_profiles op ON op.id = il.profile_id
+       ${onlyActive ? 'WHERE il.active' : ''} ORDER BY il.profile_id NULLS FIRST, il.sort_order, il.id`);
+    return res.json(rows);
+  }
+  let perfil = null;
+  if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) perfil = await perfilDaEmpresa(req.query.entity_id);
+  else {
+    const p = await lerPerfil(req.query.profile_id);
+    if (p.error) return res.status(404).json({ error: p.error });
+    perfil = p.id;
+  }
   const { rows } = await query(
-    `SELECT * FROM impact_levels ${onlyActive ? 'WHERE active' : ''} ORDER BY sort_order, id`);
+    `SELECT il.* FROM impact_levels il WHERE ${doPerfil('il', 1)} ${onlyActive ? 'AND il.active' : ''}
+     ORDER BY il.sort_order, il.id`, [perfil]);
   res.json(rows);
 });
 
@@ -27,18 +47,23 @@ function readBody(b = {}) {
 router.post('/', requireRoles('admin'), async (req, res) => {
   const b = readBody(req.body);
   if (!b.name) return res.status(422).json({ error: 'Informe o nome.' });
+  const p = await lerPerfil(req.body?.profile_id);
+  if (p.error) return res.status(422).json({ error: p.error });
+  if (!p.id) return res.status(403).json({ error: PADRAO_TRAVADO });
   try {
     const { rows } = await query(
-      `INSERT INTO impact_levels (name, description, examples, priority, sort_order, active)
-       VALUES ($1, $2, $3, COALESCE($4, 2), COALESCE($5, 0), COALESCE($6, TRUE)) RETURNING *`,
-      [b.name, b.description || null, b.examples || null, b.priority, b.sort_order, b.active]);
+      `INSERT INTO impact_levels (name, description, examples, priority, sort_order, active, profile_id)
+       VALUES ($1, $2, $3, COALESCE($4, 2), COALESCE($5, 0), COALESCE($6, TRUE), $7) RETURNING *`,
+      [b.name, b.description || null, b.examples || null, b.priority, b.sort_order, b.active, p.id]);
     res.status(201).json(rows[0]);
   } catch (err) {
-    res.status(400).json({ error: 'Não foi possível criar (o nome já existe?).', details: err.message });
+    res.status(400).json({ error: 'Não foi possível criar (o nome já existe neste perfil?).', details: err.message });
   }
 });
 
 router.patch('/:id', requireRoles('admin'), async (req, res) => {
+  const trava = await travaPadrao('impact_levels', req.params.id);
+  if (trava) return res.status(403).json({ error: trava });
   const b = readBody(req.body);
   const fields = [];
   const params = [req.params.id];
@@ -58,6 +83,8 @@ router.patch('/:id', requireRoles('admin'), async (req, res) => {
 
 // Desativa (chamados antigos continuam com o nivel registrado)
 router.delete('/:id', requireRoles('admin'), async (req, res) => {
+  const trava = await travaPadrao('impact_levels', req.params.id);
+  if (trava) return res.status(403).json({ error: trava });
   await query('UPDATE impact_levels SET active = FALSE WHERE id = $1', [req.params.id]);
   res.json({ ok: true, message: 'Nível desativado.' });
 });
