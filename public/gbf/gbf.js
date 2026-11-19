@@ -962,6 +962,16 @@
     view().innerHTML = `
       ${abasHtml}
       <div class="calpg">
+      <div class="cal-leg" aria-label="Legenda">
+        <div class="cal-leg-g"><span class="cal-leg-t">Urgência</span>${[4, 3, 2, 1].map((p) => `<span class="cal-leg-i"><i class="cal-num ${COR_URG[p]}"></i>${esc(c.urgencias[p])}</span>`).join('')}</div>
+        <div class="cal-leg-g"><span class="cal-leg-t">Andamento</span>
+          <span class="cal-leg-i"><i class="bi bi-circle"></i>A fazer</span>
+          <span class="cal-leg-i"><i class="bi bi-circle-half"></i>Em andamento / aguardando</span>
+          <span class="cal-leg-i"><i class="bi bi-check-circle-fill"></i>Concluída</span></div>
+        <div class="cal-leg-g"><span class="cal-leg-t">Outros</span>
+          <span class="cal-leg-i"><i class="bi bi-alarm"></i>atrasado</span>
+          <span class="cal-leg-i"><span class="cal-leg-linha"></span>vários dias</span></div>
+      </div>
       <div class="cal-topo">
         <a class="btn btn-sm btn-outline-secondary" href="${irMes(mesSoma(c.mes, -1))}" aria-label="Mês anterior"><i class="bi bi-chevron-left"></i></a>
         <strong class="cal-mes">${MESES_CAL[mesNum - 1].replace(/^./, (x) => x.toUpperCase())} de ${ano}</strong>
@@ -973,8 +983,7 @@
           <button type="button" data-f="abertos">Só em aberto</button>
         </div>
       </div>
-      <div class="cal-legenda">${[4, 3, 2, 1].map((p) => `<span><i class="cal-num ${COR_URG[p]}">n</i>${esc(c.urgencias[p])}</span>`).join('')}
-        <span class="ms-auto small-muted">TI: atividades no prazo, visitas de rotina e visitas pedidas no dia desejado. Orcim: dia em que o chamado foi aberto${c.orcim_ok ? '' : ' — não consegui ler os chamados agora'}.</span></div>
+      <div class="cal-nota small-muted">TI: atividades no prazo, visitas de rotina e visitas pedidas no dia desejado. Orcim: dia em que o chamado foi aberto${c.orcim_ok ? '' : ' — não consegui ler os chamados agora'}.</div>
       <div class="cal-corpo">
         <div class="cal-grade" role="grid" aria-label="Calendário geral">
           ${['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((d) => `<div class="cal-sem" role="columnheader">${d}</div>`).join('')}
@@ -1001,6 +1010,42 @@
       return `<span class="cal-faixa ${parte} ${COR_URG[x.prioridade]}${x.feito ? ' feita' : ''}" style="--p:${x.pista}" aria-hidden="true">${parte === 'ini' ? '<em>início</em>' : parte === 'fim' ? '<em>entrega</em>' : ''}</span>`;
     }).join('');
 
+    const fmtCurta = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+    // itens do dia + atividades de vários dias que estão correndo naquele dia (a entrega já vem na lista)
+    const doDia = (dia, m = porDia()) => {
+      const lst = (m.get(dia) || []).slice();
+      faixasVis().filter((x) => x.ini <= dia && dia < x.fim).forEach((x) => lst.push({ ...x, faixaTxt: dia === x.ini ? `começa hoje · entrega ${fmtCurta(x.fim)}` : `em curso · entrega ${fmtCurta(x.fim)}` }));
+      return lst.sort((a, b) => Number(a.feito) - Number(b.feito) || b.prioridade - a.prioridade || (a.hora || '').localeCompare(b.hora || ''));
+    };
+    // andamento (só o que é da TI): a fazer, em andamento/aguardando, concluída
+    const andamento = (lst) => {
+      const ti = lst.filter((i) => i.fonte === 'ti');
+      return {
+        fazer: ti.filter((i) => !i.feito && !['em_andamento', 'aguardando'].includes(i.estado)).length,
+        andando: ti.filter((i) => !i.feito && ['em_andamento', 'aguardando'].includes(i.estado)).length,
+        feito: ti.filter((i) => i.feito).length,
+      };
+    };
+    const htmlAndamento = (a) => [
+      a.fazer ? `<span title="a fazer"><i class="bi bi-circle"></i>${a.fazer}</span>` : '',
+      a.andando ? `<span title="em andamento"><i class="bi bi-circle-half"></i>${a.andando}</span>` : '',
+      a.feito ? `<span title="concluída"><i class="bi bi-check-circle-fill"></i>${a.feito}</span>` : '',
+    ].join('');
+    const itemLista = (i) => `<li data-link="${esc(i.link)}" tabindex="0">
+        <div class="cal-pop-lin"><i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="t">${esc(i.titulo)}</span>${etiquetaEstado(i)}</div>
+        ${i.faixaTxt ? `<div class="cal-pop-faixa">${esc(i.faixaTxt)}</div>` : ''}
+        <div class="cal-pop-det"><div><dl>
+          <dt>Urgência</dt><dd>${esc(c.urgencias[i.prioridade] || '—')}</dd>
+          <dt>Quando</dt><dd>${i.ini ? `${fmtCurta(i.ini)} → ${fmtCurta(i.fim)}` : i.comeca ? `${fmtCurta(i.comeca)} → ${fmtCurta(i.dia)}` : esc(i.hora || 'dia todo')}</dd>
+          <dt>Situação</dt><dd>${esc(i.situacao || '—')}${i.aguardando ? ` · aguardando ${esc(i.aguardando)}` : ''}</dd>
+          ${i.responsavel ? `<dt>Responsável</dt><dd>${esc(i.responsavel)}</dd>` : ''}
+          ${i.detalhe ? `<dt>Detalhes</dt><dd>${esc(i.detalhe)}</dd>` : ''}
+          <dt>Origem</dt><dd>${i.fonte === 'orcim' ? 'Orcim' : 'TI do Beija-Flor'} · ${esc(i.numero)}</dd>
+        </dl>
+        ${(i.comentarios || []).length ? `<div class="cal-pop-coms">${i.comentarios.map((k) => `<div class="cal-pop-com"><b>${esc(k.quem || '—')}</b> <span>${esc(relativo(k.quando))}</span><div>${realcarMencoes(esc(corta(k.texto, 160)))}</div></div>`).join('')}</div>` : ''}
+        <span class="cal-pop-abrir">Abrir <i class="bi bi-arrow-right"></i></span></div></div>
+      </li>`;
+
     const pintar = () => {
       const m = porDia();
       const fx = pistas();
@@ -1014,7 +1059,7 @@
         const nfx = faixasDoDia(d, fx).length ? Math.max(...faixasDoDia(d, fx).map((x) => x.pista)) + 1 : 0;
         return `<button type="button" class="cal-cel${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}${nfx ? ' com-faixa' : ''}" data-dia="${d}" style="--nf:${nfx}"
           aria-label="${fmtIso(d)}: ${lst.length} item(ns)" aria-pressed="${d === diaSel}">
-          <span class="cal-d">${Number(d.slice(8, 10))}</span>
+          <span class="cal-cab-d"><span class="cal-d">${Number(d.slice(8, 10))}</span><span class="cal-and">${htmlAndamento(andamento(doDia(d, m)))}</span></span>
           ${atrasados ? `<span class="cal-atr" title="${atrasados} atrasada(s)"><i class="bi bi-alarm"></i>${atrasados}</span>` : ''}
           <span class="cal-nums">${cont.map(([p, n]) => `<i class="cal-num ${COR_URG[p]}">${n}</i>`).join('')}</span>
           ${htmlFaixas(d, fx)}
@@ -1027,19 +1072,16 @@
         if (window.matchMedia('(max-width: 900px)').matches) $('#cal-dia').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }));
 
-      const lista = (m.get(diaSel) || []).slice().sort((a, b) => b.prioridade - a.prioridade || Number(b.atrasado) - Number(a.atrasado) || a.hora.localeCompare(b.hora));
+      const lista = doDia(diaSel, m);
+      const and = andamento(lista);
       const dataLonga = new Date(`${diaSel}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
       $('#cal-dia').innerHTML = `<h3>${esc(dataLonga)}${diaSel === c.hoje ? ' <span class="tag tag-teal">hoje</span>' : ''}</h3>
-        <div class="small-muted mb-2">${lista.length ? `${plural(lista.length, 'item', 'itens')} · ${lista.filter((i) => i.aberto).length} em aberto` : 'Nada neste dia.'}</div>
-        ${lista.map((i) => `<div class="cal-item" data-href="${i.link}">
-          <i class="cal-num ${COR_URG[i.prioridade]}" title="${esc(c.urgencias[i.prioridade])}"></i>
-          <div class="flex-grow-1 min-w-0">
-            <div class="t">${esc(i.titulo)}</div>
-            <div class="small-muted">${i.fonte === 'orcim' ? 'Orcim' : 'TI'} · ${esc(i.numero)} · ${esc(i.hora || 'dia todo')}${i.detalhe ? ` · ${esc(i.detalhe)}` : ''}${i.responsavel ? ` · ${esc(i.responsavel)}` : ''}</div>
-          </div>
-          <div class="text-end text-nowrap">${i.atrasado ? tag('tag-red', 'Atrasado') : ''} ${tag(i.feito ? 'tag-green' : i.aberto ? 'tag-blue' : 'tag-gray', i.situacao)}</div>
-        </div>`).join('')}`;
-      $$('#cal-dia [data-href]').forEach((x) => x.addEventListener('click', () => { location.hash = x.dataset.href; }));
+        <div class="small-muted mb-2">${lista.length ? `${plural(lista.length, 'item', 'itens')} · ${and.fazer} a fazer · ${and.andando} em andamento · ${and.feito} concluída(s)` : 'Nada neste dia.'}</div>
+        ${lista.length ? `<ul class="cal-lista">${lista.map(itemLista).join('')}</ul><div class="cal-lista-dica small-muted">Passe o mouse num item para ver os detalhes; clique para abrir.</div>` : ''}`;
+      $$('#cal-dia li[data-link]').forEach((x) => {
+        x.addEventListener('click', () => { location.hash = x.dataset.link; });
+        x.addEventListener('keydown', (e) => { if (e.key === 'Enter') location.hash = x.dataset.link; });
+      });
 
       const doMes = visiveis().filter((i) => i.dia.slice(0, 7) === c.mes);
       $('#cal-resumo').innerHTML = `No mês: ${plural(doMes.length, 'item', 'itens')} · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
@@ -1048,131 +1090,70 @@
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
       });
     };
-    // Popup do dia.
-    // Hover: um cartão pequeno perto do mouse ("clique para ver a lista") com a prévia dos comentários.
-    // Clique: a lista do dia fica aberta ao lado, ligada ao dia por uma linha; passar o mouse num item
-    // abre os detalhes (sanfona) e clicar abre a tela dele.
-    if (window.matchMedia('(hover: hover)').matches) {
+    // Hover num dia: cartão pequeno perto do mouse com andamento e prévia dos comentários.
+    // Clique: a lista da direita mostra o dia (com sanfona) e uma linha liga o dia à lista.
+    {
       const criar = (id, html) => {
         let el = document.getElementById(id);
         if (!el) { el = document.createElement('div'); el.id = id; el.innerHTML = html; document.body.appendChild(el); }
         return el;
       };
-      const pop = criar('cal-pop', '<div class="cal-pop-in"></div>');
+      document.getElementById('cal-pop')?.classList.remove('on', 'fixo'); // popup antigo (não é mais usado)
       const dica = criar('cal-dica', '');
       const linha = criar('cal-linha', '<svg width="100%" height="100%"><path d="" /></svg>');
-      const fechar = () => { pop.classList.remove('on', 'fixo'); linha.classList.remove('on'); celFixa = null; };
-      let celFixa = null;
-      const etiqueta = (i) => etiquetaEstado(i);
-      const fmtCurta = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
-      // itens do dia + atividades de vários dias que estão correndo naquele dia (a entrega já vem na lista)
-      const doDia = (dia) => {
-        const lst = (porDia().get(dia) || []).slice();
-        faixasVis().filter((x) => x.ini <= dia && dia < x.fim).forEach((x) => lst.push({ ...x, faixaTxt: dia === x.ini ? `começa hoje · entrega ${fmtCurta(x.fim)}` : `em curso · entrega ${fmtCurta(x.fim)}` }));
-        return lst.sort((a, b) => Number(a.feito) - Number(b.feito) || b.prioridade - a.prioridade || (a.hora || '').localeCompare(b.hora || ''));
-      };
       const comentariosDe = (lst) => lst.flatMap((i) => (i.comentarios || []).map((k) => ({ ...k, item: i.titulo })))
         .sort((a, b) => new Date(b.quando) - new Date(a.quando));
-
-      // --- hover: cartão pequeno que segue o mouse ---
       const grade = $('#cal-dias');
-      let diaDica = null;
-      grade.addEventListener('mousemove', (ev) => {
-        const cel = ev.target.closest('[data-dia]');
-        if (!cel || pop.classList.contains('fixo') && celFixa === cel.dataset.dia) { dica.classList.remove('on'); diaDica = null; return; }
-        if (cel.dataset.dia !== diaDica) {
-          diaDica = cel.dataset.dia;
-          const lst = doDia(diaDica);
-          const feitos = lst.filter((i) => i.feito).length;
-          const coms = comentariosDe(lst).slice(0, 2);
-          dica.innerHTML = `<div class="cal-dica-l1"><i class="bi bi-eye"></i> ${lst.length ? `${plural(lst.length, 'item', 'itens')} · ${feitos} concluído(s)` : 'Nada neste dia'}</div>
-            ${coms.map((k) => `<div class="cal-dica-com"><i class="bi bi-chat-left-text"></i><span><b>${esc((k.quem || '').split(' ')[0])}:</b> ${esc(corta(k.texto, 70))}</span></div>`).join('')}
-            ${lst.length ? '<div class="cal-dica-l2">clique para ver a lista</div>' : ''}`;
-          dica.classList.add('on');
-        }
-        const w = dica.offsetWidth; const h = dica.offsetHeight;
-        let x = ev.clientX + 16; if (x + w > innerWidth - 6) x = ev.clientX - w - 12;
-        let y = ev.clientY + 18; if (y + h > innerHeight - 6) y = ev.clientY - h - 12;
-        dica.style.transform = `translate(${x}px, ${y}px)`;
-      });
-      grade.addEventListener('mouseleave', () => { dica.classList.remove('on'); diaDica = null; });
 
-      // --- clique: lista fixa ao lado, ligada ao dia ---
-      const desenharLinha = (cel) => {
-        const r = cel.getBoundingClientRect(); const p = pop.getBoundingClientRect();
-        const direita = p.left >= r.right;
-        const x1 = direita ? r.right : r.left; const y1 = r.top + r.height / 2;
-        const x2 = direita ? p.left : p.right; const y2 = Math.min(Math.max(y1, p.top + 18), p.top + 44);
+      if (window.matchMedia('(hover: hover)').matches) {
+        let diaDica = null;
+        grade.addEventListener('mousemove', (ev) => {
+          const cel = ev.target.closest('[data-dia]');
+          if (!cel) { dica.classList.remove('on'); diaDica = null; return; }
+          if (cel.dataset.dia !== diaDica) {
+            diaDica = cel.dataset.dia;
+            const lst = doDia(diaDica);
+            const a = andamento(lst);
+            const coms = comentariosDe(lst).slice(0, 2);
+            dica.innerHTML = `<div class="cal-dica-l1"><i class="bi bi-eye"></i> ${lst.length ? plural(lst.length, 'item', 'itens') : 'Nada neste dia'}</div>
+              ${lst.length ? `<div class="cal-dica-and">${a.fazer} a fazer · ${a.andando} em andamento · ${a.feito} concluída(s)</div>` : ''}
+              ${coms.map((k) => `<div class="cal-dica-com"><i class="bi bi-chat-left-text"></i><span><b>${esc((k.quem || '').split(' ')[0])}:</b> ${esc(corta(k.texto, 70))}</span></div>`).join('')}
+              ${lst.length ? '<div class="cal-dica-l2">clique para ver a lista ao lado</div>' : ''}`;
+            dica.classList.add('on');
+          }
+          const w = dica.offsetWidth; const h = dica.offsetHeight;
+          let x = ev.clientX + 16; if (x + w > innerWidth - 6) x = ev.clientX - w - 12;
+          let y = ev.clientY + 18; if (y + h > innerHeight - 6) y = ev.clientY - h - 12;
+          dica.style.transform = `translate(${x}px, ${y}px)`;
+        });
+        grade.addEventListener('mouseleave', () => { dica.classList.remove('on'); diaDica = null; });
+      }
+
+      // linha do dia escolhido até a lista da direita (só quando a lista está ao lado)
+      const ligar = () => {
+        const cel = grade.querySelector(`[data-dia="${diaSel}"]`);
+        const alvo = $('#cal-dia h3');
+        if (!cel || !alvo) { linha.classList.remove('on'); return; }
+        const r = cel.getBoundingClientRect(); const p = alvo.getBoundingClientRect();
+        if (p.left < r.right + 8 || r.bottom < 0 || r.top > innerHeight) { linha.classList.remove('on'); return; }
+        const x1 = r.right; const y1 = r.top + r.height / 2;
+        const x2 = p.left - 6; const y2 = p.top + p.height / 2;
         const meio = (x1 + x2) / 2;
         linha.querySelector('path').setAttribute('d', `M${x1},${y1} C${meio},${y1} ${meio},${y2} ${x2},${y2}`);
         linha.classList.remove('on'); void linha.offsetWidth; linha.classList.add('on');
       };
-      const mostrar = (cel) => {
-        celFixa = cel.dataset.dia;
-        dica.classList.remove('on'); diaDica = null;
-        const lst = doDia(celFixa);
-        const titDia = new Date(`${celFixa}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
-        const feitos = lst.filter((i) => i.feito).length;
-        pop.firstElementChild.innerHTML = `<div class="cal-pop-cab"><b>${esc(titDia)}</b>
-            <span>${lst.length ? `${feitos}/${lst.length} concluído(s)` : ''}</span>
-            <button type="button" class="cal-pop-x" aria-label="Fechar"><i class="bi bi-x-lg"></i></button></div>
-          ${lst.length ? `<ul>${lst.slice(0, 30).map((i, n) => `<li style="--n:${n}" data-link="${esc(i.link)}" tabindex="0">
-              <div class="cal-pop-lin"><i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="t">${esc(i.titulo)}</span>${etiqueta(i)}</div>
-              ${i.faixaTxt ? `<div class="cal-pop-faixa">${esc(i.faixaTxt)}</div>` : ''}
-              <div class="cal-pop-det"><div><dl>
-                <dt>Urgência</dt><dd>${esc(c.urgencias[i.prioridade] || '—')}</dd>
-                <dt>Quando</dt><dd>${i.ini ? `${fmtCurta(i.ini)} → ${fmtCurta(i.fim)}` : i.comeca ? `${fmtCurta(i.comeca)} → ${fmtCurta(i.dia)}` : esc(i.hora || 'dia todo')}</dd>
-                <dt>Situação</dt><dd>${esc(i.situacao || '—')}</dd>
-                ${i.responsavel ? `<dt>Responsável</dt><dd>${esc(i.responsavel)}</dd>` : ''}
-                ${i.detalhe ? `<dt>Detalhes</dt><dd>${esc(i.detalhe)}</dd>` : ''}
-                <dt>Origem</dt><dd>${i.fonte === 'orcim' ? 'Orcim' : 'TI do Beija-Flor'} · ${esc(i.numero)}</dd>
-              </dl>
-              ${(i.comentarios || []).length ? `<div class="cal-pop-coms">${i.comentarios.map((k) => `<div class="cal-pop-com"><b>${esc(k.quem || '—')}</b> <span>${esc(relativo(k.quando))}</span><div>${esc(corta(k.texto, 160))}</div></div>`).join('')}</div>` : ''}
-              <span class="cal-pop-abrir">Abrir <i class="bi bi-arrow-right"></i></span></div></div>
-            </li>`).join('')}</ul>${lst.length > 30 ? `<div class="cal-pop-mais">+${lst.length - 30} na lista ao lado</div>` : ''}`
-    : '<div class="cal-pop-vazio">Nada neste dia.</div>'}`;
-        pop.classList.add('fixo');
-        const r = cel.getBoundingClientRect();
-        const pw = pop.offsetWidth || 340; const ph = pop.offsetHeight || 140;
-        let x = r.right + 34; if (x + pw > innerWidth - 8) x = Math.max(8, r.left - pw - 34);
-        let y = r.top - 10;
-        y = Math.max(8, Math.min(y, innerHeight - Math.max(ph, 360) - 8));
-        pop.firstElementChild.style.maxHeight = `${innerHeight - y - 8}px`;
-        const primeira = !pop.classList.contains('on');
-        if (primeira) pop.classList.add('sem-mov');
-        pop.style.transform = `translate(${x}px, ${y}px)`;
-        pop.firstElementChild.classList.remove('troca'); void pop.offsetWidth; pop.firstElementChild.classList.add('troca');
-        pop.classList.add('on');
-        if (primeira) setTimeout(() => pop.classList.remove('sem-mov'), 30);
-        setTimeout(() => desenharLinha(cel), primeira ? 30 : 230); // espera o popup chegar no lugar
-      };
-      // o clique no dia redesenha a grade: pega a célula nova pelo dia
       grade.addEventListener('click', (ev) => {
-        const dia = ev.target.closest('[data-dia]')?.dataset.dia;
-        if (!dia) return;
-        setTimeout(() => { const cel = grade.querySelector(`[data-dia="${dia}"]`); if (cel) mostrar(cel); }, 0);
+        if (!ev.target.closest('[data-dia]')) return;
+        dica.classList.remove('on');
+        setTimeout(ligar, 30);
       });
-      if (!pop.dataset.ligado) {
-        pop.dataset.ligado = '1';
-        pop.addEventListener('click', (ev) => {
-          if (ev.target.closest('.cal-pop-x')) { fecharPop(); return; }
-          const li = ev.target.closest('li[data-link]');
-          if (li) { fecharPop(); location.hash = li.dataset.link; }
-        });
-        pop.addEventListener('keydown', (ev) => {
-          const li = ev.target.closest('li[data-link]');
-          if (li && ev.key === 'Enter') { fecharPop(); location.hash = li.dataset.link; }
-        });
-        const fecharPop = () => { pop.classList.remove('on', 'fixo'); document.getElementById('cal-linha')?.classList.remove('on'); };
-        document.addEventListener('mousedown', (ev) => {
-          if (pop.classList.contains('fixo') && !pop.contains(ev.target) && !ev.target.closest('#cal-dias')) fecharPop();
-        });
-        document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') fecharPop(); });
-        document.addEventListener('scroll', (ev) => { if (!pop.contains(ev.target)) fecharPop(); }, true);
-        window.addEventListener('resize', fecharPop);
-        window.addEventListener('hashchange', () => { fecharPop(); document.getElementById('cal-dica')?.classList.remove('on'); });
+      const apagar = () => linha.classList.remove('on');
+      if (!linha.dataset.ligado) {
+        linha.dataset.ligado = '1';
+        window.addEventListener('scroll', apagar, true);
+        window.addEventListener('resize', apagar);
+        window.addEventListener('hashchange', () => { apagar(); document.getElementById('cal-dica')?.classList.remove('on'); });
       }
-      void fechar;
     }
 
     $$('.cal-filtros [data-f]').forEach((b) => b.addEventListener('click', () => {
@@ -3781,9 +3762,9 @@ function itemHistorico(e) {
       passos: [
         { alvo: '.side-nav a[href="#/painel"]', titulo: 'Fica no Painel do gestor', texto: 'No menu, em Painel do Gestor - Resultados → Painel do gestor. Ele já abre no Calendário.' },
         { rota: '#/painel?aba=calendario', alvo: '.cal-grade', titulo: 'O mês', texto: 'Em cada dia, um número por urgência, na cor dela. O reloginho indica que algo daquele dia está atrasado.' },
-        { alvo: '.cal-legenda', titulo: 'Cores', texto: 'Vermelho = operação parada, laranja = parada iminente, amarelo = operação prejudicada, azul = requisição.' },
+        { alvo: '.cal-leg', titulo: 'Legenda', texto: 'Urgência: vermelho = operação parada, laranja = parada iminente, amarelo = operação prejudicada, azul = requisição. Andamento (ao lado do número do dia): ○ a fazer, ◐ em andamento ou aguardando, ✓ concluída. O reloginho é atrasado e a linha fina é atividade de vários dias.' },
         { alvo: '.cal-grade', titulo: 'Passe o mouse num dia', texto: 'O cursor vira um olho e aparece um resumo pequeno: quantos itens, quantos concluídos e os últimos comentários.' },
-        { alvo: '.cal-grade', titulo: 'Clique no dia', texto: 'Abre a lista do dia ao lado, ligada ao dia por uma linha. Passe o mouse num item para ele abrir como sanfona, com os detalhes e comentários. Clique no item para abrir.' },
+        { alvo: '.cal-dia', titulo: 'Clique no dia', texto: 'A lista do dia aparece aqui ao lado, ligada ao dia por uma linha. Passe o mouse num item para ele abrir como sanfona, com os detalhes e comentários. Clique no item para abrir.' },
         { alvo: () => $('.cal-faixa')?.closest('.cal-cel') || $('.cal-grade'), titulo: 'Atividades de vários dias', texto: 'Aparecem como uma linha bem fina, de "início" até "entrega", na cor da urgência.' },
         { alvo: '.cal-filtros', titulo: 'O que mostrar', texto: 'O que é da TI do Beija-Flor e "só em aberto".' },
         { alvo: '.cal-topo .btn', titulo: 'Outros meses', texto: 'Use as setas para ir ao mês anterior ou ao seguinte.' },
