@@ -1012,48 +1012,86 @@
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
       });
     };
-    // Hover num dia: popup animado com a lista do dia e se cada item está concluído
+    // Popup do dia. Hover: mostra a lista do dia. Clique: o popup fica aberto e, ao passar o
+    // mouse num item, ele abre por completo (sanfona) com os detalhes; clique no item abre a tela dele.
     if (window.matchMedia('(hover: hover)').matches) {
       let pop = document.getElementById('cal-pop');
       if (!pop) {
         pop = document.createElement('div');
         pop.id = 'cal-pop';
-        pop.setAttribute('role', 'tooltip');
         pop.innerHTML = '<div class="cal-pop-in"></div>';
         document.body.appendChild(pop);
-        window.addEventListener('hashchange', () => pop.classList.remove('on'));
+        window.addEventListener('hashchange', () => pop.classList.remove('on', 'fixo'));
       }
-      const esconder = () => { pop.classList.remove('on'); diaPop = null; };
       let diaPop = null;
-      const grade = $('#cal-dias');
-      grade.addEventListener('mouseover', (ev) => {
-        const cel = ev.target.closest('[data-dia]');
-        if (!cel || cel.dataset.dia === diaPop) return;
+      const esconder = () => { pop.classList.remove('on', 'fixo'); diaPop = null; };
+      const etiqueta = (i) => (i.feito ? tag('tag-green', 'Concluída') : i.atrasado ? tag('tag-red', 'Atrasada') : i.aberto ? tag('tag-blue', 'Em aberto') : tag('tag-gray', i.situacao));
+      const mostrar = (cel, fixo) => {
         diaPop = cel.dataset.dia;
         const lst = (porDia().get(diaPop) || []).slice()
           .sort((a, b) => Number(a.feito) - Number(b.feito) || b.prioridade - a.prioridade || (a.hora || '').localeCompare(b.hora || ''));
         const titDia = new Date(`${diaPop}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
         const feitos = lst.filter((i) => i.feito).length;
+        const max = fixo ? 30 : 8;
         pop.firstElementChild.innerHTML = `<div class="cal-pop-cab"><b>${esc(titDia)}</b>
-            <span>${lst.length ? `${feitos}/${lst.length} concluído(s)` : ''}</span></div>
-          ${lst.length ? `<ul>${lst.slice(0, 8).map((i, n) => `<li style="--n:${n}">
-              <i class="cal-num ${COR_URG[i.prioridade]}"></i>
-              <span class="t">${esc(i.titulo)}</span>
-              ${i.feito ? tag('tag-green', 'Concluída') : i.atrasado ? tag('tag-red', 'Atrasada') : i.aberto ? tag('tag-blue', 'Em aberto') : tag('tag-gray', i.situacao)}
-            </li>`).join('')}</ul>${lst.length > 8 ? `<div class="cal-pop-mais">+${lst.length - 8} — clique no dia para ver tudo</div>` : ''}`
+            <span>${lst.length ? `${feitos}/${lst.length} concluído(s)` : ''}</span>
+            ${fixo ? '<button type="button" class="cal-pop-x" aria-label="Fechar"><i class="bi bi-x-lg"></i></button>' : ''}</div>
+          ${lst.length ? `<ul>${lst.slice(0, max).map((i, n) => `<li style="--n:${n}" data-link="${esc(i.link)}" tabindex="${fixo ? 0 : -1}">
+              <div class="cal-pop-lin"><i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="t">${esc(i.titulo)}</span>${etiqueta(i)}</div>
+              <div class="cal-pop-det"><div><dl>
+                <dt>Urgência</dt><dd>${esc(c.urgencias[i.prioridade] || '—')}</dd>
+                <dt>Quando</dt><dd>${esc(i.hora || 'dia todo')}</dd>
+                <dt>Situação</dt><dd>${esc(i.situacao || '—')}</dd>
+                ${i.responsavel ? `<dt>Responsável</dt><dd>${esc(i.responsavel)}</dd>` : ''}
+                ${i.detalhe ? `<dt>Detalhes</dt><dd>${esc(i.detalhe)}</dd>` : ''}
+                <dt>Origem</dt><dd>${i.fonte === 'orcim' ? 'Orcim' : 'TI do Beija-Flor'} · ${esc(i.numero)}</dd>
+              </dl><span class="cal-pop-abrir">Abrir <i class="bi bi-arrow-right"></i></span></div></div>
+            </li>`).join('')}</ul>${lst.length > max ? `<div class="cal-pop-mais">+${lst.length - max} na lista ao lado</div>` : ''}
+            ${fixo ? '' : '<div class="cal-pop-dica">Clique no dia para abrir os detalhes</div>'}`
     : '<div class="cal-pop-vazio">Nada neste dia.</div>'}`;
+        pop.classList.toggle('fixo', fixo);
         const r = cel.getBoundingClientRect();
-        const pw = pop.offsetWidth || 300; const ph = pop.offsetHeight || 120;
+        const pw = pop.offsetWidth || 320; const ph = pop.offsetHeight || 120;
         let x = r.right + 10; if (x + pw > innerWidth - 8) x = Math.max(8, r.left - pw - 10);
         let y = r.top - 6; if (y + ph > innerHeight - 8) y = Math.max(8, innerHeight - ph - 8);
+        // fixo: deixa espaço para a sanfona abrir e rola por dentro se precisar
+        if (fixo) y = Math.max(8, Math.min(y, innerHeight - Math.max(ph, 360) - 8));
+        pop.firstElementChild.style.maxHeight = fixo ? `${innerHeight - y - 8}px` : '';
         const primeira = !pop.classList.contains('on');
         if (primeira) pop.classList.add('sem-mov'); // na primeira vez aparece no lugar, sem deslizar
         pop.style.transform = `translate(${x}px, ${y}px)`;
         pop.firstElementChild.classList.remove('troca'); void pop.offsetWidth; pop.firstElementChild.classList.add('troca');
         requestAnimationFrame(() => { pop.classList.add('on'); if (primeira) requestAnimationFrame(() => pop.classList.remove('sem-mov')); });
+      };
+      const grade = $('#cal-dias');
+      grade.addEventListener('mouseover', (ev) => {
+        if (pop.classList.contains('fixo')) return; // aberto pelo clique: fica parado
+        const cel = ev.target.closest('[data-dia]');
+        if (cel && cel.dataset.dia !== diaPop) mostrar(cel, false);
       });
-      grade.addEventListener('mouseleave', esconder);
-      grade.addEventListener('click', esconder);
+      grade.addEventListener('mouseleave', () => { if (!pop.classList.contains('fixo')) esconder(); });
+      // o clique no dia redesenha a grade: pega a célula nova pelo dia
+      grade.addEventListener('click', (ev) => {
+        const dia = ev.target.closest('[data-dia]')?.dataset.dia;
+        if (!dia) return;
+        setTimeout(() => { const cel = grade.querySelector(`[data-dia="${dia}"]`); if (cel) mostrar(cel, true); }, 0);
+      });
+      if (!pop.dataset.ligado) {
+        pop.dataset.ligado = '1';
+        pop.addEventListener('click', (ev) => {
+          if (ev.target.closest('.cal-pop-x')) { pop.classList.remove('on', 'fixo'); return; }
+          const li = ev.target.closest('li[data-link]');
+          if (li && pop.classList.contains('fixo')) { pop.classList.remove('on', 'fixo'); location.hash = li.dataset.link; }
+        });
+        document.addEventListener('mousedown', (ev) => {
+          if (pop.classList.contains('fixo') && !pop.contains(ev.target) && !ev.target.closest('#cal-dias')) pop.classList.remove('on', 'fixo');
+        });
+        document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') pop.classList.remove('on', 'fixo'); });
+        pop.addEventListener('keydown', (ev) => {
+          const li = ev.target.closest('li[data-link]');
+          if (li && ev.key === 'Enter') { pop.classList.remove('on', 'fixo'); location.hash = li.dataset.link; }
+        });
+      }
     }
 
     $$('.cal-filtros [data-f]').forEach((b) => b.addEventListener('click', () => {

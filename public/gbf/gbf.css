@@ -751,3 +751,25 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 @keyframes calPopItem { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
 .cal-pop-mais, .cal-pop-vazio { color: var(--muted); font-size: .74rem; margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { #cal-pop, #cal-pop .cal-pop-in, #cal-pop .troca li { transition: none; animation: none; } }
+
+/* Popup do dia fixado pelo clique: interativo, itens abrem em sanfona */
+#cal-pop.fixo { pointer-events: auto; width: 340px; }
+#cal-pop.fixo .cal-pop-in { max-height: calc(100vh - 24px); overflow-y: auto; }
+#cal-pop li { display: block; }
+.cal-pop-lin { display: flex; align-items: center; gap: 7px; }
+.cal-pop-x { border: 0; background: transparent; color: var(--muted); padding: 0 2px; margin-left: 4px; line-height: 1; }
+.cal-pop-x:hover { color: var(--ink); }
+.cal-pop-cab { align-items: center; }
+.cal-pop-cab span { margin-left: auto; }
+.cal-pop-dica { color: var(--muted); font-size: .7rem; margin-top: 6px; }
+/* sanfona: abre a altura de verdade com grid-template-rows (0fr -> 1fr), suave */
+.cal-pop-det { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .28s cubic-bezier(.2, .8, .2, 1), opacity .2s ease; }
+.cal-pop-det > div { overflow: hidden; min-height: 0; }
+#cal-pop.fixo li { cursor: pointer; border-radius: 8px; padding: 5px 6px; margin: 0 -6px; transition: background .15s; }
+#cal-pop.fixo li:hover, #cal-pop.fixo li:focus-visible { background: #f1f5f9; outline: none; }
+#cal-pop.fixo li:hover .cal-pop-det, #cal-pop.fixo li:focus-visible .cal-pop-det { grid-template-rows: 1fr; opacity: 1; }
+.cal-pop-det dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0 0 16px; font-size: .76rem; }
+.cal-pop-det dt { color: var(--muted); font-weight: 500; }
+.cal-pop-det dd { margin: 0; color: var(--ink); word-break: break-word; }
+.cal-pop-abrir { display: inline-flex; gap: 4px; align-items: center; margin: 4px 0 2px 16px; font-size: .74rem; font-weight: 600; color: var(--brand); }
+@media (prefers-reduced-motion: reduce) { .cal-pop-det { transition: none; } }
