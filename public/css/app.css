@@ -96,7 +96,7 @@ body {
 .app-shell { display: flex; min-height: 100vh; }
 
 .sidebar {
-  width: 250px; flex-shrink: 0;
+  width: 232px; flex-shrink: 0;
   background: var(--dark);
   color: #cbd5e1;
   display: flex; flex-direction: column;
@@ -104,10 +104,10 @@ body {
 }
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px;
-  padding: 18px 18px 14px; color: #fff;
+  padding: 14px 14px 10px; color: #fff;
 }
 .sidebar-logo {
-  width: 42px; height: 42px; border-radius: 12px; overflow: hidden;
+  width: 36px; height: 36px; border-radius: 10px; overflow: hidden;
   background: linear-gradient(135deg, var(--primary), var(--primary-2));
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 1.2rem; flex-shrink: 0;
@@ -115,14 +115,28 @@ body {
 .sidebar-logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 4px; }
 .sidebar-brand strong { display: block; font-size: .98rem; line-height: 1.15; }
 .sidebar-brand small { color: #94a3b8; font-size: .72rem; }
-.sidebar-nav { flex: 1; padding: 8px 10px; overflow-y: auto; }
+.sidebar-nav { flex: 1; padding: 4px 10px 8px; overflow-y: auto; }
 .nav-item {
-  display: flex; align-items: center; gap: 11px;
-  padding: 10px 12px; margin-bottom: 2px; border-radius: 10px;
-  color: #cbd5e1; text-decoration: none; font-weight: 500; font-size: .9rem;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 10px; margin-bottom: 1px; border-radius: 8px;
+  color: #cbd5e1; text-decoration: none; font-weight: 500; font-size: .85rem;
   transition: background .15s, color .15s;
 }
-.nav-item i { font-size: 1.05rem; width: 20px; text-align: center; }
+.nav-item i { font-size: .95rem; width: 18px; text-align: center; }
+
+/* Abrir chamado: a acao principal, no topo do menu e com fundo proprio */
+.nav-cta {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 2px 0 10px; padding: 10px 12px; border-radius: 10px;
+  background: linear-gradient(135deg, #12a383, var(--primary));
+  color: #fff; font-weight: 700; font-size: .92rem; text-decoration: none;
+  box-shadow: 0 4px 14px rgba(18,163,131,.35), inset 0 1px 0 rgba(255,255,255,.18);
+  transition: transform .12s, box-shadow .15s, filter .15s;
+}
+.nav-cta i { font-size: 1.05rem; }
+.nav-cta:hover { color: #fff; filter: brightness(1.08); box-shadow: 0 6px 18px rgba(18,163,131,.45); transform: translateY(-1px); }
+.nav-cta:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.nav-cta.active { box-shadow: 0 0 0 2px rgba(255,255,255,.55), 0 4px 14px rgba(18,163,131,.35); }
 .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
 .nav-item.active { background: rgba(14,124,102,.22); color: #fff; box-shadow: inset 3px 0 0 #3fd1ae; }
 .nav-sep { border-color: rgba(255,255,255,.08); margin: 10px 6px; }
@@ -651,9 +665,15 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 }
 
 /* Menu em categorias (Orcim / Dia a dia da TI / Administração) */
-.nav-group { color: #64748b; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  padding: 14px 12px 6px; }
-.nav-group:first-child { padding-top: 6px; }
+.nav-group { color: #64748b; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 9px 10px 4px; width: 100%; background: none; border: 0; border-radius: 6px; cursor: pointer; text-align: left; }
+.nav-group:hover { background: rgba(255,255,255,.04); }
+.nav-group:focus-visible { outline: 2px solid rgba(255,255,255,.4); outline-offset: -2px; }
+.nav-group > span { flex: 1; }
+.nav-caret { font-size: .7rem; opacity: .7; transition: transform .15s; }
+.nav-sec.fechado .nav-caret { transform: rotate(-90deg); }
+.nav-sec.fechado .nav-sec-body { display: none; }
+.nav-sec + .nav-sec { margin-top: 2px; }
 
 /* Dia a dia da TI aberto dentro da Central */
 .main-content.ti-embed { padding: 0; display: flex; }

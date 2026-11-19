@@ -11,6 +11,8 @@ function buildNav(u) {
   const master = Roles.isMaster(u);
   const client = Roles.isClient(u);
   const items = [];
+  // Abrir chamado: a acao principal do sistema, sempre no topo do menu e em destaque
+  if (can('ticket.create')) items.push({ cta: true, href: '#/new', icon: 'bi-plus-lg', label: 'Abrir chamado' });
   const orcim = [];
   if (can('dashboard.view')) orcim.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados'
@@ -19,7 +21,6 @@ function buildNav(u) {
   if (client && can('ticket.view_company')) orcim.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe' });
   orcim.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
   if (can('inventory.view')) orcim.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
-  if (can('ticket.create')) orcim.push({ href: '#/new', icon: 'bi-plus-circle', label: 'Novo Chamado' });
   items.push({ group: 'Orcim', g: 'g-orcim' }, ...orcim.map((i) => ({ ...i, g: 'g-orcim' })));
 
   const tiGestor = can('ti.manage');
@@ -137,15 +138,52 @@ function pageTitleFromPath() {
   return map[path] || 'Sistema';
 }
 
+// Grupos do menu que o usuario deixou fechados (padrao: Administracao fechada)
+function navFechados() {
+  try {
+    const v = JSON.parse(localStorage.getItem('nav_fechados'));
+    if (Array.isArray(v)) return v;
+  } catch {}
+  return ['g-admin'];
+}
+
 function renderNav() {
   const user = currentUser();
   const nav = document.getElementById('side-nav');
   const items = buildNav(user);
-  nav.innerHTML = items.map((it) =>
-    it.group ? `<div class="nav-group ${it.g || ''}">${esc(it.group)}</div>` :
-    it.sep ? '<hr class="nav-sep">' :
-    `<a class="nav-item ${it.g || ''}" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`
-  ).join('');
+  // Cada grupo (Orcim, Dia a dia da TI, Administracao) abre e fecha clicando no titulo;
+  // o que ficou fechado e lembrado neste navegador.
+  const fechados = navFechados();
+  let html = '';
+  let aberto = false;
+  const fecha = () => { if (aberto) html += '</div></div>'; aberto = false; };
+  items.forEach((it) => {
+    if (it.cta) {
+      html += `<a class="nav-cta" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`;
+    } else if (it.group) {
+      fecha();
+      const fechado = fechados.includes(it.g);
+      html += `<div class="nav-sec${fechado ? ' fechado' : ''}" data-sec="${it.g || ''}">`
+        + `<button type="button" class="nav-group ${it.g || ''}" aria-expanded="${!fechado}">`
+        + `<span>${esc(it.group)}</span><i class="bi bi-chevron-down nav-caret"></i></button>`
+        + '<div class="nav-sec-body">';
+      aberto = true;
+    } else if (it.sep) {
+      html += '<hr class="nav-sep">';
+    } else {
+      html += `<a class="nav-item ${it.g || ''}" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`;
+    }
+  });
+  fecha();
+  nav.innerHTML = html;
+  nav.querySelectorAll('.nav-group').forEach((b) => b.addEventListener('click', () => {
+    const sec = b.closest('.nav-sec');
+    const fechado = sec.classList.toggle('fechado');
+    b.setAttribute('aria-expanded', String(!fechado));
+    const lista = navFechados().filter((g) => g !== sec.dataset.sec);
+    if (fechado) lista.push(sec.dataset.sec);
+    try { localStorage.setItem('nav_fechados', JSON.stringify(lista)); } catch {}
+  }));
 
   // identities
   const name = user.name || user.username;
@@ -216,6 +254,16 @@ function activeNav() {
       (target === '/dashboard' || target === '/ti') ? path === target || (target === '/ti' && path.startsWith('/ti?'))
         : path === target || path.startsWith(target + '/') || path.startsWith(target + '?'));
   });
+  const cta = document.querySelector('#side-nav .nav-cta');
+  if (cta) cta.classList.toggle('active', /^\/new($|\?)/.test(path));
+  // a pagina aberta fica sempre visivel: abre o grupo dela se estiver fechado
+  const ativo = document.querySelector('#side-nav .nav-item.active');
+  const sec = ativo && ativo.closest('.nav-sec.fechado');
+  if (sec) {
+    sec.classList.remove('fechado');
+    const b = sec.querySelector('.nav-group');
+    if (b) b.setAttribute('aria-expanded', 'true');
+  }
 }
 
 // ---------------- Roteador ----------------
