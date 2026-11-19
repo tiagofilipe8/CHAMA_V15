@@ -62,7 +62,7 @@ Views.tickets = async function tickets(el, opts = {}) {
   el.innerHTML = `
     ${(isManager && !opts.watching && !opts.mine) ? `<div class="d-flex justify-content-end mb-2">
           <a class="btn btn-sm btn-outline-primary" href="${opts.team ? '#/tickets' : '#/team-tickets'}">
-            <i class="bi ${opts.team ? 'bi-person-lines-fill' : 'bi-people'}"></i> ${opts.team ? 'Meus chamados' : 'Chamados da equipe'}</a>
+            <i class="bi ${opts.team ? 'bi-ticket-detailed' : 'bi-people'}"></i> ${opts.team ? 'Meus chamados' : 'Chamados da equipe'}</a>
         </div>` : ''}
 
     <div class="board-toolbar">

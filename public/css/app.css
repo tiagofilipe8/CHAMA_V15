@@ -8,6 +8,7 @@
   --primary-soft: #e3f4ef;
   --dark: #13253a;
   --dark-2: #1c334d;
+  --side: #26313d;        /* menu lateral: azul acinzentado, pouco saturado */
   --bg: #edf1f4;
   --card: #ffffff;
   --border: #dce3e9;
@@ -97,7 +98,7 @@ body {
 
 .sidebar {
   width: 232px; flex-shrink: 0;
-  background: var(--dark);
+  background: var(--side);
   color: #cbd5e1;
   display: flex; flex-direction: column;
   position: sticky; top: 0; height: 100vh;
@@ -139,9 +140,11 @@ body {
 .nav-cta.active { box-shadow: 0 0 0 2px rgba(255,255,255,.55), 0 4px 14px rgba(18,163,131,.35); }
 
 /* Meus chamados: logo abaixo do Abrir chamado, com sininho quando ha novidade */
-.nav-top { background: rgba(255,255,255,.06); color: #fff; font-weight: 600; margin-bottom: 8px; }
-.nav-top > i { color: #7dd3c0; }
-.nav-top.active { background: rgba(18,163,131,.24); box-shadow: inset 3px 0 0 #3fd1ae; }
+.nav-top { background: rgba(168,186,206,.12); border: 1px solid rgba(168,186,206,.16); color: #e6ecf2;
+  font-weight: 600; margin-bottom: 8px; padding: 8px 10px; }
+.nav-top > i { color: #b4c4d6; }
+.nav-item.nav-top:hover { background: rgba(168,186,206,.18); color: #fff; }
+.nav-item.nav-top.active { color: #fff; background: rgba(168,186,206,.22); border-color: rgba(168,186,206,.3); box-shadow: inset 3px 0 0 #a9bdd3; }
 .nav-bell { margin-left: auto; display: inline-flex; align-items: center; gap: 3px;
   background: #f59e0b; color: #1f2937; border-radius: 999px; padding: 1px 7px 1px 6px; font-size: .72rem; font-weight: 800; }
 .nav-bell i { font-size: .72rem; width: auto; color: #1f2937; animation: sino 1.6s ease-in-out 2; }
@@ -734,17 +737,19 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
    Cadastros (violeta), Sistema (cinza) */
 .nav-group { display: flex; align-items: center; gap: 7px; }
 .nav-group::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.nav-group.g-atend  { color: #6b9cf0; }
+.nav-group.g-atend  { color: #90a9c9; }
 .nav-group.g-equip  { color: #f0b45b; }
 .nav-group.g-locais { color: #3fd1ae; }
 .nav-group.g-cad    { color: #a98bf0; }
 .nav-group.g-sis    { color: #94a3b8; }
-.nav-item.g-atend i  { color: #7aa7f2; }
+.nav-item.g-atend i  { color: #a3b8d3; }
+.nav-item.g-solto i  { color: #a3b8d3; }
 .nav-item.g-equip i  { color: #f3c06f; }
 .nav-item.g-locais i { color: #4fd8b6; }
 .nav-item.g-cad i    { color: #b39cf3; }
 .nav-item.g-sis i    { color: #a7b3c4; }
-.nav-item.g-atend.active  { background: rgba(37,99,235,.22);  box-shadow: inset 3px 0 0 #6b9cf0; }
+.nav-item.g-atend.active,
+.nav-item.g-solto.active  { background: rgba(144,169,201,.2); box-shadow: inset 3px 0 0 #90a9c9; }
 .nav-item.g-equip.active  { background: rgba(217,119,6,.22);  box-shadow: inset 3px 0 0 #f0b45b; }
 .nav-item.g-locais.active { background: rgba(14,124,102,.26); box-shadow: inset 3px 0 0 #3fd1ae; }
 .nav-item.g-cad.active    { background: rgba(124,58,237,.24); box-shadow: inset 3px 0 0 #a98bf0; }
@@ -764,7 +769,7 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 [data-bs-theme="dark"] {
   color-scheme: dark;
   --primary: #2bb894; --primary-2: #22a07f; --primary-soft: rgba(43, 184, 148, .16);
-  --dark: #0b131c; --dark-2: #2a4058; --ink: #e8eef4;
+  --dark: #0b131c; --dark-2: #2a4058; --ink: #e8eef4; --side: #151c24;
   --bg: #0f1720; --card: #16202b; --surface-2: #1c2733; --surface-3: #22303e; --border: #2b3947;
   --text: #e2e8f0; --muted: #94a3b8;
   --bs-primary: #2bb894; --bs-primary-rgb: 43, 184, 148;

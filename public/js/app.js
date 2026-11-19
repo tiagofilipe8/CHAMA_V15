@@ -23,7 +23,7 @@ function buildNav(u) {
   // Meus chamados (os que abri e os que estao comigo), logo abaixo, com sininho de novidade.
   // Para o cliente a lista "Chamados" ja e a dele: o atalho aponta para ela e ela sai do grupo.
   const listaJaEMinha = client || (!can('ticket.view_all') && !can('ticket.view_company'));
-  items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-person-lines-fill', label: 'Meus chamados' });
+  items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-ticket-detailed', label: 'Meus chamados' });
 
   const atendimento = [];
   if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
@@ -31,7 +31,9 @@ function buildNav(u) {
   if (!listaJaEMinha) atendimento.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
   if (client && can('ticket.view_company')) atendimento.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da equipe' });
   atendimento.push({ href: '#/watching', icon: 'bi-eye', label: 'Acompanhando' });
-  grupo('Atendimento', 'g-atend', atendimento);
+  // so um item (ex.: cliente, que so tem "Acompanhando"): fica solto, sem titulo de grupo
+  if (atendimento.length === 1) items.push({ ...atendimento[0], g: 'g-solto' });
+  else grupo('Atendimento', 'g-atend', atendimento);
 
   grupo('Equipamentos', 'g-equip', can('inventory.view')
     ? [{ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' }] : []);
