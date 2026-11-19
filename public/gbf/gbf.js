@@ -315,6 +315,7 @@
     ];
     let sec = 'dia';
     $('#side-nav').innerHTML = '<a class="side-cta" href="#/novo" data-rota="#/novo"><i class="bi bi-plus-lg"></i><span>Novo pedido</span></a>'
+      + `<a href="#/notificacoes" data-rota="#/notificacoes" class="sec-dia side-notif" id="side-notif"><i class="bi bi-bell"></i><span>Notificações</span><b class="side-cont urg${naoLidasNotif ? '' : ' d-none'}" id="side-notif-n">${naoLidasNotif > 99 ? '99+' : naoLidasNotif}</b></a>`
       + itens.map((i) => {
         // cada seção do menu tem a sua cor (ícones, título e item ativo)
         if (i[0] === 'grp') { sec = SECAO_MENU[i[1]] || 'dia'; return `<div class="grp sec-${sec}">${esc(i[1])}</div>`; }
@@ -342,7 +343,6 @@
 
   function marcarMenu(base) {
     $$('#side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.rota === base));
-    $('#top-aba-notif')?.classList.toggle('ativa', location.hash.startsWith('#/notificacoes'));
     $('#side').classList.remove('open');
   }
 
@@ -401,6 +401,57 @@
     if (abas) abas.after(el); else view().prepend(el);
   }
 
+  // Animações: o destaque do filtro/aba desliza do item anterior para o novo, os números contam
+  // até o valor e o conteúdo entra suave. Quem pede menos movimento no sistema não vê animação.
+  const posFiltro = {}; // última posição do destaque de cada grupo (para deslizar de onde estava)
+  let direcaoPeriodo = 0;
+  const semMovimento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animarTela() {
+    $$('.pg-seg, .pg-abas', view()).forEach((g) => {
+      const chave = `${location.hash.split('?')[0]}|${g.getAttribute('aria-label') || g.className}`;
+      g.classList.add('anim');
+      let ind = g.querySelector(':scope > .ind');
+      if (!ind) { ind = document.createElement('span'); ind.className = 'ind'; g.prepend(ind); }
+      const on = g.querySelector('a.on');
+      if (!on) { ind.style.opacity = '0'; return; }
+      const alvo = { left: on.offsetLeft, width: on.offsetWidth };
+      const antes = posFiltro[chave];
+      ind.style.transition = 'none';
+      Object.assign(ind.style, { opacity: '1', left: `${(antes || alvo).left}px`, width: `${(antes || alvo).width}px` });
+      void ind.offsetWidth;
+      ind.style.transition = '';
+      Object.assign(ind.style, { left: `${alvo.left}px`, width: `${alvo.width}px` });
+      posFiltro[chave] = alvo;
+      // ao clicar, o destaque já vai para o novo item (a tela troca em seguida)
+      g.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => {
+        posFiltro[chave] = { left: a.offsetLeft, width: a.offsetWidth };
+        Object.assign(ind.style, { left: `${a.offsetLeft}px`, width: `${a.offsetWidth}px` });
+        g.querySelectorAll('a.on').forEach((x) => x.classList.remove('on'));
+        a.classList.add('on');
+      }));
+    });
+    // setas do período: o nome entra do lado certo
+    $$('.pg-seta', view()).forEach((a, i) => a.addEventListener('click', () => { direcaoPeriodo = i === 0 ? -1 : 1; }));
+    const nome = $('.pg-nome', view());
+    if (nome && direcaoPeriodo) { nome.classList.add(direcaoPeriodo < 0 ? 'entra-esq' : 'entra-dir'); }
+    direcaoPeriodo = 0;
+    if (semMovimento()) return;
+    // números contam até o valor
+    $$('[data-conta]', view()).forEach((el) => {
+      const fim = Number(el.dataset.conta);
+      if (!Number.isFinite(fim) || fim <= 0) return;
+      const t0 = performance.now(); const dur = Math.min(900, 380 + fim * 25);
+      const passo = (t) => {
+        const p = Math.min(1, (t - t0) / dur);
+        el.textContent = Math.round(fim * (1 - (1 - p) ** 3));
+        if (p < 1) requestAnimationFrame(passo);
+      };
+      el.textContent = '0';
+      requestAnimationFrame(passo);
+      setTimeout(() => { el.textContent = fim; }, dur + 150); // garante o valor final (aba em segundo plano)
+    });
+  }
+
   async function render() {
     if (!EU) return;
     const seq = ++renderSeq;
@@ -440,7 +491,7 @@
       else if (a === 'checklists' && b) { marcarMenu('#/checklists'); await vFormChecklist(b === 'novo' ? null : b, seq); }
       else if (a === 'checklists') { marcarMenu('#/checklists'); await vChecklists(seq); }
       else if (a === 'novo') { marcarMenu('#/novo'); await vNovoPedido(qs, seq); }
-      else if (a === 'notificacoes') { marcarMenu(''); await vNotificacoes(qs, seq); }
+      else if (a === 'notificacoes') { marcarMenu('#/notificacoes'); await vNotificacoes(qs, seq); }
       else if (a === 'solicitacoes' && b === 'nova' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(null, qs, seq); }
       else if (a === 'solicitacoes' && b && partes[2] === 'editar' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(b, qs, seq); }
       else if (a === 'solicitacoes' && b) { marcarMenu('#/solicitacoes'); await vSolicitacao(b, seq); }
@@ -460,7 +511,7 @@
       else if (a === 'tutoriais') { marcarMenu('#/tutoriais'); await vTutoriais(seq); }
       else if (a === 'conta') { marcarMenu('#/conta'); vConta(); }
       else { location.hash = '#/'; }
-      if (seq === renderSeq) descreverTela(a, b, qs);
+      if (seq === renderSeq) { descreverTela(a, b, qs); animarTela(); }
     } catch (e) {
       if (!e.status) console.error(e);
       if (seq === renderSeq && e.status !== 401) falha(e);
@@ -561,7 +612,7 @@
         const ultimo = i === n - 1;
         return (pontos || ultimo) ? `<circle class="g-p" cx="${pts[i][0].toFixed(1)}" cy="${pts[i][1].toFixed(1)}" r="${ultimo ? 4 : 3}" fill="${ultimo ? c.cor : '#fff'}" stroke="${c.cor}" stroke-width="2"><title>${esc(dica)}</title></circle>` : '';
       }).join('');
-      return `${area}<path d="${d}" fill="none" stroke="${c.cor}" stroke-width="${j === 0 ? 2.6 : 2.2}" stroke-linejoin="round" stroke-linecap="round"/>${bolinhas}`;
+      return `${area}<path class="g-linha" pathLength="1" d="${d}" fill="none" stroke="${c.cor}" stroke-width="${j === 0 ? 2.6 : 2.2}" stroke-linejoin="round" stroke-linecap="round"/>${bolinhas}`;
     }).join('');
     const passo = Math.max(1, Math.ceil(n / (largura >= 800 ? 12 : 7)));
     const rotulos = serie.map((p, i) => (((i % passo === 0 && n - 1 - i >= passo / 2) || i === n - 1)
@@ -595,7 +646,7 @@
   const CORES_TI = [
     { campo: 'visitas', nome: 'Visitas', cor: '#0f766e' },
     { campo: 'atividades', nome: 'Atividades', cor: '#6366f1' },
-    { campo: 'solicitacoes', nome: 'Solicitações', cor: '#f59e0b' },
+    { campo: 'solicitacoes', nome: 'Pedidos de visita', cor: '#f59e0b' },
   ];
   // (as cores acima valem para a tela e para o PDF)
 
@@ -692,7 +743,7 @@
     return `<span class="pg-var ${bom ? 'bom' : 'ruim'}" title="período anterior: ${tempo ? dur(antes) : antes}${pp ? '%' : ''}">${dif > 0 ? '+' : '−'}${txt}</span>`;
   }
   const faixa = (itens) => `<div class="pg-faixa">${itens.map((i) => `<div${i.href ? ` data-href="${i.href}" class="clicavel"` : ''}>
-    <span class="l">${esc(i.l)}</span><b>${esc(i.v ?? '—')}</b> ${i.var || ''}${i.sub ? ` <span class="s">${esc(i.sub)}</span>` : ''}</div>`).join('')}</div>`;
+    <span class="l">${esc(i.l)}</span><b${typeof i.v === 'number' ? ` data-conta="${i.v}"` : ''}>${esc(i.v ?? '—')}</b> ${i.var || ''}${i.sub ? ` <span class="s">${esc(i.sub)}</span>` : ''}</div>`).join('')}</div>`;
   function listaBarras(lista, { valor = (x) => x.total, texto = (x) => x.total, cor = '', vazio = 'Nada no período.', max = 6, link = null } = {}) {
     const itens = (lista || []).filter((x) => valor(x)).slice(0, max);
     if (!itens.length) return `<div class="small-muted py-1">${esc(vazio)}</div>`;
@@ -801,19 +852,32 @@
     ligarCliques();
   }
 
+  // Cartão da aba TI: cor da série no gráfico, o número principal e os detalhes
+  function cartaoTi({ cor, ic, titulo, explica, href, principal, outros }) {
+    const num = (v) => (typeof v === 'number' ? `<b data-conta="${v}">${v}</b>` : `<b>${esc(v ?? '—')}</b>`);
+    return `<a class="ti-card" href="${href}" style="--cor:${cor}">
+      <div class="ti-cab"><span class="ti-ic"><i class="bi bi-${ic}"></i></span><b>${esc(titulo)}</b><i class="bi bi-arrow-right ti-ir"></i></div>
+      <div class="ti-expl">${esc(explica)}</div>
+      <div class="ti-prin">${num(principal.n)}<span>${esc(principal.rot)}</span>${principal.var || ''}</div>
+      <div class="ti-outros">${outros.map(([v, r, cls]) => `<div class="${cls || ''}">${num(v)}<span>${esc(r)}</span></div>`).join('')}</div>
+    </a>`;
+  }
   function abaTi(d) {
     const k = d.ti.kpis; const a = d.ti.anterior || {}; const pr = d.ti.planejado_reativo;
     return `
-      ${faixa([
-    { l: 'Visitas feitas', v: k.visitas, var: variacao(k.visitas, a.visitas), sub: `${k.postos_visitados} posto(s)` },
-    { l: 'Tarefas verificadas', v: k.tarefas_verificadas, sub: k.tarefas_problema ? `${k.tarefas_problema} com problema` : 'nenhum problema' },
-    { l: 'Visitas pedidas feitas', v: `${k.visitas_pedidas_feitas}/${k.visitas_pedidas}`, sub: k.visitas_pedidas_no_prazo_pct !== null ? `${k.visitas_pedidas_no_prazo_pct}% na data` : '', href: '#/solicitacoes?situacao=todas' },
-    { l: 'Pedidas atrasadas', v: k.visitas_pedidas_atrasadas_agora, sub: 'agora', href: '#/solicitacoes' },
-    { l: 'Atividades concluídas', v: k.atividades, var: variacao(k.atividades, a.atividades), sub: k.no_prazo_pct !== null ? `${k.no_prazo_pct}% no prazo` : '' },
-    { l: 'Em aberto agora', v: k.atividades_abertas_agora, sub: k.atividades_atrasadas_agora ? `${k.atividades_atrasadas_agora} atrasada(s)` : 'atividades', href: '#/atividades' },
-  ])}
+      <div class="ti-tres">
+        ${cartaoTi({ cor: '#0f766e', ic: 'geo-alt', titulo: 'Visitas', explica: 'Idas aos postos concluídas no período (rotina e pedidas).', href: '#/agenda',
+    principal: { n: k.visitas, rot: 'visitas feitas', var: variacao(k.visitas, a.visitas) },
+    outros: [[k.postos_visitados, 'postos visitados'], [k.tarefas_verificadas, 'tarefas verificadas'], [k.tarefas_problema, 'com problema', k.tarefas_problema ? 'ruim' : '']] })}
+        ${cartaoTi({ cor: '#6366f1', ic: 'check2-square', titulo: 'Atividades', explica: 'Tarefas do quadro de Atividades (não precisam de ida ao posto).', href: '#/atividades',
+    principal: { n: k.atividades, rot: 'concluídas', var: variacao(k.atividades, a.atividades) },
+    outros: [[pctTxt(k.no_prazo_pct), 'no prazo'], [k.atividades_abertas_agora, 'em aberto agora'], [k.atividades_atrasadas_agora, 'atrasadas agora', k.atividades_atrasadas_agora ? 'ruim' : '']] })}
+        ${cartaoTi({ cor: '#f59e0b', ic: 'megaphone', titulo: 'Pedidos de visita', explica: 'Visitas pedidas pelos gestores pelo Novo pedido (antes "solicitações").', href: '#/solicitacoes?situacao=todas',
+    principal: { n: k.visitas_pedidas_feitas, rot: `de ${k.visitas_pedidas} atendidos` },
+    outros: [[pctTxt(k.visitas_pedidas_no_prazo_pct), 'na data pedida'], [k.visitas_pedidas_atrasadas_agora, 'atrasados agora', k.visitas_pedidas_atrasadas_agora ? 'ruim' : '']] })}
+      </div>
       <div class="pg-duas">
-        ${cartaoGrafico('Entregas da TI', graficoLinhas(d.ti.serie, CORES_TI, { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
+        ${cartaoGrafico('Entregas da TI: visitas, atividades e pedidos', graficoLinhas(d.ti.serie, CORES_TI, { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
         ${cartaoGrafico('Itens com problema nas visitas', graficoLinhas(d.ti.serie, [{ campo: 'nao_ok', nome: 'Itens NÃO OK', cor: '#ef4444' }], { escala: d.periodo.escala }), nomeEscala(d.periodo.escala))}
       </div>
       ${blocoPg('Problemas encontrados nas visitas', d.ti.nao_ok.length ? d.ti.nao_ok.slice(0, 12).map((n) => `<div class="pg-prob" data-href="#/visitas/${n.visit_id}">
@@ -3682,7 +3746,7 @@ function itemHistorico(e) {
         { alvo: '.side-nav .grp.sec-vis', titulo: 'Seções por cor', texto: 'Cada parte do menu tem uma cor: Visitas (azul), Painel do Gestor (amarelo), Configurar (rosa). O item aberto fica destacado na cor da seção.' },
         { alvo: '.side-nav a[href="#/agenda"]', titulo: 'Agenda', texto: 'Tudo o que está marcado para a TI: visitas de rotina, visitas pedidas e atividades.' },
         { alvo: '.side-nav a[href="#/atividades"]', titulo: 'Atividades', texto: 'O quadro de tarefas da TI. O número ao lado mostra o que está esperando.' },
-        { alvo: '#top-aba-notif', titulo: 'Notificações', texto: 'Tudo o que acontece no painel aparece aqui: pedidos, mudanças, comentários e reagendamentos. O número vermelho são as não lidas.' },
+        { alvo: '#side-notif', titulo: 'Notificações', texto: 'Tudo o que acontece no painel aparece aqui: pedidos, mudanças, comentários e reagendamentos. O número vermelho são as não lidas.' },
         { alvo: '.tela-desc', titulo: 'Para que serve a tela', texto: 'Toda tela tem uma frase pequena no topo explicando para que ela serve.' },
         { alvo: '.side-nav a[href="#/tutoriais"]', titulo: 'Tutoriais', texto: 'Ficou com dúvida? Os tutoriais ficam aqui, separados por assunto.' },
       ],
@@ -3701,7 +3765,7 @@ function itemHistorico(e) {
       id: 'notificacoes', cat: 'inicio', papeis: ['gestor', 'tecnico'], icone: 'bell', titulo: 'Acompanhar as notificações',
       resumo: 'Ver o que mudou, filtrar por assunto e marcar como lido.',
       passos: [
-        { alvo: '#top-aba-notif', titulo: 'Aba de notificações', texto: 'Fica no topo de todas as telas. Clique para abrir a página com tudo.' },
+        { alvo: '#side-notif', titulo: 'Notificações no menu', texto: 'Fica no menu, logo abaixo do Novo pedido, com o número de não lidas. Clique para abrir a página com tudo.' },
         { rota: '#/notificacoes', alvo: '.pg-abas', titulo: 'Filtros', texto: 'Todas, Não lidas, Menções (quando alguém marca você com @), Atividades, Comentários, Pedidos de visita, Visitas, Reagendamentos e Postos e checklists. O número mostra as não lidas de cada assunto.' },
         { alvo: '.nt-lista', titulo: 'Por dia', texto: 'As notificações vêm separadas por dia. As novas ficam em verde-claro. Clique numa para abrir o item (ela fica lida).' },
         { alvo: '#nt-ler', titulo: 'Marcar todas como lidas', texto: 'Limpa o número vermelho de uma vez.' },
@@ -3771,7 +3835,7 @@ function itemHistorico(e) {
         { titulo: 'Reagendar', texto: 'Gestor e técnico podem mudar a data de uma visita, de um pedido ou de uma atividade. O motivo é obrigatório e vai para a equipe nas notificações.' },
         { rota: '#/agenda', alvo: '[data-reag]', titulo: 'Botão Reagendar', texto: 'Aparece na Agenda, no "Meu dia", na ficha do posto e no pedido. Clique, escolha a nova data (o horário é opcional) e escreva o motivo.' },
         { alvo: '.arrastavel', titulo: 'Ou arraste', texto: 'Na Agenda, dá para arrastar o item para outro dia (no celular: segure e arraste). A janela do motivo abre do mesmo jeito.' },
-        { alvo: '#top-aba-notif', titulo: 'Quem fica sabendo', texto: 'Todos os gestores e técnicos recebem: "Reagendado: Visita ao Posto Centro — mudou de 20/11 para 22/11. Motivo: ...". No pedido fica o histórico.' },
+        { alvo: '#side-notif', titulo: 'Quem fica sabendo', texto: 'Todos os gestores e técnicos recebem: "Reagendado: Visita ao Posto Centro — mudou de 20/11 para 22/11. Motivo: ...". No pedido fica o histórico.' },
       ],
     },
     {
@@ -3836,7 +3900,7 @@ function itemHistorico(e) {
         { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'Calendário, TI do Beija-Flor (o nosso trabalho), Por posto e Por funcionário. Cada aba tem uma frase dizendo o que mostra.' },
         { alvo: '.pg-filtro .pg-seg', titulo: 'Escolha o período', texto: 'Dia, Semana, Mês, Ano ou Personalizado. Os gráficos acompanham: Dia mostra por hora, Semana e Mês por dia, Ano por mês.' },
         { alvo: '.pg-filtro .pg-nav', titulo: 'Anterior e seguinte', texto: 'As setas vão para o período anterior ou o seguinte. "Hoje" volta para o atual.' },
-        { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... O número pequeno ao lado compara com o período anterior.' },
+        { alvo: '.ti-tres', titulo: 'Visitas, Atividades e Pedidos', texto: 'Três cartões, cada um na cor da sua linha no gráfico: Visitas (idas aos postos), Atividades (tarefas do quadro) e Pedidos de visita (o que os gestores pediram). O número pequeno compara com o período anterior; clique no cartão para abrir a lista.' },
         { alvo: () => $('.pg-card'), titulo: 'Gráficos de linha', texto: 'Passe o mouse (ou toque) num ponto para ver o valor.' },
         { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
         { rota: '#/painel?aba=funcionarios', alvo: '.fn-grade', titulo: 'Por funcionário', texto: 'Um cartão por pessoa: visitas, atividades, no prazo, em aberto, atrasadas e problemas achados. Inclui quem é gestor e técnico ao mesmo tempo.' },
@@ -4071,6 +4135,7 @@ function itemHistorico(e) {
   // Notificações (sino + aviso do navegador)
   // ------------------------------------------------------------------
   let timerNotif = null;
+  var naoLidasNotif = 0; // var: o menu é montado antes desta parte do arquivo
   let ultimoId = null;
 
   function iniciarNotificacoes() {
@@ -4095,8 +4160,9 @@ function itemHistorico(e) {
     const badge = $('#sino-badge');
     badge.textContent = r.nao_lidas > 99 ? '99+' : r.nao_lidas;
     badge.classList.toggle('d-none', !r.nao_lidas);
-    $('#top-aba-n').textContent = badge.textContent;
-    $('#top-aba-n').classList.toggle('d-none', !r.nao_lidas);
+    naoLidasNotif = r.nao_lidas;
+    const sn = $('#side-notif-n');
+    if (sn) { sn.textContent = badge.textContent; sn.classList.toggle('d-none', !r.nao_lidas); }
     $('#notif-list').innerHTML = r.itens.length ? r.itens.map((n) => `
       <a class="notif-item ${n.is_read ? '' : 'unread'}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
         <div class="t">${esc(n.title)}</div>${n.message ? `<div class="m">${esc(n.message)}</div>` : ''}
