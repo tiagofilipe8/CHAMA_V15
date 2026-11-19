@@ -591,3 +591,15 @@ SELECT v.name, v.unit, v.ord FROM (VALUES
   ('Mouse', 'un', 4), ('Teclado', 'un', 5), ('Cabo de rede', 'un', 6), ('Fone / headset', 'un', 7)
 ) AS v(name, unit, ord)
 WHERE NOT EXISTS (SELECT 1 FROM materials);
+
+-- Administrador Local virou Gestor (2026-11-19)
+-- O Gestor (role_key 'manager') ganha o que o Administrador Local tinha liberado
+-- (menos as notas internas, que sao da equipe de TI). Depois os usuarios
+-- Administrador Local passam a ser Gestor. Roda uma vez: nas proximas, nao ha
+-- mais linhas 'admin_local'.
+INSERT INTO role_permissions (role_key, permission, allowed, updated_at)
+SELECT 'manager', permission, TRUE, now() FROM role_permissions
+WHERE role_key = 'admin_local' AND allowed AND permission <> 'ticket.internal'
+ON CONFLICT (role_key, permission) DO UPDATE SET allowed = TRUE, updated_at = now();
+DELETE FROM role_permissions WHERE role_key = 'admin_local';
+UPDATE users SET role = 'client', client_level = 2 WHERE role = 'admin_local';

@@ -43,7 +43,7 @@ function buildNav(u) {
   if (can('users.manage')) admin.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
   if (master) admin.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
   if (can('locations.manage')) admin.push({ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' });
-  if (master || u.role === 'admin_local') admin.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
+  if (master || Roles.isManager(u) || u.role === 'admin_local') admin.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
   if (master) {
     admin.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
     admin.push({ href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' });

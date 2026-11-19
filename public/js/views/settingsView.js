@@ -29,7 +29,6 @@ Views.adminUsers = async function adminUsers(el) {
         <select class="form-select form-select-sm" id="u-role" style="max-width:170px">
           <option value="">Todos os perfis</option>
           <option value="admin">Administrador Mestre</option>
-          <option value="admin_local">Administrador Local</option>
           <option value="moderator">Moderador</option>
           <option value="technician">Técnico</option>
           <option value="client">Usuário / Gestor</option>
@@ -136,14 +135,13 @@ Views.adminUsers = async function adminUsers(el) {
     // perfil = papel + nivel (Usuario e Gestor sao "client" com nivel 1 ou 2)
     const ALL_PROFILES = [
       { value: 'client:1', label: 'Usuário', help: 'Abre e acompanha os próprios chamados.' },
-      { value: 'client:2', label: 'Gestor', help: 'Acompanha chamados e painel da(s) empresa(s) e aprova soluções.' },
-      { value: 'admin_local', label: 'Administrador Local', help: 'Administra usuários, localizações e chamados de UMA empresa.' },
+      { value: 'client:2', label: 'Gestor', help: 'Chefe da empresa: acompanha e distribui os chamados, aprova soluções e cuida de usuários e localizações.' },
       { value: 'technician', label: 'Técnico', help: 'Atende os chamados atribuídos a ele.' },
       { value: 'moderator', label: 'Moderador', help: 'Faz a triagem: atribui técnico, ajusta categoria/urgência, previsão e observadores.' },
       { value: 'admin', label: 'Administrador Mestre', help: 'Acesso total a todas as empresas.' },
     ];
     const allowed = Roles.isMaster(_u) ? ALL_PROFILES.map((p) => p.value)
-      : Roles.isLocalAdmin(_u) ? ['client:1', 'client:2', 'admin_local'] : ['client:1', 'client:2'];
+      : ['client:1', 'client:2'];
     const profileOptions = ALL_PROFILES.filter((p) => allowed.includes(p.value));
     const curProfile = u ? (u.role === 'client' ? `client:${u.client_level === 2 ? 2 : 1}` : u.role) : 'client:1';
     const m = document.createElement('div');
@@ -1584,7 +1582,7 @@ Views.adminRoles = async function adminRoles(el) {
 // Lista do que pode ser pedido no chamado "Pedido de material".
 Views.adminMaterials = async function adminMaterials(el) {
   const u = currentUser();
-  if (!(Roles.isMaster(u) || u.role === 'admin_local')) {
+  if (!(Roles.isMaster(u) || Roles.isLocalAdmin(u))) {
     location.hash = '#/dashboard';
     toast('Apenas administradores editam a lista de materiais.', 'warning');
     return;

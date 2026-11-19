@@ -8,7 +8,7 @@ const {
 const router = express.Router();
 router.use(requireAuth);
 
-const ROLES = ['admin', 'admin_local', 'moderator', 'technician', 'client'];
+const ROLES = ['admin', 'moderator', 'technician', 'client'];
 
 // Quem administra usuarios:
 //  - Administrador Mestre: todos
@@ -21,7 +21,7 @@ const scopedToEntity = (u) => !isMaster(u);
 const rolesAllowedFor = (u) => {
   if (isMaster(u)) return ROLES;
   // fora o Administrador Mestre, so cria Usuario/Gestor (e Admin Local, se ele mesmo for um)
-  if (isLocalAdmin(u)) return ['client', 'admin_local'];
+  if (isLocalAdmin(u)) return ['client'];
   if (has(u, 'users.manage')) return ['client'];
   return [];
 };

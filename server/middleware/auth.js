@@ -6,7 +6,7 @@ const { ALL_KEYS, roleKeyOf } = require('../permissions');
 // ---------------------------------------------------------------------
 // Perfis
 //   admin       = Administrador Mestre (sempre pode tudo)
-//   admin_local = Administrador Local
+//   (admin_local = antigo Administrador Local, convertido em Gestor)
 //   moderator   = Moderador
 //   technician  = Tecnico
 //   client      = client_level 1 -> Usuario | client_level 2 -> Gestor
@@ -16,7 +16,8 @@ const { ALL_KEYS, roleKeyOf } = require('../permissions');
 // ---------------------------------------------------------------------
 
 const isMaster = (u) => !!u && u.role === 'admin';
-const isLocalAdmin = (u) => !!u && u.role === 'admin_local';
+// O antigo Administrador Local virou Gestor: quem usa isLocalAdmin agora vale para o Gestor
+const isLocalAdmin = (u) => !!u && (u.role === 'admin_local' || (u.role === 'client' && Number(u.client_level) === 2));
 const isModerator = (u) => !!u && u.role === 'moderator';
 const isTechnician = (u) => !!u && u.role === 'technician';
 const isClient = (u) => !!u && u.role === 'client';

@@ -104,7 +104,7 @@ async function seed(client) {
   await client.query(
     `INSERT INTO users (username, password_hash, name, email, phone, role, client_level, entity_id, active)
      VALUES ('moderador1', $1, 'Paula Rocha (Moderadora)', 'paula@empresa.ti', '(11) 90000-0003', 'moderator', 1, NULL, TRUE),
-            ('adminlocal1', $2, 'Rafael Costa (Admin Local)', 'rafael@empresademo.com.br', '(11) 98888-3333', 'admin_local', 1, $3, TRUE)`,
+            ('adminlocal1', $2, 'Rafael Costa (Gestor)', 'rafael@empresademo.com.br', '(11) 98888-3333', 'client', 2, $3, TRUE)`,
     [aMod, aLocal, entA]);
 
   // Categorias complexas (hierarquicas, como no GLPI). chama_ensure_category
@@ -214,7 +214,7 @@ async function seed(client) {
   console.log(`[seed] Cliente    -> usuario: cliente1  / senha: cliente123`);
   console.log(`[seed] Gestor     -> usuario: gestor1   / senha: gestor123`);
   console.log(`[seed] Moderador  -> usuario: moderador1  / senha: moderador123`);
-  console.log(`[seed] Admin local-> usuario: adminlocal1 / senha: adminlocal123`);
+  console.log(`[seed] Gestor 2   -> usuario: adminlocal1 / senha: adminlocal123`);
 
   return true;
 }

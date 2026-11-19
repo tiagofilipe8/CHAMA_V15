@@ -8,7 +8,6 @@
 
 // Perfis configuraveis (chave usada na tabela role_permissions)
 const ROLE_KEYS = [
-  { key: 'admin_local', label: 'Administrador Local', role: 'admin_local' },
   { key: 'moderator', label: 'Moderador', role: 'moderator' },
   { key: 'technician', label: 'Técnico', role: 'technician' },
   { key: 'manager', label: 'Gestor', role: 'client', client_level: 2 },
@@ -54,12 +53,6 @@ const MASTER_ONLY = [
 ];
 
 const DEFAULTS = {
-  admin_local: [
-    'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
-    'ticket.status_any', 'ticket.resolve_direct', 'ticket.cancel', 'ticket.internal', 'ticket.rating',
-    'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage', 'locations.manage',
-    'ti.view', 'ti.manage',
-  ],
   moderator: [
     'ticket.create', 'ticket.view_all', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.cancel', 'ticket.internal', 'ticket.rating',
@@ -69,10 +62,12 @@ const DEFAULTS = {
     'ticket.create', 'ticket.view_all', 'ticket.take', 'ticket.work', 'ticket.cancel',
     'ticket.internal', 'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage',
   ],
+  // Gestor = chefe da empresa cliente (absorveu o antigo Administrador Local)
   manager: [
-    'ticket.create', 'ticket.view_company', 'ticket.approve', 'ticket.cancel', 'ticket.manager_note',
-    'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
-    'ti.view', 'ti.manage',
+    'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
+    'ticket.status_any', 'ticket.resolve_direct', 'ticket.approve', 'ticket.cancel', 'ticket.manager_note',
+    'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
+    'locations.manage', 'ti.view', 'ti.manage',
   ],
   user: ['ticket.create', 'ticket.approve', 'ticket.cancel'],
 };

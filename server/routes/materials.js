@@ -4,7 +4,7 @@ const { requireAuth, isMaster, isLocalAdmin } = require('../middleware/auth');
 
 // Materiais que podem ser pedidos num chamado ("Pedido de material").
 //  - leitura: todos os usuários logados (só os ativos; ?all=true para o administrador)
-//  - criar/editar/desativar: Administrador Mestre e Administrador Local
+//  - criar/editar/desativar: Administrador Mestre e Gestor
 const router = express.Router();
 router.use(requireAuth);
 const podeEditar = (u) => isMaster(u) || isLocalAdmin(u);

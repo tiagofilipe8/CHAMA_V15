@@ -135,12 +135,13 @@ function confirmDialog({ title, body, confirmText = 'Confirmar', danger = false 
 }
 
 // ---------------- Perfis ----------------
-// admin = Administrador Mestre | admin_local = Administrador Local (1 empresa)
+// admin = Administrador Mestre (admin_local antigo = Gestor)
 // moderator = Moderador (triagem) | technician = Técnico
 // client: client_level 1 = Usuário, 2 = Gestor
 const Roles = {
   isMaster: (u) => !!u && u.role === 'admin',
-  isLocalAdmin: (u) => !!u && u.role === 'admin_local',
+  // o antigo Administrador Local virou Gestor
+  isLocalAdmin: (u) => !!u && (u.role === 'admin_local' || (u.role === 'client' && Number(u.client_level) === 2)),
   isModerator: (u) => !!u && u.role === 'moderator',
   isTechnician: (u) => !!u && u.role === 'technician',
   isClient: (u) => !!u && u.role === 'client',
