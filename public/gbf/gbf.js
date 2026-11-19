@@ -938,8 +938,8 @@
   }
   const corta = (t, n) => (String(t).length > n ? `${String(t).slice(0, n - 1)}…` : String(t));
 
-  async function vCalendarioPainel(qs, seq, abasHtml = '', base = '#/painel?aba=calendario') {
-    titulo('Painel do gestor');
+  async function vCalendarioPainel(qs, seq, abasHtml = '', base = '#/painel?aba=calendario', opts = {}) {
+    titulo(opts.titulo || 'Painel do gestor');
     base = base.replace(/&(mes|dia)=[^&]*/g, '');
     const mes = /^\d{4}-\d{2}$/.test(qs.get('mes') || '') ? qs.get('mes') : hojeSP().slice(0, 7);
     const c = await API.get(`/painel-gestor/calendario?mes=${mes}`);
@@ -1031,7 +1031,8 @@
       a.andando ? `<span title="em andamento"><i class="bi bi-circle-half"></i>${a.andando}</span>` : '',
       a.feito ? `<span title="concluída"><i class="bi bi-check-circle-fill"></i>${a.feito}</span>` : '',
     ].join('');
-    const itemLista = (i) => `<li data-link="${esc(i.link)}" tabindex="0">
+    const podeArrastar = (i) => opts.arrastar && i.reagendar && !i.feito;
+    const itemLista = (i) => `<li data-link="${esc(i.link)}" tabindex="0"${podeArrastar(i) ? ` class="arrastavel" data-drag="${esc(JSON.stringify({ tipo: i.reagendar, id: i.id, data: i.fim || i.dia, hora: i.hora || null }))}" title="Arraste para outro dia para reagendar"` : ''}>
         <div class="cal-pop-lin"><i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="t">${esc(i.titulo)}</span>${etiquetaEstado(i)}</div>
         ${i.faixaTxt ? `<div class="cal-pop-faixa">${esc(i.faixaTxt)}</div>` : ''}
         <div class="cal-pop-det"><div><dl>
@@ -1057,9 +1058,10 @@
         const fora = d.slice(0, 7) !== c.mes;
         const atrasados = lst.filter((i) => i.atrasado).length;
         const nfx = faixasDoDia(d, fx).length ? Math.max(...faixasDoDia(d, fx).map((x) => x.pista)) + 1 : 0;
-        return `<button type="button" class="cal-cel${[0, 6].includes(new Date(`${d}T12:00:00Z`).getUTCDay()) ? ' fds' : ''}${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}${nfx ? ' com-faixa' : ''}" data-dia="${d}" style="--nf:${nfx}"
+        return `<button type="button" class="cal-cel${[0, 6].includes(new Date(`${d}T12:00:00Z`).getUTCDay()) ? ' fds' : ''}${fora ? ' fora' : ''}${d === c.hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}${nfx ? ' com-faixa' : ''}" data-dia="${d}" data-drop-dia="${d}" style="--nf:${nfx}"
           aria-label="${fmtIso(d)}: ${lst.length} item(ns)" aria-pressed="${d === diaSel}">
           <span class="cal-cab-d"><span class="cal-d">${Number(d.slice(8, 10))}</span><span class="cal-and">${htmlAndamento(andamento(doDia(d, m)))}</span></span>
+          ${opts.mais ? `<span class="cal-mais" role="button" tabindex="0" data-novo="${d}" title="Novo pedido neste dia" aria-label="Novo pedido em ${fmtIso(d)}"><i class="bi bi-plus-lg"></i></span>` : ''}
           ${atrasados ? `<span class="cal-atr" title="${atrasados} atrasada(s)"><i class="bi bi-alarm"></i>${atrasados}</span>` : ''}
           <span class="cal-nums">${cont.map(([p, n]) => `<i class="cal-num ${COR_URG[p]}">${n}</i>`).join('')}</span>
           ${htmlFaixas(d, fx)}
@@ -1077,7 +1079,8 @@
       const dataLonga = new Date(`${diaSel}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
       $('#cal-dia').innerHTML = `<h3>${esc(dataLonga)}${diaSel === c.hoje ? ' <span class="tag tag-teal">hoje</span>' : ''}</h3>
         <div class="small-muted mb-2">${lista.length ? `${plural(lista.length, 'item', 'itens')} · ${and.fazer} a fazer · ${and.andando} em andamento · ${and.feito} concluída(s)` : 'Nada neste dia.'}</div>
-        ${lista.length ? `<ul class="cal-lista">${lista.map(itemLista).join('')}</ul><div class="cal-lista-dica small-muted">Passe o mouse num item para ver os detalhes; clique para abrir.</div>` : ''}`;
+        ${lista.length ? `<ul class="cal-lista">${lista.map(itemLista).join('')}</ul><div class="cal-lista-dica small-muted">Passe o mouse num item para ver os detalhes; clique para abrir.${opts.arrastar ? ' Arraste um item para outro dia para reagendar.' : ''}</div>` : ''}
+        ${opts.mais ? `<a class="btn btn-sm btn-outline-brand w-100 mt-2" href="#/novo?data=${diaSel}"><i class="bi bi-plus-lg"></i> Novo pedido neste dia</a>` : ''}`;
       $$('#cal-dia li[data-link]').forEach((x) => {
         x.addEventListener('click', () => { location.hash = x.dataset.link; });
         x.addEventListener('keydown', (e) => { if (e.key === 'Enter') location.hash = x.dataset.link; });
@@ -1090,6 +1093,19 @@
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
       });
     };
+    if (opts.mais) {
+      $('#cal-dias').addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-novo]');
+        if (!b) return;
+        ev.stopPropagation(); ev.preventDefault();
+        location.hash = `#/novo?data=${b.dataset.novo}`;
+      }, true);
+      $('#cal-dias').addEventListener('keydown', (ev) => {
+        const b = ev.target.closest('[data-novo]');
+        if (b && ev.key === 'Enter') { ev.stopPropagation(); ev.preventDefault(); location.hash = `#/novo?data=${b.dataset.novo}`; }
+      }, true);
+    }
+    if (opts.arrastar) ativarArrasto(view());
     // Hover num dia: cartão pequeno perto do mouse com andamento e prévia dos comentários.
     // Clique: a lista da direita mostra o dia (com sanfona) e uma linha liga o dia à lista.
     {
@@ -2487,8 +2503,18 @@ function itemHistorico(e) {
 
   async function vAgenda(qs, seq) {
     titulo('Agenda');
-    const modo = ['dia', 'semana', 'mes', 'lista'].includes(qs.get('modo')) ? qs.get('modo') : (store.get('gbf_ag_modo') || 'semana');
+    const modo = ['dia', 'semana', 'mes', 'lista'].includes(qs.get('modo')) ? qs.get('modo') : (store.get('gbf_ag_modo') || 'mes');
     store.set('gbf_ag_modo', modo);
+    if (modo === 'mes') {
+      // o mesmo calendário do Painel do gestor, com o "+" do dia e o arrastar para reagendar
+      const hojeA = hojeISO();
+      const modos = `<div class="ag-modos-cal"><div class="btn-group btn-group-sm" role="group" aria-label="Ver por">${[['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês'], ['lista', 'Lista']].map(([m, t]) => `<a class="btn ${m === 'mes' ? 'btn-dark' : 'btn-outline-secondary'}" href="#/agenda?modo=${m}&data=${hojeA}">${t}</a>`).join('')}</div>
+        <a class="btn btn-brand btn-sm" href="#/novo"><i class="bi bi-plus-lg"></i> Novo pedido</a></div>`;
+      const q = new URLSearchParams(qs);
+      if (!q.get('mes') && /^\d{4}-\d{2}-\d{2}$/.test(q.get('data') || '')) q.set('mes', q.get('data').slice(0, 7));
+      await vCalendarioPainel(q, seq, modos, '#/agenda?modo=mes', { titulo: 'Agenda', mais: true, arrastar: true });
+      return;
+    }
     const base = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('data') || '') ? qs.get('data') : hojeISO();
     let de; let ate; let anterior; let proximo; let rotulo;
     if (modo === 'dia') {
@@ -3699,7 +3725,11 @@ function itemHistorico(e) {
       id: 'agenda', cat: 'visitas', papeis: ['gestor', 'tecnico'], icone: 'calendar3', titulo: 'Usar a Agenda',
       resumo: 'Ver por dia, semana ou mês, passar o mouse para detalhes e criar pelo "+".',
       passos: [
-        { rota: '#/agenda?modo=semana', alvo: () => $('a[href^="#/agenda?modo=dia"]')?.parentElement, titulo: 'Dia, Semana, Mês ou Lista', texto: 'Escolha como ver. As setas vão para a semana (ou mês) anterior e a seguinte.' },
+        { rota: '#/agenda?modo=mes', alvo: () => $('a[href^="#/agenda?modo=dia"]')?.parentElement, titulo: 'Dia, Semana, Mês ou Lista', texto: 'Escolha como ver. O Mês é o mesmo calendário do Painel do gestor: legenda, andamento de cada dia e a lista ao lado.' },
+        { alvo: '.cal-leg', titulo: 'Legenda', texto: 'Cores da urgência, andamento (○ a fazer, ◐ em andamento, ✓ concluída), atrasado e atividade de vários dias.' },
+        { alvo: '.cal-dia', titulo: 'Lista do dia', texto: 'Clique num dia para ver a lista aqui. Passe o mouse num item para os detalhes; arraste um item até outro dia do calendário para reagendar (pede o motivo).' },
+        { alvo: '.cal-mais', titulo: '"+" do dia', texto: 'Passe o mouse num dia e clique no "+" para abrir o Novo pedido já com aquela data.' },
+        { rota: '#/agenda?modo=semana', alvo: () => $('a[href^="#/agenda?modo=dia"]')?.parentElement, titulo: 'Semana', texto: 'Na Semana, cada item aparece no seu dia, com os botões Iniciar visita e Reagendar.' },
         { alvo: '[data-pop]', titulo: 'Passe o mouse', texto: 'Num item, aparece um resumo: responsável, quem pediu, urgência e detalhes. Clique para abrir.' },
         { alvo: '.cal-add', titulo: '"+" do dia', texto: 'Abre o Novo pedido já com aquela data.' },
         { alvo: '.arrastavel', titulo: 'Arrastar para outro dia', texto: 'Visitas previstas, pedidos e atividades em aberto podem ser arrastados para outro dia. Pede o motivo e avisa a equipe.' },

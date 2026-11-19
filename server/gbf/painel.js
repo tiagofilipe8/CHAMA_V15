@@ -466,7 +466,7 @@ router.get('/', requireGestor, ah(async (req, res) => {
 // TI do Beija-Flor: solicitações do gestor para a TI (tabelas do Painel).
 // Devolve a grade inteira do mês (de domingo a sábado), inclusive os dias das pontas.
 // ---------------------------------------------------------------------
-router.get('/calendario', requireGestor, ah(async (req, res) => {
+router.get('/calendario', ah(async (req, res) => {
   const hoje = diaSP(new Date());
   const mes = /^\d{4}-\d{2}$/.test(String(req.query.mes || '')) ? req.query.mes : hoje.slice(0, 7);
   const primeiro = `${mes}-01`;
@@ -537,7 +537,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
       atrasado: aberto && !!r.desejada && r.desejada < hoje,
       detalhe: [r.posto, visita ? `${r.tarefas} tarefa(s)` : null, r.status === 'concluida' && r.problemas ? `${r.problemas} com problema` : null]
         .filter(Boolean).join(' · '),
-      responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`, estado: r.status,
+      responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`, estado: r.status, reagendar: r.status === 'a_fazer' ? 'solicitacao' : null,
     });
   }
 
@@ -573,7 +573,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     const aberto = !['concluida', 'cancelada'].includes(t.status);
     itens.push({
       fonte: 'ti', tipo: 'atividade', id: t.id, numero: `A-${String(t.id).padStart(4, '0')}`, titulo: t.title, dia: t.dia, hora: t.hora,
-      estado: t.status, aguardando: t.waiting_for,
+      estado: t.status, aguardando: t.waiting_for, reagendar: aberto ? 'atividade' : null,
       prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
       atrasado: aberto && t.vencida, detalhe: ['Atividade', t.posto].filter(Boolean).join(' · '),
       responsavel: t.responsavel, link: `#/atividades/${t.id}`,
@@ -584,7 +584,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     const aberto = !['concluida', 'cancelada'].includes(t.status);
     return {
       fonte: 'ti', tipo: 'atividade', id: t.id, numero: `A-${String(t.id).padStart(4, '0')}`, titulo: t.title, ini: t.ini, fim: t.fim,
-      estado: t.status, aguardando: t.waiting_for,
+      estado: t.status, aguardando: t.waiting_for, reagendar: aberto ? 'atividade' : null,
       prioridade: Number(t.priority) || 1, situacao: STATUS_TAREFA[t.status] || '—', aberto, feito: t.status === 'concluida',
       atrasado: aberto && t.vencida, detalhe: ['Atividade de vários dias', t.posto].filter(Boolean).join(' · '),
       responsavel: t.responsavel, link: `#/atividades/${t.id}`, comentarios: t.comentarios || [], hora: '',
@@ -594,7 +594,7 @@ router.get('/calendario', requireGestor, ah(async (req, res) => {
     itens.push({
       fonte: 'ti', tipo: 'rotina', id: l.id, numero: 'Rotina', titulo: `Visita de rotina — ${l.name}`, dia: l.dia, hora: l.hora,
       prioridade: 1, situacao: 'Visita prevista', aberto: true, feito: false, atrasado: l.dia < hoje,
-      detalhe: l.checklist || '', responsavel: null, link: `#/postos/${l.id}`, estado: 'a_fazer',
+      detalhe: l.checklist || '', responsavel: null, link: `#/postos/${l.id}`, estado: 'a_fazer', reagendar: 'posto',
     });
   }
 

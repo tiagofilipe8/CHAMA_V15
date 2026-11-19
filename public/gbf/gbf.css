@@ -973,3 +973,12 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .calpg .cal-sem.fds, .cal-mes-cab .fds { color: #9aa6b5; }
 .cal-semana .cal-dia.fds:not(.hoje) { background: #e4e9ef; }
 .cal-mes .cal-cel.fds:not(.hoje) { background: #f1f4f7; }
+
+/* Agenda no modelo do calendário do painel */
+.ag-modos-cal { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.calpg .cal-mais { position: absolute; right: 4px; bottom: 4px; width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: .72rem; color: var(--brand); background: #fff; border: 1px solid var(--line); opacity: 0; transition: opacity .15s; cursor: pointer; z-index: 2; }
+.calpg .cal-cel:hover .cal-mais, .calpg .cal-mais:focus-visible { opacity: 1; }
+.calpg .cal-mais:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+.cal-lista li.arrastavel { cursor: grab; }
+.calpg .cal-cel.drop-alvo { outline: 2px dashed var(--brand); outline-offset: -2px; background: #ecfdf5 !important; }
