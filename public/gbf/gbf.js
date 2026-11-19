@@ -942,10 +942,12 @@
     titulo(opts.titulo || 'Painel do gestor');
     base = base.replace(/&(mes|dia)=[^&]*/g, '');
     const mes = /^\d{4}-\d{2}$/.test(qs.get('mes') || '') ? qs.get('mes') : hojeSP().slice(0, 7);
-    const c = await API.get(`/painel-gestor/calendario?mes=${mes}`);
+    const semanaDe = opts.semana ? (/^\d{4}-\d{2}-\d{2}$/.test(qs.get('data') || '') ? qs.get('data') : hojeSP()) : null;
+    const c = await API.get(opts.semana ? `/painel-gestor/calendario?de=${semanaDe}` : `/painel-gestor/calendario?mes=${mes}`);
     if (seq !== renderSeq) return;
     const filtro = calFiltro();
-    let diaSel = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('dia') || '') ? qs.get('dia') : (c.hoje.slice(0, 7) === c.mes ? c.hoje : c.primeiro);
+    let diaSel = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('dia') || '') ? qs.get('dia') : (opts.semana ? (c.inicio <= c.hoje && c.hoje <= c.fim ? c.hoje : c.inicio) : (c.hoje.slice(0, 7) === c.mes ? c.hoje : c.primeiro));
+    const irSemana = (d) => `${base}&data=${d}`;
     const [ano, mesNum] = c.mes.split('-').map(Number);
     const irMes = (m) => `${base}&mes=${m}`;
 
@@ -961,7 +963,7 @@
 
     view().innerHTML = `
       ${abasHtml}
-      <div class="calpg">
+      <div class="calpg${opts.semana ? ' semana' : ''}">
       <div class="cal-leg" aria-label="Legenda">
         <div class="cal-leg-g"><span class="cal-leg-t">Urgência</span>${[4, 3, 2, 1].map((p) => `<span class="cal-leg-i"><i class="cal-num ${COR_URG[p]}"></i>${esc(c.urgencias[p])}</span>`).join('')}</div>
         <div class="cal-leg-g"><span class="cal-leg-t">Andamento</span>
@@ -973,10 +975,15 @@
           <span class="cal-leg-i"><span class="cal-leg-linha"></span>vários dias</span></div>
       </div>
       <div class="cal-topo">
+        ${opts.semana ? `
+        <a class="btn btn-sm btn-outline-secondary" href="${irSemana(isoSoma(c.inicio, -7))}" aria-label="Semana anterior"><i class="bi bi-chevron-left"></i></a>
+        <strong class="cal-mes">${c.inicio.slice(8, 10)}/${c.inicio.slice(5, 7)} a ${c.fim.slice(8, 10)}/${c.fim.slice(5, 7)}</strong>
+        <a class="btn btn-sm btn-outline-secondary" href="${irSemana(isoSoma(c.inicio, 7))}" aria-label="Próxima semana"><i class="bi bi-chevron-right"></i></a>
+        ${c.inicio <= c.hoje && c.hoje <= c.fim ? '' : `<a class="btn btn-sm btn-link" href="${irSemana(c.hoje)}">Hoje</a>`}` : `
         <a class="btn btn-sm btn-outline-secondary" href="${irMes(mesSoma(c.mes, -1))}" aria-label="Mês anterior"><i class="bi bi-chevron-left"></i></a>
         <strong class="cal-mes">${MESES_CAL[mesNum - 1].replace(/^./, (x) => x.toUpperCase())} de ${ano}</strong>
         <a class="btn btn-sm btn-outline-secondary" href="${irMes(mesSoma(c.mes, 1))}" aria-label="Próximo mês"><i class="bi bi-chevron-right"></i></a>
-        ${c.hoje.slice(0, 7) !== c.mes ? `<a class="btn btn-sm btn-link" href="${irMes(c.hoje.slice(0, 7))}">Hoje</a>` : ''}
+        ${c.hoje.slice(0, 7) !== c.mes ? `<a class="btn btn-sm btn-link" href="${irMes(c.hoje.slice(0, 7))}">Hoje</a>` : ''}`}
         <div class="cal-filtros ms-auto" role="group" aria-label="Mostrar">
           <button type="button" data-f="orcim">Orcim</button>
           <button type="button" data-f="ti">TI do Beija-Flor</button>
@@ -1032,6 +1039,11 @@
       a.feito ? `<span title="concluída"><i class="bi bi-check-circle-fill"></i>${a.feito}</span>` : '',
     ].join('');
     const podeArrastar = (i) => opts.arrastar && i.reagendar && !i.feito;
+    const dadosDrag = (i) => esc(JSON.stringify({ tipo: i.reagendar, id: i.id, data: i.fim || i.dia, hora: i.hora || null }));
+    const icAnd = (i) => (i.feito ? 'check-circle-fill' : ['em_andamento', 'aguardando'].includes(i.estado) ? 'circle-half' : 'circle');
+    // item dentro do dia (semana): bolinha da urgência, hora, título e o andamento
+    const miniItem = (i) => `<span class="cal-mini${i.feito ? ' feito' : ''}${i.atrasado ? ' atr' : ''}" data-link="${esc(i.link)}"${podeArrastar(i) ? ` data-drag="${dadosDrag(i)}"` : ''}>
+        <i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="h">${esc(i.hora || '')}</span><span class="t">${esc(i.titulo)}</span><i class="bi bi-${icAnd(i)} a"></i></span>`;
     const itemLista = (i) => `<li data-link="${esc(i.link)}" tabindex="0"${podeArrastar(i) ? ` class="arrastavel" data-drag="${esc(JSON.stringify({ tipo: i.reagendar, id: i.id, data: i.fim || i.dia, hora: i.hora || null }))}" title="Arraste para outro dia para reagendar"` : ''}>
         <div class="cal-pop-lin"><i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="t">${esc(i.titulo)}</span>${etiquetaEstado(i)}</div>
         ${i.faixaTxt ? `<div class="cal-pop-faixa">${esc(i.faixaTxt)}</div>` : ''}
@@ -1044,6 +1056,7 @@
           <dt>Origem</dt><dd>${i.fonte === 'orcim' ? 'Orcim' : 'TI do Beija-Flor'} · ${esc(i.numero)}</dd>
         </dl>
         ${(i.comentarios || []).length ? `<div class="cal-pop-coms">${i.comentarios.map((k) => `<div class="cal-pop-com"><b>${esc(k.quem || '—')}</b> <span>${esc(relativo(k.quando))}</span><div>${realcarMencoes(esc(corta(k.texto, 160)))}</div></div>`).join('')}</div>` : ''}
+        ${opts.acoes && !i.feito ? `<div class="cal-acoes">${i.tipo === 'rotina' ? btnIniciar({ id: i.id, name: i.titulo.replace(/^Visita de rotina — /, '') }, null, false) : ''}${i.reagendar ? btnReag({ tipo: i.reagendar, id: i.id, data: i.fim || i.dia, hora: i.hora || null }) : ''}</div>` : ''}
         <span class="cal-pop-abrir">Abrir <i class="bi bi-arrow-right"></i></span></div></div>
       </li>`;
 
@@ -1063,7 +1076,7 @@
           <span class="cal-cab-d"><span class="cal-d">${Number(d.slice(8, 10))}</span><span class="cal-and">${htmlAndamento(andamento(doDia(d, m)))}</span></span>
           ${opts.mais ? `<span class="cal-mais" role="button" tabindex="0" data-novo="${d}" title="Novo pedido neste dia" aria-label="Novo pedido em ${fmtIso(d)}"><i class="bi bi-plus-lg"></i></span>` : ''}
           ${atrasados ? `<span class="cal-atr" title="${atrasados} atrasada(s)"><i class="bi bi-alarm"></i>${atrasados}</span>` : ''}
-          <span class="cal-nums">${cont.map(([p, n]) => `<i class="cal-num ${COR_URG[p]}">${n}</i>`).join('')}</span>
+          ${opts.semana ? `<span class="cal-sem-itens">${doDia(d, m).filter((i) => !i.faixaTxt || d === i.ini || d === c.inicio).map(miniItem).join('') || '<span class="cal-sem-vazio">—</span>'}</span>` : `<span class="cal-nums">${cont.map(([p, n]) => `<i class="cal-num ${COR_URG[p]}">${n}</i>`).join('')}</span>`}
           ${htmlFaixas(d, fx)}
         </button>`;
       }).join('');
@@ -1082,12 +1095,13 @@
         ${lista.length ? `<ul class="cal-lista">${lista.map(itemLista).join('')}</ul><div class="cal-lista-dica small-muted">Passe o mouse num item para ver os detalhes; clique para abrir.${opts.arrastar ? ' Arraste um item para outro dia para reagendar.' : ''}</div>` : ''}
         ${opts.mais ? `<a class="btn btn-sm btn-outline-brand w-100 mt-2" href="#/novo?data=${diaSel}"><i class="bi bi-plus-lg"></i> Novo pedido neste dia</a>` : ''}`;
       $$('#cal-dia li[data-link]').forEach((x) => {
-        x.addEventListener('click', () => { location.hash = x.dataset.link; });
+        x.addEventListener('click', (ev) => { if (ev.target.closest('button, .btn')) return; location.hash = x.dataset.link; });
         x.addEventListener('keydown', (e) => { if (e.key === 'Enter') location.hash = x.dataset.link; });
       });
 
-      const doMes = visiveis().filter((i) => i.dia.slice(0, 7) === c.mes);
-      $('#cal-resumo').innerHTML = `No mês: ${plural(doMes.length, 'item', 'itens')} · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
+      if (opts.acoes) { ligarReagendar(); ligarIniciar(); }
+      const doMes = visiveis().filter((i) => (opts.semana ? (c.inicio <= i.dia && i.dia <= c.fim) : i.dia.slice(0, 7) === c.mes));
+      $('#cal-resumo').innerHTML = `${opts.semana ? 'Na semana' : 'No mês'}: ${plural(doMes.length, 'item', 'itens')} · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
       $$('.cal-filtros [data-f]').forEach((b) => {
         b.classList.toggle('on', !!filtro[b.dataset.f]);
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
@@ -1103,6 +1117,14 @@
       $('#cal-dias').addEventListener('keydown', (ev) => {
         const b = ev.target.closest('[data-novo]');
         if (b && ev.key === 'Enter') { ev.stopPropagation(); ev.preventDefault(); location.hash = `#/novo?data=${b.dataset.novo}`; }
+      }, true);
+    }
+    if (opts.semana) {
+      $('#cal-dias').addEventListener('click', (ev) => {
+        const it = ev.target.closest('.cal-mini[data-link]');
+        if (!it) return;
+        ev.stopPropagation(); ev.preventDefault();
+        location.hash = it.dataset.link;
       }, true);
     }
     if (opts.arrastar) ativarArrasto(view());
@@ -2512,7 +2534,14 @@ function itemHistorico(e) {
         <a class="btn btn-brand btn-sm" href="#/novo"><i class="bi bi-plus-lg"></i> Novo pedido</a></div>`;
       const q = new URLSearchParams(qs);
       if (!q.get('mes') && /^\d{4}-\d{2}-\d{2}$/.test(q.get('data') || '')) q.set('mes', q.get('data').slice(0, 7));
-      await vCalendarioPainel(q, seq, modos, '#/agenda?modo=mes', { titulo: 'Agenda', mais: true, arrastar: true });
+      await vCalendarioPainel(q, seq, modos, '#/agenda?modo=mes', { titulo: 'Agenda', mais: true, arrastar: true, acoes: true });
+      return;
+    }
+    if (modo === 'semana') {
+      const hojeA = hojeISO();
+      const modos = `<div class="ag-modos-cal"><div class="btn-group btn-group-sm" role="group" aria-label="Ver por">${[['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês'], ['lista', 'Lista']].map(([m, t]) => `<a class="btn ${m === 'semana' ? 'btn-dark' : 'btn-outline-secondary'}" href="#/agenda?modo=${m}&data=${hojeA}">${t}</a>`).join('')}</div>
+        <a class="btn btn-brand btn-sm" href="#/novo"><i class="bi bi-plus-lg"></i> Novo pedido</a></div>`;
+      await vCalendarioPainel(qs, seq, modos, '#/agenda?modo=semana', { titulo: 'Agenda', mais: true, arrastar: true, acoes: true, semana: true });
       return;
     }
     const base = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('data') || '') ? qs.get('data') : hojeISO();
@@ -3729,7 +3758,7 @@ function itemHistorico(e) {
         { alvo: '.cal-leg', titulo: 'Legenda', texto: 'Cores da urgência, andamento (○ a fazer, ◐ em andamento, ✓ concluída), atrasado e atividade de vários dias.' },
         { alvo: '.cal-dia', titulo: 'Lista do dia', texto: 'Clique num dia para ver a lista aqui. Passe o mouse num item para os detalhes; arraste um item até outro dia do calendário para reagendar (pede o motivo).' },
         { alvo: '.cal-mais', titulo: '"+" do dia', texto: 'Passe o mouse num dia e clique no "+" para abrir o Novo pedido já com aquela data.' },
-        { rota: '#/agenda?modo=semana', alvo: () => $('a[href^="#/agenda?modo=dia"]')?.parentElement, titulo: 'Semana', texto: 'Na Semana, cada item aparece no seu dia, com os botões Iniciar visita e Reagendar.' },
+        { rota: '#/agenda?modo=semana', alvo: '.cal-grade', titulo: 'Semana', texto: 'De domingo a sábado, com cada item dentro do seu dia. Arraste um item para outro dia para reagendar; clique para abrir. Na lista ao lado ficam os botões Iniciar visita e Reagendar.' },
         { alvo: '[data-pop]', titulo: 'Passe o mouse', texto: 'Num item, aparece um resumo: responsável, quem pediu, urgência e detalhes. Clique para abrir.' },
         { alvo: '.cal-add', titulo: '"+" do dia', texto: 'Abre o Novo pedido já com aquela data.' },
         { alvo: '.arrastavel', titulo: 'Arrastar para outro dia', texto: 'Visitas previstas, pedidos e atividades em aberto podem ser arrastados para outro dia. Pede o motivo e avisa a equipe.' },

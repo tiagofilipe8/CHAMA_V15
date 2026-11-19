@@ -468,13 +468,19 @@ router.get('/', requireGestor, ah(async (req, res) => {
 // ---------------------------------------------------------------------
 router.get('/calendario', ah(async (req, res) => {
   const hoje = diaSP(new Date());
-  const mes = /^\d{4}-\d{2}$/.test(String(req.query.mes || '')) ? req.query.mes : hoje.slice(0, 7);
-  const primeiro = `${mes}-01`;
-  const ultimo = somaDias(`${somaDias(primeiro, 32).slice(0, 7)}-01`, -1);
+  let mes = /^\d{4}-\d{2}$/.test(String(req.query.mes || '')) ? req.query.mes : hoje.slice(0, 7);
+  let primeiro = `${mes}-01`;
+  let ultimo = somaDias(`${somaDias(primeiro, 32).slice(0, 7)}-01`, -1);
   const dowPrimeiro = new Date(`${primeiro}T12:00:00Z`).getUTCDay(); // 0 = domingo
-  const inicio = somaDias(primeiro, -dowPrimeiro);
+  let inicio = somaDias(primeiro, -dowPrimeiro);
   const dowUltimo = new Date(`${ultimo}T12:00:00Z`).getUTCDay();
-  const fim = somaDias(ultimo, 6 - dowUltimo);
+  let fim = somaDias(ultimo, 6 - dowUltimo);
+  // ?de=AAAA-MM-DD: só a semana (domingo a sábado) que contém esse dia
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.de || ''))) {
+    const dow = new Date(`${req.query.de}T12:00:00Z`).getUTCDay();
+    inicio = somaDias(req.query.de, -dow); fim = somaDias(inicio, 6);
+    primeiro = inicio; ultimo = fim; mes = inicio.slice(0, 7);
+  }
   const INI = `($1::date::timestamp AT TIME ZONE '${TZ}')`;
   const FIM = `(($2::date + 1)::timestamp AT TIME ZONE '${TZ}')`;
   const DIA = (col) => `to_char(${col} AT TIME ZONE '${TZ}', 'YYYY-MM-DD')`;
@@ -538,6 +544,23 @@ router.get('/calendario', ah(async (req, res) => {
       detalhe: [r.posto, visita ? `${r.tarefas} tarefa(s)` : null, r.status === 'concluida' && r.problemas ? `${r.problemas} com problema` : null]
         .filter(Boolean).join(' · '),
       responsavel: r.responsavel, link: `#/solicitacoes/${r.id}`, estado: r.status, reagendar: r.status === 'a_fazer' ? 'solicitacao' : null,
+    });
+  }
+
+  const visitasFeitas = await query(
+    `SELECT v.id, v.status, ${DIA('v.started_at')} AS dia, ${HORA('v.started_at')} AS hora, l.name AS posto, u.name AS tecnico,
+            (SELECT count(*)::int FROM gbf_visit_answers a WHERE a.visit_id = v.id AND a.answer = 'nao_ok') AS nao_ok
+     FROM gbf_visits v JOIN gbf_locations l ON l.id = v.location_id LEFT JOIN gbf_users u ON u.id = v.user_id
+     WHERE v.request_id IS NULL AND v.status IN ('concluida','em_andamento')
+       AND v.started_at >= ${INI} AND v.started_at < ${FIM}`, [inicio, fim]);
+  for (const v of visitasFeitas.rows) {
+    const feita = v.status === 'concluida';
+    itens.push({
+      fonte: 'ti', tipo: 'visita', id: v.id, numero: `V-${String(v.id).padStart(4, '0')}`, titulo: `Visita — ${v.posto}`, dia: v.dia, hora: v.hora,
+      prioridade: 1, situacao: feita ? 'Visita feita' : 'Visita em andamento', estado: feita ? 'concluida' : 'em_andamento',
+      aberto: !feita, feito: feita, atrasado: false,
+      detalhe: [v.tecnico, feita ? (v.nao_ok ? `${v.nao_ok} item(ns) NÃO OK` : 'tudo OK') : null].filter(Boolean).join(' · '),
+      responsavel: v.tecnico, link: `#/visitas/${v.id}`,
     });
   }
 
