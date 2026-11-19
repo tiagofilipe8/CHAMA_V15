@@ -995,7 +995,7 @@
     if (i.feito) return tag('tag-green', 'Concluída');
     const e = i.estado;
     const base = e === 'aguardando' ? tag('tag-amber', i.aguardando ? `Aguardando: ${corta(i.aguardando, 22)}` : 'Aguardando')
-      : e === 'em_andamento' ? tag('tag-blue', 'Em andamento')
+      : e === 'em_andamento' ? tag('tag-teal', 'Em andamento')
         : e === 'a_fazer' ? tag('tag-gray', 'A fazer')
           : tag('tag-gray', i.situacao || '—');
     return `<span class="etq">${base}${i.atrasado ? tag('tag-red', 'Atrasada') : ''}</span>`;

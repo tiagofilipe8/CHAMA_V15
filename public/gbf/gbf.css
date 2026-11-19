@@ -1071,3 +1071,6 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
   #pg-conteudo > *, .grafico .g-linha, .grafico .g-p, .pg-filtro .pg-nome { animation: none !important; stroke-dashoffset: 0; opacity: 1; }
   .pg-seg.anim > .ind, .pg-abas.anim > .ind, .ti-card { transition: none; }
 }
+
+/* "Em andamento" volta para a cor de antes (verde-azulado), também nos ícones ◐ */
+.calpg .cal-and .bi-circle-half, .cal-mini .bi-circle-half.a, .calpg .cal-leg .bi-circle-half { color: #14b8a6; }
