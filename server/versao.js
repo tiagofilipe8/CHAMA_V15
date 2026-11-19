@@ -1,4 +1,4 @@
-// Versão que aparece no fim do menu (Central e Painel Beija-Flor).
+// Versão que aparece no fim do menu.
 // Formato: "v<versão do package.json> · <commit curto>". No Render o commit vem da variável
 // RENDER_GIT_COMMIT (o próprio Render preenche a cada publicação); na máquina local, do git.
 const { execFileSync } = require('child_process');

@@ -689,9 +689,6 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 .nav-sec.fechado .nav-sec-body { display: none; }
 .nav-sec + .nav-sec { margin-top: 2px; }
 
-/* Dia a dia da TI aberto dentro da Central */
-.main-content.ti-embed { padding: 0; display: flex; }
-.ti-frame { border: 0; width: 100%; flex: 1; min-height: calc(100vh - 67px); display: block; background: #f4f6f9; }
 
 /* Empresa única: some o que só serve para várias empresas */
 .empresa-unica .multi-empresa { display: none !important; }
@@ -727,18 +724,25 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 .tg-gray   { background: var(--c-gray-bg);   color: var(--c-gray-tx); }
 .tg-red    { background: var(--c-red-bg);    color: var(--c-red-tx); }
 
-/* Menu por módulo: Orcim (azul), Dia a dia da TI (verde-água), Administração (violeta) */
+/* Menu por assunto: Atendimento (azul), Equipamentos (âmbar), Locais (verde-água),
+   Cadastros (violeta), Sistema (cinza) */
 .nav-group { display: flex; align-items: center; gap: 7px; }
 .nav-group::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.nav-group.g-orcim { color: #6b9cf0; }
-.nav-group.g-ti    { color: #3fd1ae; }
-.nav-group.g-admin { color: #a98bf0; }
-.nav-item.g-orcim i { color: #7aa7f2; }
-.nav-item.g-ti i    { color: #4fd8b6; }
-.nav-item.g-admin i { color: #b39cf3; }
-.nav-item.g-orcim.active { background: rgba(37,99,235,.22);  box-shadow: inset 3px 0 0 #6b9cf0; }
-.nav-item.g-ti.active    { background: rgba(14,124,102,.26); box-shadow: inset 3px 0 0 #3fd1ae; }
-.nav-item.g-admin.active { background: rgba(124,58,237,.24); box-shadow: inset 3px 0 0 #a98bf0; }
+.nav-group.g-atend  { color: #6b9cf0; }
+.nav-group.g-equip  { color: #f0b45b; }
+.nav-group.g-locais { color: #3fd1ae; }
+.nav-group.g-cad    { color: #a98bf0; }
+.nav-group.g-sis    { color: #94a3b8; }
+.nav-item.g-atend i  { color: #7aa7f2; }
+.nav-item.g-equip i  { color: #f3c06f; }
+.nav-item.g-locais i { color: #4fd8b6; }
+.nav-item.g-cad i    { color: #b39cf3; }
+.nav-item.g-sis i    { color: #a7b3c4; }
+.nav-item.g-atend.active  { background: rgba(37,99,235,.22);  box-shadow: inset 3px 0 0 #6b9cf0; }
+.nav-item.g-equip.active  { background: rgba(217,119,6,.22);  box-shadow: inset 3px 0 0 #f0b45b; }
+.nav-item.g-locais.active { background: rgba(14,124,102,.26); box-shadow: inset 3px 0 0 #3fd1ae; }
+.nav-item.g-cad.active    { background: rgba(124,58,237,.24); box-shadow: inset 3px 0 0 #a98bf0; }
+.nav-item.g-sis.active    { background: rgba(148,163,184,.2); box-shadow: inset 3px 0 0 #94a3b8; }
 .nav-item.active i { color: #fff; }
 
 /* Selo do módulo ao lado do título da página */
@@ -797,7 +801,6 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 [data-bs-theme="dark"] .cal-day.lv3 .cal-count, [data-bs-theme="dark"] .cal-legend .lv3 { background: rgba(215,38,61,.22); color: #ff8fa0; }
 [data-bs-theme="dark"] .cal-invalid .cal-picked { background: rgba(215,38,61,.18); color: #ff8fa0; }
 [data-bs-theme="dark"] .cal-day.late { background: rgba(215,38,61,.08); border-color: rgba(215,38,61,.35); }
-[data-bs-theme="dark"] .ti-frame { background: var(--bg); }
 
 /* Siglas explicadas (passe o mouse ou toque) */
 abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }

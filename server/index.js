@@ -70,7 +70,6 @@ app.use('/api/impact-levels', impactLevelRoutes);
 app.use('/api/resolution-causes', resolutionCauseRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/materials', materialRoutes);
-app.use('/api/gbf', require('./gbf')); // Painel Beija-Flor (módulo à parte, login próprio) — ver server/gbf
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -96,8 +95,6 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err?.message || err);
 });
 
-// GBF_HOME=1: o endereço raiz abre o Painel Beija-Flor (ex.: ti.sgogeral.com). Sem a variável, nada muda.
-if (process.env.GBF_HOME === '1') app.get('/', (req, res) => res.redirect('/gbf/'));
 
 // Arquivos estaticos
 app.use('/uploads', express.static(config.uploadsDir, { fallthrough: true, index: false }));
@@ -127,7 +124,6 @@ app.get(/^\/(?!api|uploads|vendor|healthz).*/, (req, res) => {
 initSocket(server);
 backupService.startScheduler();
 maintenanceAlerts.startScheduler();
-require('./integracao-beijaflor').iniciar(); // envio ao Painel Beija-Flor (só liga com GBF_SYNC_URL + GBF_SYNC_TOKEN)
 
 server.listen(config.port, () => {
   console.log('==============================================================');

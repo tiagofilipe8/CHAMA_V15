@@ -3,113 +3,55 @@
 // ---------------------------------------------------------------
 
 // Menu lateral montado a partir das permissoes do perfil
-//  - Orcim: o sistema de chamados (painel, chamados, inventario...)
-//  - Dia a dia da TI: rotina do tecnico do grupo (aberta dentro desta tela, ver TI abaixo)
-//  - Administracao
+//  - no topo: Abrir chamado (destaque) e Meus chamados (com sininho de novidade)
+//  - Atendimento: painel e listas de chamados
+//  - Equipamentos: inventario
+//  - Locais: localizacoes (empresa > posto)
+//  - Cadastros: usuarios, empresas, materiais, categorias
+//  - Sistema: perfis e permissoes, configuracoes (so o Administrador Mestre)
 function buildNav(u) {
   const can = (perm) => Roles.can(u, perm);
   const master = Roles.isMaster(u);
   const client = Roles.isClient(u);
   const items = [];
+  const grupo = (titulo, g, lista) => {
+    if (lista.length) items.push({ group: titulo, g }, ...lista.map((i) => ({ ...i, g })));
+  };
+
   // Abrir chamado: a acao principal do sistema, sempre no topo do menu e em destaque
   if (can('ticket.create')) items.push({ cta: true, href: '#/new', icon: 'bi-plus-lg', label: 'Abrir chamado' });
   // Meus chamados (os que abri e os que estao comigo), logo abaixo, com sininho de novidade.
   // Para o cliente a lista "Chamados" ja e a dele: o atalho aponta para ela e ela sai do grupo.
   const listaJaEMinha = client || (!can('ticket.view_all') && !can('ticket.view_company'));
   items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-person-lines-fill', label: 'Meus chamados' });
-  const orcim = [];
-  if (can('dashboard.view')) orcim.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
-  const ticketsLabel = can('ticket.view_all') ? 'Chamados'
-    : (can('ticket.view_company') && !client) ? 'Chamados da empresa' : 'Meus Chamados';
-  if (!listaJaEMinha) orcim.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
-  if (client && can('ticket.view_company')) orcim.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da Equipe' });
-  orcim.push({ href: '#/watching', icon: 'bi-eye', label: 'Chamados a observar' });
-  if (can('inventory.view')) orcim.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
-  items.push({ group: 'Orcim', g: 'g-orcim' }, ...orcim.map((i) => ({ ...i, g: 'g-orcim' })));
 
-  const tiGestor = can('ti.manage');
-  if (tiGestor || can('ti.view')) {
-    items.push({ group: 'Dia a dia da TI', g: 'g-ti' });
-    if (tiGestor) {
-      items.push({ href: '#/ti/painel', icon: 'bi-graph-up-arrow', label: 'Painel do gestor' });
-      items.push({ href: '#/ti', icon: 'bi-binoculars', label: 'Acompanhamento' });
-      items.push({ href: '#/ti/hoje', icon: 'bi-sun', label: 'Dia do técnico' });
-    } else {
-      items.push({ href: '#/ti', icon: 'bi-sun', label: 'Meu dia' });
-    }
-    items.push({ href: '#/ti/agenda', icon: 'bi-calendar3', label: 'Agenda' });
-    items.push({ href: '#/ti/postos', icon: 'bi-pin-map', label: 'Postos' });
-    items.push({ href: '#/ti/solicitacoes', icon: 'bi-megaphone', label: 'Solicitações' });
-    items.push({ href: '#/ti/atividades', icon: 'bi-kanban', label: tiGestor ? 'Atividades' : 'Minhas atividades' });
-    items.push({ href: '#/ti/checklists', icon: 'bi-ui-checks', label: 'Checklists' });
-  }
+  const atendimento = [];
+  if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
+  const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
+  if (!listaJaEMinha) atendimento.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
+  if (client && can('ticket.view_company')) atendimento.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da equipe' });
+  atendimento.push({ href: '#/watching', icon: 'bi-eye', label: 'Acompanhando' });
+  grupo('Atendimento', 'g-atend', atendimento);
 
-  const admin = [];
-  if (can('users.manage')) admin.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
-  if (master) admin.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
-  if (can('locations.manage')) admin.push({ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' });
-  if (master || Roles.isManager(u) || u.role === 'admin_local') admin.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
-  if (master) {
-    admin.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
-    admin.push({ href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' });
-    admin.push({ href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' });
-  }
-  if (admin.length) items.push({ group: 'Administração', g: 'g-admin' }, ...admin.map((i) => ({ ...i, g: 'g-admin' })));
-  // itens do Dia a dia da TI: marca o grupo (cor do módulo)
-  items.forEach((i) => { if (!i.g && i.href && i.href.startsWith('#/ti')) i.g = 'g-ti'; });
+  grupo('Equipamentos', 'g-equip', can('inventory.view')
+    ? [{ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' }] : []);
+
+  grupo('Locais', 'g-locais', can('locations.manage')
+    ? [{ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' }] : []);
+
+  const cadastros = [];
+  if (can('users.manage')) cadastros.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
+  if (master) cadastros.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
+  if (master || Roles.isManager(u) || u.role === 'admin_local') cadastros.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
+  if (master) cadastros.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
+  grupo('Cadastros', 'g-cad', cadastros);
+
+  grupo('Sistema', 'g-sis', master ? [
+    { href: '#/admin/roles', icon: 'bi-shield-check', label: 'Perfis e permissões' },
+    { href: '#/admin/settings', icon: 'bi-gear', label: 'Configurações' },
+  ] : []);
   return items;
 }
-
-// ---------------- Dia a dia da TI (embutido) ----------------
-// As telas do Dia a dia da TI ficam em /gbf e abrem num quadro dentro desta tela,
-// com o mesmo login (a /gbf troca o token da Central pelo dela) e sem o menu proprio.
-const TI_TITULOS = {
-  '': 'Dia a dia da TI', painel: 'Painel do gestor', hoje: 'Dia do técnico', agenda: 'Agenda',
-  postos: 'Postos', visitas: 'Visita', solicitacoes: 'Solicitações', atividades: 'Atividades',
-  checklists: 'Checklists', config: 'Config. do Dia a dia',
-};
-const TI = {
-  // '#/ti/postos/3?x=1' -> '#/postos/3?x=1' (rota dentro do /gbf)
-  rotaInterna(hash) { return '#/' + hash.replace(/^#\/ti\/?/, ''); },
-  titulo(hash) {
-    const parte = hash.replace(/^#\/ti\/?/, '').split(/[/?]/)[0];
-    return TI_TITULOS[parte] || 'Dia a dia da TI';
-  },
-  frame() { return document.getElementById('ti-frame'); },
-  // ja existe o quadro: so muda a rota dentro dele (nao recarrega)
-  navegar(hash) {
-    const f = this.frame();
-    if (!f || !f.contentWindow) return false;
-    const alvo = this.rotaInterna(hash);
-    if (f.contentWindow.location.hash !== alvo) f.contentWindow.location.hash = alvo;
-    document.getElementById('page-title').textContent = this.titulo(hash);
-    return true;
-  },
-  abrir(el, hash) {
-    const view = document.getElementById('view');
-    view.classList.add('ti-embed');
-    el.innerHTML = `<iframe id="ti-frame" class="ti-frame" title="Dia a dia da TI"
-      src="/gbf/?embed=1${this.rotaInterna(hash)}"></iframe>`;
-    document.getElementById('page-title').textContent = this.titulo(hash);
-  },
-};
-
-// Mensagens vindas do quadro do Dia a dia da TI
-window.addEventListener('message', (ev) => {
-  if (ev.origin !== location.origin || !ev.data || typeof ev.data !== 'object') return;
-  const m = ev.data;
-  if (m.gbf === 'rota' && typeof m.hash === 'string') {
-    // navegacao dentro do quadro: atualiza o endereco e o menu sem recarregar
-    const novo = '#/ti' + (m.hash === '#/' ? '' : m.hash.replace(/^#/, ''));
-    if (location.hash !== novo) history.replaceState(null, '', novo);
-    activeNav();
-    document.getElementById('page-title').textContent = TI.titulo(novo);
-  } else if (m.gbf === 'abrir' && typeof m.hash === 'string' && /^#\/[\w/?=&.-]*$/.test(m.hash)) {
-    location.hash = m.hash; // ex.: chamado da Orcim citado numa atividade
-  } else if (m.gbf === 'sem-acesso') {
-    toast(m.mensagem || 'Sem acesso ao Dia a dia da TI.', 'warning');
-  }
-});
 
 let socket = null;
 
@@ -123,7 +65,7 @@ function pageTitleFromPath() {
     '/dashboard': 'Painel de Chamados',
     '/tickets': 'Chamados',
     '/team-tickets': 'Chamados da Equipe',
-    '/watching': 'Chamados a observar',
+    '/watching': 'Acompanhando',
     '/mine': 'Meus chamados',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
@@ -137,26 +79,25 @@ function pageTitleFromPath() {
     '/admin/roles': 'Perfis e permissões',
     '/perfil': 'Meu Perfil',
   };
-  if (path === '/ti' || path.startsWith('/ti/') || path.startsWith('/ti?')) return TI.titulo('#' + path);
   if (path.startsWith('/tickets/')) return 'Chamado';
   if (path.startsWith('/inventory/')) return 'Ativo';
   return map[path] || 'Sistema';
 }
 
-// Grupos do menu que o usuario deixou fechados (padrao: Administracao fechada)
+// Grupos do menu que o usuario deixou fechados (padrao: Cadastros e Sistema fechados)
 function navFechados() {
   try {
-    const v = JSON.parse(localStorage.getItem('nav_fechados'));
+    const v = JSON.parse(localStorage.getItem('nav_grupos_fechados'));
     if (Array.isArray(v)) return v;
   } catch {}
-  return ['g-admin'];
+  return ['g-cad', 'g-sis'];
 }
 
 function renderNav() {
   const user = currentUser();
   const nav = document.getElementById('side-nav');
   const items = buildNav(user);
-  // Cada grupo (Orcim, Dia a dia da TI, Administracao) abre e fecha clicando no titulo;
+  // Cada grupo (Atendimento, Equipamentos, Locais, Cadastros, Sistema) abre e fecha clicando no titulo;
   // o que ficou fechado e lembrado neste navegador.
   const fechados = navFechados();
   let html = '';
@@ -190,7 +131,7 @@ function renderNav() {
     b.setAttribute('aria-expanded', String(!fechado));
     const lista = navFechados().filter((g) => g !== sec.dataset.sec);
     if (fechado) lista.push(sec.dataset.sec);
-    try { localStorage.setItem('nav_fechados', JSON.stringify(lista)); } catch {}
+    try { localStorage.setItem('nav_grupos_fechados', JSON.stringify(lista)); } catch {}
   }));
   pintarNovidades();
 
@@ -227,12 +168,15 @@ function renderNav() {
   }
 }
 
-// Selo do módulo ao lado do título (mesma cor do grupo no menu)
+// Selo do grupo ao lado do título (mesma cor do grupo no menu)
 function moduloAtual() {
   const p = location.hash.replace(/^#/, '') || '/dashboard';
-  if (p === '/ti' || p.startsWith('/ti/') || p.startsWith('/ti?')) return ['Dia a dia da TI', 'tg-teal', 'bi-feather'];
-  if (p.startsWith('/admin') || p === '/perfil') return ['Administração', 'tg-violet', 'bi-gear'];
-  return ['Orcim', 'tg-blue', 'bi-headset'];
+  if (p.startsWith('/inventory')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
+  if (p.startsWith('/admin/locations')) return ['Locais', 'tg-teal', 'bi-geo-alt'];
+  if (p.startsWith('/admin/roles') || p.startsWith('/admin/settings')) return ['Sistema', 'tg-gray', 'bi-gear'];
+  if (p.startsWith('/admin')) return ['Cadastros', 'tg-violet', 'bi-folder2-open'];
+  if (p === '/perfil') return ['Minha conta', 'tg-gray', 'bi-person'];
+  return ['Atendimento', 'tg-blue', 'bi-headset'];
 }
 function marcarModulo() {
   const el = document.getElementById('page-modulo');
@@ -242,13 +186,11 @@ function marcarModulo() {
   el.innerHTML = `<i class="bi ${icone}"></i>${nome}`;
 }
 
-// Modo escuro: guardado no navegador; o Dia a dia da TI (mesmo endereço) acompanha sozinho
+// Modo escuro: guardado no navegador
 function aplicarTema(tema) {
   document.documentElement.setAttribute('data-bs-theme', tema);
   const b = document.getElementById('btn-tema');
   if (b) b.innerHTML = tema === 'dark' ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-stars-fill"></i>';
-  const f = document.getElementById('ti-frame');
-  if (f && f.contentDocument) f.contentDocument.documentElement.setAttribute('data-bs-theme', tema);
 }
 
 function activeNav() {
@@ -260,7 +202,7 @@ function activeNav() {
     const href = a.getAttribute('href') || '';
     const target = href.replace(/^#/, '');
     a.classList.toggle('active',
-      (target === '/dashboard' || target === '/ti') ? path === target || (target === '/ti' && path.startsWith('/ti?'))
+      target === '/dashboard' ? path === target
         : path === target || path.startsWith(target + '/') || path.startsWith(target + '?'));
   });
   const cta = document.querySelector('#side-nav .nav-cta');
@@ -295,7 +237,6 @@ const routes = [
   { re: /^#\/admin\/settings$/, view: () => Views.adminSettings },
   { re: /^#\/admin\/roles$/, view: () => Views.adminRoles },
   { re: /^#\/perfil$/, view: () => Views.profile },
-  { re: /^#\/ti(\/.*|\?.*)?$/, view: (m) => (el) => TI.abrir(el, m[0]) },
 ];
 
 async function router() {
@@ -308,11 +249,6 @@ async function router() {
   const aberto = hash.match(/^#\/tickets\/(\d+)/);
   if (aberto && novidades.includes(Number(aberto[1]))) {
     API.post('/notifications/read', { ticket_id: Number(aberto[1]) }).then(loadBell).catch(() => {});
-  }
-  if (/^#\/ti(\/|\?|$)/.test(hash)) {
-    if (TI.navegar(hash)) return;
-  } else {
-    viewEl.classList.remove('ti-embed');
   }
   for (const r of routes) {
     const m = hash.match(r.re);

@@ -18,38 +18,11 @@ Sistema publicado nesta máquina e acessível pela rede interna.
 
 > Troque as senhas após o primeiro acesso (menu de alteração de senha).
 
-## Painel Beija-Flor (`/gbf/`)
-
-Módulo à parte (branch `modulo-beijaflor`, que já inclui o `Lucas-Melhorias-UX`), com login
-próprio em tabelas `gbf_*` criadas automaticamente na subida. **Não altera nenhuma tabela da
-Central** e as integrações externas ficam desligadas sem as variáveis de ambiente.
-
-- **URL:** http://192.168.7.150:7070/gbf/
-- **API:** `/api/gbf/*`
-- **Primeiro gestor (criado sozinho na primeira subida):**
-
-  | Usuário | Senha |
-  | --- | --- |
-  | `beijaflor` | gerada — consultar `C:\ORCIM\runtime\app.out.log` (linhas "Painel Beija-Flor: primeiro acesso criado") |
-
-  > Troque a senha no primeiro acesso (`must_change_password` já vem ativo).
-  > Para fixar o login/senha inicial, defina no `.env` **antes** da primeira subida:
-  > `GBF_ADMIN_USER` e `GBF_ADMIN_PASSWORD`.
-
-- Os tokens do painel e da Central são separados (`audience` próprio): um login não abre o outro.
-
-### Integrações externas (opcionais, desligadas por padrão)
+### Variável opcional
 
 | Variável | Efeito |
 | --- | --- |
-| `GBF_HOME=1` | raiz `/` redireciona para `/gbf/` |
-| `WHATSAPP_DISABLED=1` | não inicia o cliente do WhatsApp |
-| `ORCIM_DB_URL` | painel lê o banco da Central por conexão somente leitura (modo externo) |
-| `GBF_SYNC_URL` + `GBF_SYNC_TOKEN` | Central **envia** alterações ao painel do grupo a cada minuto (`server/integracao-beijaflor/LEIA-ME.md`) |
-
-Sem essas variáveis, a Central funciona exatamente como antes e o painel lê o próprio banco.
-
-Documentação completa do módulo: `docs/painel-beija-flor/README.md`.
+| `WHATSAPP_DISABLED=1` | não inicia o cliente do WhatsApp (ex.: servidor sem navegador) |
 
 ## Recepção de chamados por WhatsApp
 

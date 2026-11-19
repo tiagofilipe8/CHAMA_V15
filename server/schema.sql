@@ -603,3 +603,7 @@ WHERE role_key = 'admin_local' AND allowed AND permission <> 'ticket.internal'
 ON CONFLICT (role_key, permission) DO UPDATE SET allowed = TRUE, updated_at = now();
 DELETE FROM role_permissions WHERE role_key = 'admin_local';
 UPDATE users SET role = 'client', client_level = 2 WHERE role = 'admin_local';
+
+-- Dia a dia da TI saiu da Central (era outro sistema, 2026-11-19): some das permissoes.
+-- As tabelas gbf_* nao sao apagadas aqui (os dados ficam guardados no banco).
+DELETE FROM role_permissions WHERE permission IN ('ti.view', 'ti.manage');

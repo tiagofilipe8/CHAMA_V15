@@ -891,7 +891,7 @@ Views.adminLocations = async function adminLocations(el) {
           <div class="col-6 mb-2"><label class="form-label small">Senha * (mín. 6)</label>
             <input class="form-control" id="lm-pass" type="password" autocomplete="new-password"></div>
         </div>`}
-        <div class="form-text">O posto também aparece sozinho nos <b>Postos</b> do Dia a dia da TI, onde se definem as visitas e o checklist.
+        <div class="form-text">
           Pessoas (gestor, TI) se ligam a uma localização em <a href="#/admin/users">Usuários</a>.</div>
       </div>
       <div class="modal-footer">
