@@ -12,8 +12,9 @@ const DIA = (col) => `(${col} AT TIME ZONE ${TZ})::date`;
 const HORA = (col) => `to_char(${col} AT TIME ZONE ${TZ}, 'HH24:MI')`;
 
 // técnico vê as próprias atividades + as sem responsável; gestor vê todas
+// (u.comoTecnico: gestor que também faz visitas olhando o próprio "Meu dia")
 function filtroTarefas(u, params) {
-  if (u.role === 'gestor') return 'TRUE';
+  if (u.role === 'gestor' && !u.comoTecnico) return 'TRUE';
   params.push(u.id);
   return `(t.assignee_id = $${params.length} OR t.assignee_id IS NULL OR t.created_by = $${params.length})`;
 }
@@ -80,10 +81,11 @@ router.get('/agenda', ah(async (req, res) => {
 // ------------------------------- Meu dia ------------------------------
 router.get('/hoje', ah(async (req, res) => {
   await sincronizar();
-  const u = req.gbfUser;
+  const comoTecnico = req.gbfUser.role !== 'gestor' || req.query.meu === '1';
+  const u = { ...req.gbfUser, comoTecnico };
   const pT = [];
   const fT = filtroTarefas(u, pT);
-  const pV = u.role === 'gestor' ? [] : [u.id];
+  const pV = comoTecnico ? [u.id] : [];
   const [visitas, andamento, proximas, ativHoje, ativAtrasadas, solic, feitas] = await Promise.all([
     query(`SELECT l.id, l.name, l.address, l.next_visit_date::text AS data, to_char(l.next_visit_time,'HH24:MI') AS hora,
                   l.next_visit_date < ${HOJE} AS atrasada, c.name AS checklist_name,
@@ -126,6 +128,46 @@ router.get('/hoje', ah(async (req, res) => {
     atividades_atrasadas: ativAtrasadas.rows,
     solicitacoes: solic.rows,
     concluidas_hoje: feitas.rows[0],
+  });
+}));
+
+// --------------------------- Contadores do menu ---------------------------
+// Números pequenos ao lado dos itens do menu (o que está esperando a pessoa).
+router.get('/menu/contadores', ah(async (req, res) => {
+  const u = req.gbfUser;
+  const gestor = u.role === 'gestor';
+  const tecnico = !gestor || u.faz_visitas;
+  const pT = [];
+  const fT = filtroTarefas({ ...u, comoTecnico: !gestor }, pT);
+  const pMeu = [u.id];
+  const [base, meu] = await Promise.all([
+    query(`SELECT
+       (SELECT count(*)::int FROM gbf_requests WHERE status IN ('a_fazer','em_andamento')) AS visitas_pedidas,
+       (SELECT count(*)::int FROM gbf_tasks t WHERE t.status NOT IN ('concluida','cancelada') AND t.due_at < now() AND ${fT}) AS atividades,
+       (SELECT count(*)::int FROM gbf_locations l WHERE l.active AND l.next_visit_date < ${HOJE}
+          AND NOT EXISTS (SELECT 1 FROM gbf_visits v WHERE v.location_id = l.id AND v.status = 'em_andamento')) AS postos_atrasados,
+       (SELECT count(DISTINCT v.id)::int FROM gbf_visits v JOIN gbf_visit_answers a ON a.visit_id = v.id AND a.answer = 'nao_ok'
+          WHERE v.status = 'concluida' AND v.finished_at >= now() - interval '30 days'
+            AND NOT EXISTS (SELECT 1 FROM gbf_tasks t WHERE t.visit_id = v.id)
+            AND NOT EXISTS (SELECT 1 FROM gbf_visits v2 WHERE v2.location_id = v.location_id AND v2.status = 'concluida' AND v2.finished_at > v.finished_at)) AS nao_ok,
+       (SELECT count(*)::int FROM gbf_tasks WHERE status NOT IN ('concluida','cancelada') AND due_at < now()) AS atividades_todas,
+       (SELECT count(*)::int FROM gbf_requests WHERE (status = 'a_fazer' AND created_at < now() - interval '2 days')
+          OR (status IN ('a_fazer','em_andamento') AND desired_date < ${HOJE})) AS solicitacoes_paradas`, pT),
+    tecnico ? query(`SELECT
+       (SELECT count(*)::int FROM gbf_locations l WHERE l.active AND l.next_visit_date <= ${HOJE}) AS visitas_hoje,
+       (SELECT count(*)::int FROM gbf_requests WHERE kind = 'visita' AND status IN ('a_fazer','em_andamento')
+          AND COALESCE(desired_date, ${HOJE}) <= ${HOJE}) AS pedidas_hoje,
+       (SELECT count(*)::int FROM gbf_tasks t WHERE t.status NOT IN ('concluida','cancelada')
+          AND (t.assignee_id = $1 OR t.assignee_id IS NULL) AND ${DIA('t.due_at')} <= ${HOJE}) AS atividades_hoje`, pMeu)
+      : { rows: [{}] },
+  ]);
+  const b = base.rows[0];
+  const m = meu.rows[0];
+  res.json({
+    inicio: gestor ? b.postos_atrasados + b.nao_ok + b.atividades_todas + b.solicitacoes_paradas : 0,
+    meu_dia: tecnico ? (m.visitas_hoje || 0) + (m.pedidas_hoje || 0) + (m.atividades_hoje || 0) : 0,
+    visitas_pedidas: b.visitas_pedidas,
+    atividades: b.atividades,
   });
 }));
 

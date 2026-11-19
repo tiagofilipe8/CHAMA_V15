@@ -20,6 +20,9 @@ function publicUser(u) {
   return {
     id: u.id, username: u.username, name: u.name, email: u.email, phone: u.phone,
     role: u.role, active: u.active, must_change_password: u.must_change_password,
+    // papéis: gestor e/ou técnico (o gestor que também faz visitas tem os dois)
+    faz_visitas: !!u.faz_visitas,
+    papeis: u.role === 'gestor' ? (u.faz_visitas ? ['gestor', 'tecnico'] : ['gestor']) : ['tecnico'],
     last_login: u.last_login,
   };
 }

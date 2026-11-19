@@ -118,7 +118,7 @@ privado.post('/notificacoes/lidas', ah(async (req, res) => {
 // Técnicos também precisam ver os nomes para filtros
 privado.get('/usuarios/ativos', ah(async (req, res) => {
   const { rows } = await query(
-    'SELECT id, name, role FROM gbf_users WHERE active = TRUE ORDER BY name');
+    'SELECT id, name, role, faz_visitas FROM gbf_users WHERE active = TRUE ORDER BY name');
   res.json(rows);
 }));
 
@@ -142,10 +142,18 @@ function validarDados(b, novo) {
   }
   if (b.email !== undefined) out.email = String(b.email || '').trim() || null;
   if (b.phone !== undefined) out.phone = String(b.phone || '').trim() || null;
-  if (novo || b.role !== undefined) {
+  // Papéis em etiquetas: gestor e/ou técnico. Gestor + técnico = gestor que também faz visitas.
+  if (Array.isArray(b.papeis)) {
+    const p = new Set(b.papeis.map(String));
+    if (![...p].every((x) => ['gestor', 'tecnico'].includes(x))) return { erro: 'Papel inválido.' };
+    if (!p.size) return { erro: 'Escolha pelo menos um papel: Gestor e/ou Técnico.' };
+    out.role = p.has('gestor') ? 'gestor' : 'tecnico';
+    out.faz_visitas = p.has('gestor') && p.has('tecnico');
+  } else if (novo || b.role !== undefined) {
     const r = b.role || 'tecnico';
     if (!['gestor', 'tecnico'].includes(r)) return { erro: 'Papel inválido.' };
     out.role = r;
+    if (r === 'tecnico') out.faz_visitas = false;
   }
   if (b.active !== undefined) out.active = !!b.active;
   return { out };
@@ -159,9 +167,9 @@ privado.post('/usuarios', requireGestor, ah(async (req, res) => {
   if (senha.length < SENHA_MIN) return res.status(422).json({ error: `A senha precisa de ao menos ${SENHA_MIN} caracteres.` });
   try {
     const { rows } = await query(
-      `INSERT INTO gbf_users (username, password_hash, name, email, phone, role, must_change_password)
-       VALUES ($1,$2,$3,$4,$5,$6,TRUE) RETURNING *`,
-      [out.username, await bcrypt.hash(senha, 10), out.name, out.email ?? null, out.phone ?? null, out.role]);
+      `INSERT INTO gbf_users (username, password_hash, name, email, phone, role, faz_visitas, must_change_password)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE) RETURNING *`,
+      [out.username, await bcrypt.hash(senha, 10), out.name, out.email ?? null, out.phone ?? null, out.role, !!out.faz_visitas]);
     res.status(201).json(publicUser(rows[0]));
   } catch (e) {
     if (e.code === '23505') return res.status(422).json({ error: 'Já existe um usuário com esse login.' });

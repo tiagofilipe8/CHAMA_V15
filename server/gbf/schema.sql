@@ -252,3 +252,6 @@ CREATE TABLE IF NOT EXISTS gbf_reschedules (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_gbf_reschedules_ref ON gbf_reschedules(kind, ref_id, created_at DESC);
+
+-- Papéis: um gestor também pode fazer visitas (ser técnico). Ex.: o Lucas é gestor e técnico.
+ALTER TABLE gbf_users ADD COLUMN IF NOT EXISTS faz_visitas BOOLEAN NOT NULL DEFAULT FALSE;

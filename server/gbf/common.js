@@ -58,10 +58,14 @@ async function notificar(userIds, { kind, title, message = null, link = null }) 
   }
 }
 
+// "tecnico" inclui os gestores que também fazem visitas
 async function usuariosAtivos(role = null) {
+  let filtro = '';
+  if (role === 'tecnico') filtro = "AND (role = 'tecnico' OR (role = 'gestor' AND faz_visitas))";
+  else if (role) filtro = 'AND role = $1';
   const { rows } = await query(
-    `SELECT id FROM gbf_users WHERE active = TRUE ${role ? 'AND role = $1' : ''}`,
-    role ? [role] : []);
+    `SELECT id FROM gbf_users WHERE active = TRUE ${filtro}`,
+    role && role !== 'tecnico' ? [role] : []);
   return rows.map((r) => r.id);
 }
 

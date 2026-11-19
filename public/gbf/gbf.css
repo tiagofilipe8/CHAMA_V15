@@ -484,43 +484,43 @@ html[data-bs-theme="dark"] .pg-api { background: rgba(245,158,11,.18); color: #f
 .pg-tabela td:first-child { white-space: nowrap; }
 
 /* Calendário do painel do gestor: um número por urgência, na cor da urgência */
-.cal-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.cal-mes { font-size: 1rem; min-width: 150px; text-align: center; }
-.cal-filtros { display: flex; gap: 4px; flex-wrap: wrap; }
-.cal-filtros button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 2px 11px; font-size: .76rem; color: var(--muted); }
-.cal-filtros button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
-.cal-legenda { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: .76rem; margin-bottom: 10px; }
-.cal-legenda span { display: inline-flex; align-items: center; gap: 5px; }
-.cal-legenda .cal-num { color: transparent; }
-.cal-num { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 5px;
+.calpg .cal-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.calpg .cal-mes { font-size: 1rem; min-width: 150px; text-align: center; }
+.calpg .cal-filtros { display: flex; gap: 4px; flex-wrap: wrap; }
+.calpg .cal-filtros button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 2px 11px; font-size: .76rem; color: var(--muted); }
+.calpg .cal-filtros button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.calpg .cal-legenda { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: .76rem; margin-bottom: 10px; }
+.calpg .cal-legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.calpg .cal-legenda .cal-num { color: transparent; }
+.calpg .cal-num { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 5px;
   border-radius: 9px; font-size: .72rem; font-weight: 700; font-style: normal; color: #fff; line-height: 1; }
-.urg-4 { background: #d7263d; } .urg-3 { background: #ec7a1c; } .urg-2 { background: #d9a400; color: #3d2e00; } .urg-1 { background: #4c7dd9; }
-.cal-corpo { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.cal-sem { font-size: .7rem; color: var(--muted); text-align: center; text-transform: uppercase; padding-bottom: 2px; }
-.cal-cel { position: relative; min-height: 64px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 5px;
+.calpg .urg-4 { background: #d7263d; } .urg-3 { background: #ec7a1c; } .urg-2 { background: #d9a400; color: #3d2e00; } .urg-1 { background: #4c7dd9; }
+.calpg .cal-corpo { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.calpg .cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.calpg .cal-sem { font-size: .7rem; color: var(--muted); text-align: center; text-transform: uppercase; padding-bottom: 2px; }
+.calpg .cal-cel { position: relative; min-height: 64px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 5px;
   display: flex; flex-direction: column; align-items: stretch; gap: 3px; text-align: left; color: inherit; }
-.cal-cel:hover { border-color: var(--brand); }
-.cal-cel.fora { opacity: .45; }
-.cal-cel.hoje .cal-d { background: var(--brand); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
-.cal-cel.sel { border: 2px solid var(--brand); padding: 3px 4px; background: var(--brand-50); }
-.cal-d { font-size: .8rem; font-weight: 600; }
-.cal-nums { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
-.cal-atr { position: absolute; top: 4px; right: 5px; font-size: .66rem; color: #b91c1c; display: inline-flex; gap: 2px; align-items: center; }
-.cal-dia { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; position: sticky; top: 70px; }
-.cal-dia h3 { font-size: .92rem; font-weight: 700; margin: 0 0 2px; display: flex; gap: 6px; align-items: center; }
-.cal-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line-soft); cursor: pointer; }
-.cal-item .cal-num { min-width: 10px; width: 10px; height: 10px; padding: 0; margin-top: 5px; }
-.cal-item .t { font-weight: 600; font-size: .85rem; }
-.cal-item:hover .t { color: var(--brand); }
-.cal-resumo { margin-top: 10px; }
+.calpg .cal-cel:hover { border-color: var(--brand); }
+.calpg .cal-cel.fora { opacity: .45; }
+.calpg .cal-cel.hoje .cal-d { background: var(--brand); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
+.calpg .cal-cel.sel { border: 2px solid var(--brand); padding: 3px 4px; background: var(--brand-50); }
+.calpg .cal-d { font-size: .8rem; font-weight: 600; }
+.calpg .cal-nums { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+.calpg .cal-atr { position: absolute; top: 4px; right: 5px; font-size: .66rem; color: #b91c1c; display: inline-flex; gap: 2px; align-items: center; }
+.calpg .cal-dia { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; position: sticky; top: 70px; }
+.calpg .cal-dia h3 { font-size: .92rem; font-weight: 700; margin: 0 0 2px; display: flex; gap: 6px; align-items: center; }
+.calpg .cal-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line-soft); cursor: pointer; }
+.calpg .cal-item .cal-num { min-width: 10px; width: 10px; height: 10px; padding: 0; margin-top: 5px; }
+.calpg .cal-item .t { font-weight: 600; font-size: .85rem; }
+.calpg .cal-item:hover .t { color: var(--brand); }
+.calpg .cal-resumo { margin-top: 10px; }
 @media (max-width: 900px) {
-  .cal-corpo { grid-template-columns: 1fr; }
-  .cal-dia { position: static; }
-  .cal-cel { min-height: 52px; padding: 3px; }
-  .cal-num { min-width: 16px; height: 16px; font-size: .66rem; padding: 0 3px; }
+  .calpg .cal-corpo { grid-template-columns: 1fr; }
+  .calpg .cal-dia { position: static; }
+  .calpg .cal-cel { min-height: 52px; padding: 3px; }
+  .calpg .cal-num { min-width: 16px; height: 16px; font-size: .66rem; padding: 0 3px; }
 }
-html[data-bs-theme="dark"] .cal-atr { color: #f87171; }
+html[data-bs-theme="dark"] .calpg .cal-atr { color: #f87171; }
 
 /* Solicitação de visita: lista de tarefas para marcar */
 .sl-tarefas { border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px; max-height: 340px; overflow-y: auto; background: var(--card); }
@@ -632,3 +632,18 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .kpi .val { font-size: 1.3rem; font-weight: 700; }
 .kpis-hoje .kpi .val { font-size: 1.45rem; }
 .kpi { padding: 11px 14px; }
+
+/* Menu: botão Solicitar visita, contadores e rodapé */
+.side-cta { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 4px 2px 10px; padding: 9px 10px; border-radius: 10px;
+  background: #e6f4f2; color: #0d5f59 !important; font-weight: 600; text-decoration: none; }
+.side-cta:hover { background: #ccebe6; }
+.side-nav a { position: relative; }
+.side-cont { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #f59e0b; color: #422006;
+  font-size: .7rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.side-cont.urg { background: #dc2626; color: #fff; }
+.side-sep { border-top: 1px solid rgba(255, 255, 255, .08); margin: 12px 8px 8px; }
+/* Usuários: papéis em etiquetas (pode marcar Gestor e Técnico) */
+.papeis { display: flex; gap: 8px; flex-wrap: wrap; }
+.papel { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; margin: 0; }
+.papel input { accent-color: var(--brand); }
+.papel:has(input:checked) { background: var(--brand-50); border-color: var(--brand); font-weight: 600; }
