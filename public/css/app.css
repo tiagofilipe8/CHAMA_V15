@@ -105,30 +105,30 @@ body {
 }
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px 14px 10px; color: #fff;
+  padding: 10px 12px 6px; color: #fff;
 }
 .sidebar-logo {
-  width: 36px; height: 36px; border-radius: 10px; overflow: hidden;
+  width: 30px; height: 30px; border-radius: 8px; overflow: hidden;
   background: linear-gradient(135deg, var(--primary), var(--primary-2));
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 1.2rem; flex-shrink: 0;
+  color: #fff; font-size: 1rem; flex-shrink: 0;
 }
 .sidebar-logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 4px; }
-.sidebar-brand strong { display: block; font-size: .98rem; line-height: 1.15; }
-.sidebar-brand small { color: #94a3b8; font-size: .72rem; }
-.sidebar-nav { flex: 1; padding: 4px 10px 8px; overflow-y: auto; }
+.sidebar-brand strong { display: block; font-size: .92rem; line-height: 1.1; }
+.sidebar-brand small { color: #94a3b8; font-size: .68rem; line-height: 1.1; }
+.sidebar-nav { flex: 1; padding: 2px 8px 6px; overflow-y: auto; }
 .nav-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 10px; margin-bottom: 1px; border-radius: 8px;
-  color: #cbd5e1; text-decoration: none; font-weight: 500; font-size: .85rem;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 9px; margin-bottom: 0; border-radius: 7px; line-height: 1.3;
+  color: #cbd5e1; text-decoration: none; font-weight: 500; font-size: .84rem;
   transition: background .15s, color .15s;
 }
-.nav-item i { font-size: .95rem; width: 18px; text-align: center; }
+.nav-item i { font-size: .9rem; width: 18px; text-align: center; }
 
 /* Abrir chamado: a acao principal, no topo do menu e com fundo proprio */
 .nav-cta {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  margin: 2px 0 10px; padding: 10px 12px; border-radius: 10px;
+  margin: 2px 0 6px; padding: 7px 12px; border-radius: 9px;
   background: linear-gradient(135deg, #12a383, var(--primary));
   color: #fff; font-weight: 700; font-size: .92rem; text-decoration: none;
   box-shadow: 0 4px 14px rgba(18,163,131,.35), inset 0 1px 0 rgba(255,255,255,.18);
@@ -141,7 +141,7 @@ body {
 
 /* Meus chamados: logo abaixo do Abrir chamado, com sininho quando ha novidade */
 .nav-top { background: rgba(168,186,206,.12); border: 1px solid rgba(168,186,206,.16); color: #e6ecf2;
-  font-weight: 600; margin-bottom: 8px; padding: 8px 10px; }
+  font-weight: 600; margin-bottom: 4px; padding: 5px 9px; }
 .nav-top > i { color: #b4c4d6; }
 .nav-item.nav-top:hover { background: rgba(168,186,206,.18); color: #fff; }
 .nav-item.nav-top.active { color: #fff; background: rgba(168,186,206,.22); border-color: rgba(168,186,206,.3); box-shadow: inset 3px 0 0 #a9bdd3; }
@@ -152,10 +152,11 @@ body {
 .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
 .nav-item.active { background: rgba(14,124,102,.22); color: #fff; box-shadow: inset 3px 0 0 #3fd1ae; }
 .nav-sep { border-color: rgba(255,255,255,.08); margin: 10px 6px; }
-.sidebar-versao { padding: 6px 22px 8px; color: #94a3b8; font-size: .7rem; }
+.sidebar-versao { padding: 2px 18px 4px; color: #94a3b8; font-size: .66rem; }
 .sidebar-versao:empty { display: none; }
-.sidebar-foot { padding: 12px; border-top: 1px solid rgba(255,255,255,.08); }
-.user-mini { display: flex; align-items: center; gap: 10px; }
+.sidebar-foot { padding: 7px 10px; border-top: 1px solid rgba(255,255,255,.08); }
+.user-mini { display: flex; align-items: center; gap: 8px; }
+.sidebar-foot .avatar { width: 30px; height: 30px; font-size: .85rem; }
 .avatar {
   width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
   background: linear-gradient(135deg, var(--primary), var(--primary-2));
@@ -689,14 +690,14 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 
 /* Menu em categorias (Orcim / Dia a dia da TI / Administração) */
 .nav-group { color: #64748b; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  padding: 9px 10px 4px; width: 100%; background: none; border: 0; border-radius: 6px; cursor: pointer; text-align: left; }
+  padding: 6px 9px 2px; width: 100%; background: none; border: 0; border-radius: 6px; cursor: pointer; text-align: left; line-height: 1.2; }
 .nav-group:hover { background: rgba(255,255,255,.04); }
 .nav-group:focus-visible { outline: 2px solid rgba(255,255,255,.4); outline-offset: -2px; }
 .nav-group > span { flex: 1; }
 .nav-caret { font-size: .7rem; opacity: .7; transition: transform .15s; }
 .nav-sec.fechado .nav-caret { transform: rotate(-90deg); }
 .nav-sec.fechado .nav-sec-body { display: none; }
-.nav-sec + .nav-sec { margin-top: 2px; }
+.nav-sec + .nav-sec { margin-top: 0; }
 
 
 /* Empresa única: some o que só serve para várias empresas */
