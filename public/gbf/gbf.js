@@ -3814,6 +3814,7 @@ function itemHistorico(e) {
       raiz = document.createElement('div');
       raiz.id = 'tour';
       raiz.innerHTML = `<div class="tour-fundo"></div><div class="tour-foco"></div>
+        <svg class="tour-linha" aria-hidden="true"><path d=""></path><circle r="4"></circle></svg>
         <div class="tour-pop" role="dialog" aria-modal="true" aria-labelledby="tour-tit" aria-describedby="tour-txt">
           <div class="tour-passo" id="tour-passo"></div>
           <h4 id="tour-tit"></h4><p id="tour-txt"></p>
@@ -3883,7 +3884,15 @@ function itemHistorico(e) {
       tourEstado.abriuMenu = true;
       await new Promise((r) => setTimeout(r, 250));
     }
-    if (el && !el.closest('#side')) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    if (el) {
+      const r0 = el.getBoundingClientRect();
+      const fora = r0.top < 70 || r0.bottom > window.innerHeight - 20 || r0.left < 0 || r0.right > window.innerWidth;
+      const noMenu = !!el.closest('#side');
+      // no menu: rola só o menu; na página: centraliza o item (suave, o destaque acompanha)
+      if (noMenu) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      else if (fora) el.scrollIntoView({ block: r0.height > window.innerHeight * 0.6 ? 'start' : 'center', inline: 'nearest', behavior: 'smooth' });
+    }
+    tourEstado.linhaNova = true;
     if (el && !el.getClientRects().length) el = null;
     tourEstado.el = el;
     $('#tour-passo').textContent = `${t.titulo} · ${i + 1} de ${t.passos.length}`;
@@ -3897,6 +3906,7 @@ function itemHistorico(e) {
     // o menu do celular e a rolagem têm animação: reposiciona quando terminam
     setTimeout(tourPosicionar, 300);
     setTimeout(tourPosicionar, 700);
+    setTimeout(tourPosicionar, 1100);
     $('#tour-vai').focus({ preventScroll: true });
   }
 
@@ -3910,7 +3920,9 @@ function itemHistorico(e) {
       const vw = window.innerWidth; const vh = window.innerHeight;
       const celular = vw < 600;
       pop.style.maxWidth = celular ? `${vw - 24}px` : '360px';
+      const linha = $('#tour .tour-linha');
       if (!el || !document.body.contains(el)) {
+        linha.classList.remove('on');
         foco.style.cssText = 'opacity:0';
         pop.style.left = `${Math.max(12, (vw - pop.offsetWidth) / 2)}px`;
         pop.style.top = `${Math.max(12, (vh - pop.offsetHeight) / 2)}px`;
@@ -3923,17 +3935,51 @@ function itemHistorico(e) {
       let top; let left;
       if (celular) {
         left = 12;
-        top = r.bottom + m + 12 + ph < vh ? r.bottom + m + 12 : Math.max(12, r.top - m - 12 - ph);
+        top = r.bottom + m + 28 + ph < vh ? r.bottom + m + 28 : Math.max(12, r.top - m - 28 - ph);
         if (top < 12 || top + ph > vh - 12) top = vh - ph - 12;
-      } else if (r.bottom + m + 14 + ph < vh) { top = r.bottom + m + 14; left = r.left; }
-      else if (r.top - m - 14 - ph > 0) { top = r.top - m - 14 - ph; left = r.left; }
-      else if (r.right + m + 14 + pw < vw) { left = r.right + m + 14; top = r.top; }
-      else { left = r.left - m - 14 - pw; top = r.top; }
+      } else {
+        // espaço entre o balão e o destaque, para a linha aparecer; item do menu: balão à direita
+        const G = 44;
+        const noMenu = !!el.closest('#side');
+        if (noMenu && r.right + m + G + pw < vw) { left = r.right + m + G; top = r.top + r.height / 2 - ph / 2; }
+        else if (r.bottom + m + G + ph < vh) { top = r.bottom + m + G; left = r.left + Math.min(40, r.width / 3); }
+        else if (r.top - m - G - ph > 0) { top = r.top - m - G - ph; left = r.left + Math.min(40, r.width / 3); }
+        else if (r.right + m + G + pw < vw) { left = r.right + m + G; top = r.top; }
+        else { left = r.left - m - G - pw; top = r.top; }
+      }
       left = Math.min(Math.max(12, left), vw - pw - 12);
       top = Math.min(Math.max(12, top), vh - ph - 12);
       pop.style.left = `${left}px`;
       pop.style.top = `${top}px`;
+      desenharLinhaTour(linha, { l: left, t: top, r: left + pw, b: top + ph }, { l: r.left - m, t: r.top - m, r: r.right + m, b: r.bottom + m });
     });
+  }
+
+  // Linha curva do balão até o item em destaque (sai da borda do balão mais próxima e termina num pontinho)
+  function desenharLinhaTour(svg, p, f) {
+    const preso = (v, a, b) => Math.min(Math.max(v, a), b);
+    const fc = { x: (f.l + f.r) / 2, y: (f.t + f.b) / 2 };
+    const pc = { x: (p.l + p.r) / 2, y: (p.t + p.b) / 2 };
+    // ponto no balão mais perto do destaque, e no destaque mais perto do balão
+    const a = { x: preso(fc.x, p.l + 14, p.r - 14), y: preso(fc.y, p.t + 14, p.b - 14) };
+    if (fc.y < p.t) a.y = p.t; else if (fc.y > p.b) a.y = p.b; else a.x = fc.x < p.l ? p.l : p.r;
+    const z = { x: preso(pc.x, f.l + 6, f.r - 6), y: preso(pc.y, f.t, f.b) };
+    if (pc.y < f.t) z.y = f.t; else if (pc.y > f.b) z.y = f.b; else z.x = pc.x < f.l ? f.l : f.r;
+    const dist = Math.hypot(z.x - a.x, z.y - a.y);
+    // balão encostado ou por cima do item: sem linha
+    const sobrepoe = !(p.r < f.l || p.l > f.r || p.b < f.t || p.t > f.b);
+    if (dist < 12 || sobrepoe) { svg.classList.remove('on'); return; }
+    const vertical = Math.abs(z.y - a.y) >= Math.abs(z.x - a.x);
+    const c1 = vertical ? { x: a.x, y: (a.y + z.y) / 2 } : { x: (a.x + z.x) / 2, y: a.y };
+    const c2 = vertical ? { x: z.x, y: (a.y + z.y) / 2 } : { x: (a.x + z.x) / 2, y: z.y };
+    svg.querySelector('path').setAttribute('d', `M${a.x},${a.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${z.x},${z.y}`);
+    const ponto = svg.querySelector('circle');
+    ponto.setAttribute('cx', z.x); ponto.setAttribute('cy', z.y);
+    if (tourEstado.linhaNova) { // passo novo: a linha se desenha de novo
+      tourEstado.linhaNova = false;
+      svg.classList.remove('on', 'desenha'); void svg.getBoundingClientRect(); svg.classList.add('desenha');
+    }
+    svg.classList.add('on');
   }
 
   function tourComecar(id) {
