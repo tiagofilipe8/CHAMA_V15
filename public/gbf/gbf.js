@@ -291,6 +291,7 @@
   // Menu lateral. Gestor: Início, (Meu dia se também faz visitas), Visitas, Resultados, Orcim,
   // Configurar. Técnico: Meu dia, Visitas e Orcim. Tutoriais e Minha conta no rodapé.
   // [rota, ícone, nome, contador]
+  const SECAO_MENU = { Visitas: 'vis', 'Painel do Gestor - Resultados': 'pg', Orcim: 'orc', Configurar: 'cfg' };
   function montarMenu() {
     const g = ehGestor();
     const itens = [
@@ -312,11 +313,13 @@
       ['#/tutoriais', 'question-circle', 'Tutoriais'],
       ['#/conta', 'person-lock', 'Minha conta'],
     ];
+    let sec = 'dia';
     $('#side-nav').innerHTML = (g ? '<a class="side-cta" href="#/solicitacoes/nova" data-rota="#/solicitacoes/nova"><i class="bi bi-plus-lg"></i><span>Solicitar visita</span></a>' : '')
       + itens.map((i) => {
-        if (i[0] === 'grp') return `<div class="grp">${esc(i[1])}</div>`;
-        if (i[0] === 'sep') return '<div class="side-sep"></div>';
-        return `<a href="${i[0]}" data-rota="${i[0]}"><i class="bi bi-${i[1]}"></i><span>${esc(i[2])}</span>${i[3] ? `<b class="side-cont d-none" data-cont="${i[3]}"></b>` : ''}</a>`;
+        // cada seção do menu tem a sua cor (ícones, título e item ativo)
+        if (i[0] === 'grp') { sec = SECAO_MENU[i[1]] || 'dia'; return `<div class="grp sec-${sec}">${esc(i[1])}</div>`; }
+        if (i[0] === 'sep') { sec = 'fim'; return '<div class="side-sep"></div>'; }
+        return `<a href="${i[0]}" data-rota="${i[0]}" class="sec-${sec}"><i class="bi bi-${i[1]}"></i><span>${esc(i[2])}</span>${i[3] ? `<b class="side-cont d-none" data-cont="${i[3]}"></b>` : ''}</a>`;
       }).join('');
     atualizarContadores();
   }
