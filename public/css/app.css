@@ -690,13 +690,8 @@ body.in-preview .sidebar { box-shadow: inset -4px 0 0 #6b3fa0; }
 
 /* Menu em categorias (Orcim / Dia a dia da TI / Administração) */
 .nav-group { color: #64748b; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  padding: 6px 9px 2px; width: 100%; background: none; border: 0; border-radius: 6px; cursor: pointer; text-align: left; line-height: 1.2; }
-.nav-group:hover { background: rgba(255,255,255,.04); }
-.nav-group:focus-visible { outline: 2px solid rgba(255,255,255,.4); outline-offset: -2px; }
+  padding: 6px 9px 2px; line-height: 1.2; }
 .nav-group > span { flex: 1; }
-.nav-caret { font-size: .7rem; opacity: .7; transition: transform .15s; }
-.nav-sec.fechado .nav-caret { transform: rotate(-90deg); }
-.nav-sec.fechado .nav-sec-body { display: none; }
 .nav-sec + .nav-sec { margin-top: 0; }
 
 

@@ -118,22 +118,11 @@ function pageDescFromPath() {
   return map[path] || '';
 }
 
-// Grupos do menu que o usuario deixou fechados (padrao: Cadastros e Sistema fechados)
-function navFechados() {
-  try {
-    const v = JSON.parse(localStorage.getItem('nav_grupos_fechados'));
-    if (Array.isArray(v)) return v;
-  } catch {}
-  return ['g-cad', 'g-sis'];
-}
-
 function renderNav() {
   const user = currentUser();
   const nav = document.getElementById('side-nav');
   const items = buildNav(user);
-  // Cada grupo (Atendimento, Equipamentos, Locais, Cadastros, Sistema) abre e fecha clicando no titulo;
-  // o que ficou fechado e lembrado neste navegador.
-  const fechados = navFechados();
+  // Grupos (Atendimento, Equipamentos, Locais, Cadastros, Sistema): sempre abertos, o titulo so organiza
   let html = '';
   let aberto = false;
   const fecha = () => { if (aberto) html += '</div></div>'; aberto = false; };
@@ -145,10 +134,8 @@ function renderNav() {
         + '<span class="nav-bell d-none" title="Seus chamados tiveram novidade"><i class="bi bi-bell-fill"></i><b></b></span></a>';
     } else if (it.group) {
       fecha();
-      const fechado = fechados.includes(it.g);
-      html += `<div class="nav-sec${fechado ? ' fechado' : ''}" data-sec="${it.g || ''}">`
-        + `<button type="button" class="nav-group ${it.g || ''}" aria-expanded="${!fechado}">`
-        + `<span>${esc(it.group)}</span><i class="bi bi-chevron-down nav-caret"></i></button>`
+      html += `<div class="nav-sec" data-sec="${it.g || ''}">`
+        + `<div class="nav-group ${it.g || ''}"><span>${esc(it.group)}</span></div>`
         + '<div class="nav-sec-body">';
       aberto = true;
     } else if (it.sep) {
@@ -159,14 +146,6 @@ function renderNav() {
   });
   fecha();
   nav.innerHTML = html;
-  nav.querySelectorAll('.nav-group').forEach((b) => b.addEventListener('click', () => {
-    const sec = b.closest('.nav-sec');
-    const fechado = sec.classList.toggle('fechado');
-    b.setAttribute('aria-expanded', String(!fechado));
-    const lista = navFechados().filter((g) => g !== sec.dataset.sec);
-    if (fechado) lista.push(sec.dataset.sec);
-    try { localStorage.setItem('nav_grupos_fechados', JSON.stringify(lista)); } catch {}
-  }));
   pintarNovidades();
 
   // identities
@@ -243,14 +222,6 @@ function activeNav() {
   });
   const cta = document.querySelector('#side-nav .nav-cta');
   if (cta) cta.classList.toggle('active', /^\/new($|\?)/.test(path));
-  // a pagina aberta fica sempre visivel: abre o grupo dela se estiver fechado
-  const ativo = document.querySelector('#side-nav .nav-item.active');
-  const sec = ativo && ativo.closest('.nav-sec.fechado');
-  if (sec) {
-    sec.classList.remove('fechado');
-    const b = sec.querySelector('.nav-group');
-    if (b) b.setAttribute('aria-expanded', 'true');
-  }
 }
 
 // ---------------- Roteador ----------------
