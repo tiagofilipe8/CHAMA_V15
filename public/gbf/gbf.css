@@ -681,3 +681,22 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
   .calpg .cal-corpo { gap: 12px; }
   .fn-card { padding: 10px; gap: 8px; }
 }
+
+/* Histórico da atividade: ações discretas, comentários em destaque */
+.hist { display: flex; flex-direction: column; gap: 2px; }
+.hist-acao { display: flex; align-items: baseline; gap: 7px; padding: 3px 4px 3px 10px; font-size: .76rem; color: #7c6fb0;
+  border-left: 2px solid #ddd6fe; margin-left: 15px; }
+.hist-acao i { font-size: .72rem; color: #a78bfa; }
+.hist-acao b { font-weight: 600; color: #6d5fa8; }
+.hist-txt { flex: 1; min-width: 0; }
+.hist-quando { color: #a1a1b5; font-size: .7rem; white-space: nowrap; }
+.hist-coment { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; }
+.hist-coment .avatar { flex: none; width: 32px; height: 32px; font-size: .78rem; }
+.hist-balao { flex: 1; min-width: 0; background: #f0fdfa; border: 1px solid #99f6e4; border-left: 4px solid var(--brand); border-radius: 10px; padding: 9px 12px; }
+.hist-cab { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; }
+.hist-cab span { color: var(--muted); font-size: .74rem; white-space: nowrap; }
+.hist-corpo { white-space: pre-wrap; word-break: break-word; margin-top: 3px; font-size: .95rem; color: var(--ink); }
+
+/* Descrição curta no topo de cada tela / aba */
+.tela-desc { font-size: .78rem; color: var(--muted); margin: -2px 2px 10px; line-height: 1.35; }
+.pg-abas + .tela-desc { margin-top: -4px; }

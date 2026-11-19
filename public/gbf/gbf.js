@@ -358,6 +358,43 @@
   const falha = (e) => { view().innerHTML = `<div class="alert alert-danger">${esc(e.message)}</div>`; };
 
   let renderSeq = 0;
+  // Uma frase pequena no topo de cada tela (e de cada aba do Painel do gestor) dizendo para que ela serve
+  const DESC_TELA = {
+    inicio: 'O que precisa da sua atenção agora e como está o dia da TI.',
+    'meu-dia': 'Suas visitas e atividades de hoje, na ordem do dia.',
+    agenda: 'Tudo o que está marcado para a TI: visitas de rotina, visitas pedidas e atividades. Arraste um item para outro dia para reagendar.',
+    solicitacoes: 'Visitas pedidas à TI pelos gestores, com data desejada, urgência e tarefas.',
+    postos: 'Os postos do grupo, com a próxima visita de rotina e o checklist de cada um.',
+    atividades: 'Tarefas da TI. No quadro, arraste o cartão para outra coluna para mudar o status.',
+    demandas: 'Chamados abertos na Orcim (cópia da Central).',
+    orcim: 'Resumo dos chamados da Orcim.',
+    manutencoes: 'Manutenções e equipamentos registrados na Orcim.',
+    checklists: 'Modelos de checklist usados nas visitas. Cada posto usa um na visita de rotina.',
+    usuarios: 'Quem usa o painel e o papel de cada um: gestor, técnico ou os dois.',
+    config: 'Ajustes gerais do painel.',
+    tutoriais: 'Passo a passo guiado de cada tarefa do painel.',
+    conta: 'Seus dados e sua senha.',
+    tudo: 'Todas as tabelas copiadas da Orcim, só para consulta.',
+  };
+  const DESC_PAINEL = {
+    calendario: 'Todas as atividades, visitas de rotina, visitas pedidas e chamados da Orcim do mês, nas cores da urgência. Clique num dia para ver a lista.',
+    ti: 'O que a TI do Beija-Flor entregou no período: visitas, tarefas verificadas, problemas encontrados e atividades.',
+    orcim: 'Chamados da Orcim no período: abertos, resolvidos, tempo de atendimento e prazo.',
+    postos: 'Cada posto no período: visitas, problemas encontrados, chamados e atividades em aberto.',
+    funcionarios: 'Cada pessoa do time: o que fez no período e o que tem em aberto agora.',
+  };
+  function descreverTela(a, b, qs) {
+    let txt;
+    if (a === 'painel') txt = DESC_PAINEL[qs.get('aba') || 'calendario'];
+    else if (!b) txt = DESC_TELA[!a ? (ehGestor() ? 'inicio' : 'meu-dia') : a === 'hoje' ? 'meu-dia' : a];
+    if (!txt || view().querySelector(':scope > .tela-desc')) return;
+    const el = document.createElement('div');
+    el.className = 'tela-desc';
+    el.textContent = txt;
+    const abas = view().querySelector(':scope > .pg-abas');
+    if (abas) abas.after(el); else view().prepend(el);
+  }
+
   async function render() {
     if (!EU) return;
     const seq = ++renderSeq;
@@ -415,6 +452,7 @@
       else if (a === 'tutoriais') { marcarMenu('#/tutoriais'); await vTutoriais(seq); }
       else if (a === 'conta') { marcarMenu('#/conta'); vConta(); }
       else { location.hash = '#/'; }
+      if (seq === renderSeq) descreverTela(a, b, qs);
     } catch (e) {
       if (!e.status) console.error(e);
       if (seq === renderSeq && e.status !== 401) falha(e);
@@ -1333,6 +1371,27 @@
       </div></div>`;
   }
 
+  // Histórico da atividade: ações do sistema em uma linha pequena; comentários em destaque
+  function iconeAcao(txt) {
+    const t = String(txt || '').toLowerCase();
+    if (t.includes('status')) return 'arrow-repeat';
+    if (t.includes('prazo')) return 'calendar-event';
+    if (t.includes('respons') || t.includes('atribu')) return 'person';
+    if (t.includes('criou') || t.includes('criada')) return 'plus-circle';
+    if (t.includes('urg') || t.includes('prioridade')) return 'exclamation-triangle';
+    return 'dot';
+  }
+  function itemHistorico(e) {
+    if (e.kind === 'system') {
+      return `<div class="hist-acao"><i class="bi bi-${iconeAcao(e.content)}"></i>
+        <span class="hist-txt"><b>${esc(e.user_name || 'Sistema')}</b> ${esc(e.user_name && String(e.content).startsWith(e.user_name) ? String(e.content).slice(e.user_name.length).trim() : e.content)}</span>
+        <span class="hist-quando" title="${fmtData(e.created_at)}">${fmtData(e.created_at)}</span></div>`;
+    }
+    return `<div class="hist-coment"><span class="avatar">${esc(iniciais(e.user_name || '?'))}</span>
+      <div class="hist-balao"><div class="hist-cab"><b>${esc(e.user_name || 'Sistema')}</b><span>${fmtData(e.created_at)}</span></div>
+      <div class="hist-corpo">${esc(e.content)}</div></div></div>`;
+  }
+
   async function vAtividades(qs, seq) {
     titulo(ehGestor() ? 'Atividades do time' : 'Minhas atividades');
     const f = Object.fromEntries(qs.entries());
@@ -1490,9 +1549,7 @@
         </div>
         <div class="card-x">
           <h3><i class="bi bi-chat-dots"></i>Histórico e comentários</h3>
-          ${t.eventos.map((e) => `<div class="msg ${e.kind === 'system' ? 'sys' : ''}">
-            <div class="d-flex justify-content-between gap-2"><span class="who">${esc(e.user_name || 'Sistema')}</span><span class="small-muted">${fmtData(e.created_at)}</span></div>
-            <div class="body">${esc(e.content)}</div></div>`).join('')}
+          <div class="hist">${t.eventos.map(itemHistorico).join('') || '<div class="small-muted">Nada ainda.</div>'}</div>
           <form id="form-coment" class="mt-2">
             <textarea class="form-control mb-2" name="content" rows="2" placeholder="Escreva um comentário ou atualização" required></textarea>
             <button class="btn btn-sm btn-brand" type="submit">Comentar</button>
