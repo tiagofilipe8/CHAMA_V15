@@ -3111,8 +3111,18 @@
           <div class="np-linha np-so-visita"><span class="np-rot">O que fazer lá</span>
             <div class="np-tarefas">
               <input class="form-control" id="np-tarefa" placeholder="Digite uma tarefa e aperte Enter" autocomplete="off">
+              <div class="form-text mt-1">Tarefas avulsas. Para usar um checklist pronto, marque "Cumprir checklist" abaixo.</div>
               <ul id="np-lista" class="np-lista"></ul>
-              <label class="form-check d-none" id="np-ck-l"><input type="checkbox" class="form-check-input" id="np-ck"> <span class="form-check-label" id="np-ck-t"></span></label>
+              <div class="np-ck">
+                <label class="form-check mb-0"><input type="checkbox" class="form-check-input" id="np-ck"> <span class="form-check-label"><b>Cumprir checklist</b></span></label>
+                <div class="np-ck-esc d-none" id="np-ck-esc">
+                  <select class="form-select form-select-sm" id="np-ck-sel" aria-label="Qual checklist">
+                    ${modelos.length ? modelos.map((m) => `<option value="${m.id}">${esc(m.name)} (${plural(m.itens.length, 'item', 'itens')})</option>`).join('') : '<option value="">Nenhum checklist cadastrado</option>'}
+                  </select>
+                  <div class="np-ck-dica small-muted" id="np-ck-dica"></div>
+                  <ul class="np-ck-prev" id="np-ck-prev"></ul>
+                </div>
+              </div>
             </div></div>
 
           ${g ? `<div class="np-linha np-so-ativ"><label for="np-resp">Responsável</label>
@@ -3138,19 +3148,26 @@
     const pintarTarefas = () => {
       $('#np-lista').innerHTML = tarefas.map((t, i) => `<li><span>${esc(t)}</span><button type="button" data-tira="${i}" aria-label="Tirar ${esc(t)}"><i class="bi bi-x"></i></button></li>`).join('');
     };
+    // Checklist pré-configurado: por padrão, o do posto escolhido; dá para trocar por qualquer outro
+    const ckDoPosto = () => $('#np-posto').selectedOptions[0]?.dataset.ck || '';
+    let ckEscolhidoAMao = false;
     const itensCk = () => {
-      const op = $('#np-posto').selectedOptions[0];
-      const m = op && op.dataset.ck ? modelos.find((x) => String(x.id) === op.dataset.ck) : null;
+      if (!$('#np-ck').checked) return [];
+      const m = modelos.find((x) => String(x.id) === $('#np-ck-sel').value);
       return m ? m.itens : [];
     };
     function atualizarCk() {
-      const n = itensCk().length;
-      $('#np-ck-l').classList.toggle('d-none', !n);
-      $('#np-ck-t').textContent = n ? `Incluir também o checklist do posto (${plural(n, 'item', 'itens')})` : '';
-      if (!n) $('#np-ck').checked = false;
+      if (!ckEscolhidoAMao && ckDoPosto() && modelos.some((x) => String(x.id) === ckDoPosto())) $('#np-ck-sel').value = ckDoPosto();
+      const ligado = $('#np-ck').checked;
+      $('#np-ck-esc').classList.toggle('d-none', !ligado);
+      const m = modelos.find((x) => String(x.id) === $('#np-ck-sel').value);
+      $('#np-ck-dica').textContent = !m ? '' : String(m.id) === ckDoPosto() ? 'É o checklist deste posto.' : (ckDoPosto() ? 'O posto usa outro checklist; este vale só para esta visita.' : '');
+      $('#np-ck-prev').innerHTML = m ? m.itens.slice(0, 6).map((i) => `<li>${esc(i)}</li>`).join('') + (m.itens.length > 6 ? `<li class="mais">+${m.itens.length - 6} itens</li>` : '') : '';
     }
     $$('.np-tipo').forEach((b) => b.addEventListener('click', () => { tipo = b.dataset.tipo; aplicarTipo(); $('#np-tit').focus(); }));
     $('#np-posto').addEventListener('change', atualizarCk);
+    $('#np-ck').addEventListener('change', atualizarCk);
+    $('#np-ck-sel').addEventListener('change', () => { ckEscolhidoAMao = true; atualizarCk(); });
     $('#np-varios').addEventListener('change', (e) => $('.np-inicio').classList.toggle('d-none', !e.target.checked));
     $('#np-mais-l').addEventListener('click', (e) => { e.preventDefault(); e.target.classList.add('d-none'); $('#np-det').classList.remove('d-none'); $('#np-det').focus(); });
     $('#np-tarefa').addEventListener('keydown', (e) => {
@@ -3182,10 +3199,11 @@
           if (!posto) throw new Error('Escolha o posto da visita.');
           const pendente = $('#np-tarefa').value.trim();
           if (pendente && !tarefas.includes(pendente)) tarefas.push(pendente);
-          const comCk = $('#np-ck').checked;
-          let lista = [...tarefas, ...(comCk ? itensCk() : [])];
+          const comCk = $('#np-ck').checked && itensCk().length > 0;
+          if ($('#np-ck').checked && !comCk) throw new Error('Escolha um checklist com itens ou desmarque "Cumprir checklist".');
+          let lista = [...(comCk ? itensCk() : []), ...tarefas];
           if (!lista.length && tit) lista = [tit];
-          if (!lista.length) throw new Error('Diga o que fazer lá: escreva no "O que precisa?" ou adicione uma tarefa.');
+          if (!lista.length) throw new Error('Diga o que fazer lá: marque "Cumprir checklist", adicione uma tarefa ou escreva no "O que precisa?".');
           const r = await API.post('/solicitacoes', {
             kind: 'visita', visit_type: comCk ? 'rotina' : 'pontual', location_id: posto, desired_date: data || null, priority: urg,
             description: [tit, det].filter(Boolean).join('\n\n') || null, tarefas: lista,
@@ -3562,9 +3580,10 @@
         { alvo: '#np-posto', titulo: 'Posto', texto: 'Em qual posto. Na visita é obrigatório.' },
         { alvo: '#np-data', titulo: 'Para quando', texto: 'O dia. Na atividade, o horário é opcional: vazio = o dia todo.' },
         { alvo: '.np-urg', titulo: 'Urgência', texto: 'Requisição (azul), Prejudicada (amarelo), Parada iminente (laranja) ou Operação parada (vermelho). A cor aparece no calendário.' },
-        { alvo: '#np-tarefa', titulo: 'O que fazer lá (visita)', texto: 'Digite uma tarefa e aperte Enter; a próxima linha aparece. Escolhendo um posto com checklist, dá para incluir o checklist dele também.' },
+        { alvo: '#np-tarefa', titulo: 'O que fazer lá (visita)', texto: 'Tarefas avulsas: digite uma e aperte Enter; a próxima linha aparece. Para tirar, clique no X.' },
+        { alvo: '.np-ck', titulo: 'Cumprir checklist', texto: 'Marque para a visita seguir um checklist pronto (ex.: "Rota padrão do posto"). Vem escolhido o checklist do posto, mas dá para trocar por qualquer outro. Os primeiros itens aparecem embaixo. As tarefas avulsas entram junto, depois do checklist.' },
         { alvo: '#np-mais-l', titulo: '+ detalhes', texto: 'Algo mais que a TI precisa saber. Fica escondido para não atrapalhar.' },
-        { alvo: '#np-ok', titulo: 'Enviar', texto: 'Visita: a TI é avisada e ela entra no calendário. Atividade: vai para o quadro de Atividades.' },
+        { alvo: '#np-ok', titulo: 'Enviar', texto: 'Visita: a TI é avisada e ela entra no calendário. Com checklist, entra como visita de rotina; só com tarefas avulsas, como visita pontual. Atividade: vai para o quadro de Atividades.' },
       ],
     },
     {

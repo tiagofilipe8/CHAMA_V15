@@ -900,3 +900,13 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .tut-cat h3 { display: flex; align-items: center; gap: 8px; font-size: .95rem; font-weight: 700; margin: 0 0 8px; color: var(--ink); }
 .tut-cat h3 i { color: var(--brand); }
 .tut-depois { display: flex; gap: 6px; align-items: center; border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 4px; }
+
+/* Novo pedido: cumprir checklist */
+.np-ck { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.np-ck:has(#np-ck:checked) { border-style: solid; border-color: var(--brand); background: var(--brand-50, #ecfdf5); }
+.np-ck-esc { margin-top: 8px; }
+.np-ck-esc select { max-width: 360px; }
+.np-ck-dica { margin-top: 4px; font-size: .74rem; }
+.np-ck-prev { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.np-ck-prev li { font-size: .74rem; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--ink); }
+.np-ck-prev li.mais { color: var(--muted); border-style: dashed; }
