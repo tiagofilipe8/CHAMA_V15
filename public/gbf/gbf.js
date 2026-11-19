@@ -634,7 +634,7 @@
   // Painel do gestor: abas compactas. TI do Beija-Flor usa os dados do Painel; Orcim, Por posto e
   // Calendário usam os dados da Orcim (hoje pela cópia da Central; depois pela API da Orcim).
   // Números pequenos numa faixa no topo, listas com barrinha e tabelas; nada de cartão grande.
-  const ABAS_PAINEL = [['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['funcionarios', 'Por funcionário'], ['calendario', 'Calendário']];
+  const ABAS_PAINEL = [['calendario', 'Calendário'], ['ti', 'TI do Beija-Flor'], ['orcim', 'Orcim'], ['postos', 'Por posto'], ['funcionarios', 'Por funcionário']];
 
   // variação contra o período anterior: "+6", "−4h"; verde quando melhorou
   function variacao(atual, antes, { menorMelhor = false, tempo = false, pp = false } = {}) {
@@ -698,9 +698,8 @@
 
   async function vPainelGestor(qs, seq) {
     titulo('Painel do gestor');
-    let aba = qs.get('aba') || store.get('gbf_painel_aba') || 'ti';
+    let aba = qs.get('aba') || 'calendario'; // abre sempre no Calendário
     if (!ABAS_PAINEL.some(([k]) => k === aba)) aba = 'ti';
-    store.set('gbf_painel_aba', aba);
     let salvo = {};
     try { salvo = JSON.parse(store.get('gbf_painel_filtro') || '{}'); } catch { /* padrão */ }
     let tipo = qs.get('per') || salvo.per || 'mes';
@@ -3123,7 +3122,7 @@
       id: 'painel', papeis: ['gestor'], icone: 'graph-up-arrow', titulo: 'Ver resultados no Painel do gestor',
       resumo: 'Números e gráficos do período: visitas, problemas encontrados, Orcim e postos.',
       passos: [
-        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'TI do Beija-Flor (o nosso trabalho), Orcim (chamados) e Por posto.' },
+        { rota: '#/painel?aba=ti', alvo: '.pg-abas', titulo: 'Abas do painel', texto: 'Abre no Calendário. Depois: TI do Beija-Flor (o nosso trabalho), Orcim (chamados), Por posto e Por funcionário.' },
         { alvo: '.pg-filtro .pg-seg', titulo: 'Escolha o período', texto: 'Dia, Semana, Mês, Ano ou Personalizado. Os gráficos acompanham: Dia mostra por hora, Semana e Mês por dia, Ano por mês.' },
         { alvo: '.pg-filtro .pg-nav', titulo: 'Anterior e seguinte', texto: 'As setas vão para o período anterior ou o seguinte (ex.: outubro, dezembro). "Hoje" volta para o atual.' },
         { alvo: '.pg-faixa', titulo: 'Números do período', texto: 'Visitas feitas, tarefas verificadas e com problema, visitas pedidas feitas na data... O número pequeno ao lado compara com o período anterior.' },
