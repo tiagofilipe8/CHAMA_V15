@@ -1074,3 +1074,8 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 
 /* "Em andamento" volta para a cor de antes (verde-azulado), também nos ícones ◐ */
 .calpg .cal-and .bi-circle-half, .cal-mini .bi-circle-half.a, .calpg .cal-leg .bi-circle-half { color: #14b8a6; }
+
+/* Popup do dia ao lado do dia (lista com sanfona) */
+#cal-pop.fixo .cal-lista li { margin: 0 -6px; padding: 5px 6px; }
+#cal-pop .cal-pop-cab span { font-size: .7rem; }
+#cal-pop .cal-acoes .btn { pointer-events: auto; }

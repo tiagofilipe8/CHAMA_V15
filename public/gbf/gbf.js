@@ -1231,28 +1231,76 @@
         grade.addEventListener('mouseleave', () => { dica.classList.remove('on'); diaDica = null; });
       }
 
-      // linha do dia escolhido até a lista da direita (só quando a lista está ao lado)
-      const ligar = () => {
-        const cel = grade.querySelector(`[data-dia="${diaSel}"]`);
-        const alvo = $('#cal-dia h3');
-        if (!cel || !alvo) { linha.classList.remove('on'); return; }
-        const r = cel.getBoundingClientRect(); const p = alvo.getBoundingClientRect();
-        if (p.left < r.right + 8 || r.bottom < 0 || r.top > innerHeight) { linha.classList.remove('on'); return; }
-        const x1 = r.right; const y1 = r.top + r.height / 2;
-        const x2 = p.left - 6; const y2 = p.top + p.height / 2;
-        const meio = (x1 + x2) / 2;
-        linha.querySelector('path').setAttribute('d', `M${x1},${y1} C${meio},${y1} ${meio},${y2} ${x2},${y2}`);
-        linha.classList.remove('on'); void linha.offsetWidth; linha.classList.add('on');
+      // Clique no dia: popup com a lista ao lado do dia, ligado por uma linha curta.
+      // Fica dentro da área do calendário (não cobre a lista da direita). Em tela estreita, só a lista de baixo.
+      const pop = criar('cal-pop', '<div class="cal-pop-in"></div>');
+      pop.classList.remove('on', 'fixo');
+      const fecharPop = () => { pop.classList.remove('on', 'fixo'); linha.classList.remove('on'); };
+      const abrirPop = (cel) => {
+        if (window.innerWidth < 900) return;
+        const dia = cel.dataset.dia;
+        const lst = doDia(dia);
+        const a = andamento(lst);
+        const titDia = new Date(`${dia}T12:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^./, (x) => x.toUpperCase());
+        pop.firstElementChild.innerHTML = `<div class="cal-pop-cab"><b>${esc(titDia)}</b>
+            <span>${lst.length ? `${a.fazer} a fazer · ${a.andando} em andamento · ${a.feito} concl.` : ''}</span>
+            <button type="button" class="cal-pop-x" aria-label="Fechar"><i class="bi bi-x-lg"></i></button></div>
+          ${lst.length ? `<ul class="cal-lista">${lst.slice(0, 30).map(itemLista).join('')}</ul>` : '<div class="cal-pop-vazio">Nada neste dia.</div>'}
+          ${opts.mais ? `<a class="btn btn-sm btn-outline-brand w-100 mt-2" href="#/novo?data=${dia}"><i class="bi bi-plus-lg"></i> Novo pedido neste dia</a>` : ''}`;
+        pop.classList.add('fixo');
+        pop.querySelectorAll('[data-reag]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); fecharPop(); reagendar(JSON.parse(b.dataset.reag)); }));
+        pop.querySelectorAll('[data-iniciar]').forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); fecharPop(); iniciarVisita(b.dataset.iniciar, b.dataset.nome, b.dataset.visita || null); }));
+        const g = $('.cal-grade').getBoundingClientRect();
+        const r = cel.getBoundingClientRect();
+        const pw = Math.min(330, Math.max(260, g.width / 2.6));
+        pop.style.width = `${pw}px`;
+        const ph = Math.min(pop.offsetHeight || 200, innerHeight - 24);
+        const gap = 26;
+        // do lado que tem espaço dentro do calendário
+        let x = r.right + gap;
+        let lado = 'dir';
+        if (x + pw > g.right) { x = r.left - gap - pw; lado = 'esq'; }
+        x = Math.max(g.left, Math.min(x, g.right - pw));
+        let y = r.top - 8;
+        y = Math.max(12, Math.min(y, innerHeight - ph - 12));
+        pop.firstElementChild.style.maxHeight = `${innerHeight - y - 12}px`;
+        const primeira = !pop.classList.contains('on');
+        if (primeira) pop.classList.add('sem-mov');
+        pop.style.transform = `translate(${x}px, ${y}px)`;
+        pop.firstElementChild.classList.remove('troca'); void pop.offsetWidth; pop.firstElementChild.classList.add('troca');
+        pop.classList.add('on');
+        setTimeout(() => {
+          pop.classList.remove('sem-mov');
+          // linha curta: da borda do dia até a borda do popup
+          // usa a posição de destino (não a medida no meio da animação)
+          const p = { left: x, right: x + pw, top: y };
+          const x1 = lado === 'dir' ? r.right : r.left; const y1 = r.top + r.height / 2;
+          const x2 = lado === 'dir' ? p.left : p.right; const y2 = Math.min(Math.max(y1, p.top + 18), p.top + 40);
+          const meio = (x1 + x2) / 2;
+          linha.querySelector('path').setAttribute('d', `M${x1},${y1} C${meio},${y1} ${meio},${y2} ${x2},${y2}`);
+          linha.classList.remove('on'); void linha.offsetWidth; linha.classList.add('on');
+        }, primeira ? 40 : 240);
       };
       grade.addEventListener('click', (ev) => {
-        if (!ev.target.closest('[data-dia]')) return;
+        if (!ev.target.closest('[data-dia]') || ev.target.closest('[data-novo], .cal-mini')) return;
         dica.classList.remove('on');
-        setTimeout(ligar, 30);
+        const dia = ev.target.closest('[data-dia]').dataset.dia;
+        setTimeout(() => { const cel = grade.querySelector(`[data-dia="${dia}"]`); if (cel) abrirPop(cel); }, 0);
       });
-      const apagar = () => linha.classList.remove('on');
+      const apagar = fecharPop;
       if (!linha.dataset.ligado) {
         linha.dataset.ligado = '1';
-        window.addEventListener('scroll', apagar, true);
+        pop.addEventListener('click', (ev) => {
+          if (ev.target.closest('.cal-pop-x')) { fecharPop(); return; }
+          if (ev.target.closest('button, .btn')) return;
+          const li = ev.target.closest('li[data-link]');
+          if (li) { fecharPop(); location.hash = li.dataset.link; }
+        });
+        document.addEventListener('mousedown', (ev) => {
+          if (pop.classList.contains('fixo') && !pop.contains(ev.target) && !ev.target.closest('#cal-dias') && !ev.target.closest('.modal')) fecharPop();
+        });
+        document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') fecharPop(); });
+        window.addEventListener('scroll', (ev) => { if (!pop.contains(ev.target)) apagar(); }, true);
         window.addEventListener('resize', apagar);
         window.addEventListener('hashchange', () => { apagar(); document.getElementById('cal-dica')?.classList.remove('on'); });
       }
