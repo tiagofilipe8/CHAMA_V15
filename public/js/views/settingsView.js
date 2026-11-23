@@ -357,7 +357,7 @@ Views.adminEntities = async function adminEntities(el) {
       grid.querySelectorAll('.ent-del').forEach((b) => b.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Remover entidade', body: 'Se houver chamados, a entidade será desativada.', confirmText: 'Remover', danger: true });
         if (!ok) return;
-        try { await API.del('/entities/' + b.dataset.id); toast('Entidade removida/desativada.', 'warning'); load(); } catch (e) { showError(e); }
+        try { await API.del('/entities/' + b.dataset.id); toast('Empresa removida/desativada.', 'warning'); load(); } catch (e) { showError(e); }
       }));
     } catch (e) { showError(e); }
   };
@@ -385,7 +385,7 @@ Views.adminEntities = async function adminEntities(el) {
           <label class="form-label small">Logomarca do cliente</label>
           <div class="upload-box" id="e-logo-box" style="height:96px">
             ${e && e.logo ? `<img src="${esc(e.logo)}" alt="logo">` : '<i class="bi bi-image"></i><span>Enviar logomarca</span>'}
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
           </div>
           <div class="form-text">PNG/JPG/WEBP/SVG · até 5MB. Exibida no perfil dos membros.</div>
         </div>
@@ -463,7 +463,7 @@ Views.adminEntities = async function adminEntities(el) {
         if (e) await API.patch('/entities/' + e.id, body);
         else await API.post('/entities', body);
         modal.hide(); m.addEventListener('hidden.bs.modal', () => m.remove());
-        toast('Entidade salva.', 'success');
+        toast('Empresa salva.', 'success');
         load();
       } catch (err) { showError(err); }
     };
@@ -1095,7 +1095,7 @@ Views.adminSettings = async function adminSettings(el) {
                 <label class="form-label small">Logo (tela de login)</label>
                 <div class="upload-box" id="upload-logo">
                   ${s['app.logo'] ? `<img src="${esc(s['app.logo'])}" alt="logo">` : '<i class="bi bi-image"></i><span>Enviar logo</span>'}
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
                 </div>
                 <div class="form-text">PNG/JPG/WEBP/SVG · até 5MB</div>
               </div>
@@ -1103,7 +1103,7 @@ Views.adminSettings = async function adminSettings(el) {
                 <label class="form-label small">Fundo (tela de login)</label>
                 <div class="upload-box bg-box" id="upload-bg">
                   ${s['app.background'] ? `<img src="${esc(s['app.background'])}" alt="fundo">` : '<i class="bi bi-image"></i><span>Enviar imagem</span>'}
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
                 </div>
                 <div class="form-text">Recomendado 1920×1080</div>
               </div>

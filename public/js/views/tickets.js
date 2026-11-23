@@ -80,7 +80,7 @@ Views.tickets = async function tickets(el, opts = {}) {
         <select class="form-select form-select-sm tb-select tb-adv" id="f-group" title="Organizar colunas por">
           <option value="status">Colunas: status</option>
           <option value="impact">Colunas: urgência</option>
-          <option value="location">Colunas: localidade</option>
+          <option value="location">Colunas: localização</option>
         </select>
         <select class="form-select form-select-sm tb-select tb-adv" id="f-sort" title="Ordenar">
           ${Object.entries(SORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}
@@ -93,14 +93,14 @@ Views.tickets = async function tickets(el, opts = {}) {
         </select>` : ''}
         <select class="form-select form-select-sm tb-select tb-adv" id="f-entity" title="Empresa" style="display:none"></select>
         <label class="tb-check tb-adv"><input type="checkbox" id="f-closed"> Mostrar encerrados</label>
-        <a class="btn btn-primary btn-sm ms-auto" href="#/new"><i class="bi bi-plus-lg"></i> Novo chamado</a>
+        <a class="btn btn-primary btn-sm ms-auto" href="#/new"><i class="bi bi-plus-lg"></i> Abrir chamado</a>
       </div>
       <div class="tb-row tb-chips tb-adv">
         <span class="tb-label">Urgência</span>
         <div id="f-impacts" class="chip-row"></div>
       </div>
       <div class="tb-row tb-chips tb-adv" id="f-locations-row">
-        <span class="tb-label">Localidade</span>
+        <span class="tb-label">Localização</span>
         <div id="f-locations" class="chip-row"></div>
       </div>
     </div>
@@ -171,7 +171,7 @@ Views.tickets = async function tickets(el, opts = {}) {
       chip(prefs.locations.includes(String(l.id)),
         `<i class="bi bi-geo-alt"></i>${esc(l.name)}${multiEnt ? ` <small>${esc(l.entity_name)}</small>` : ''} <b>${byLoc[l.id] || 0}</b>`,
         `data-loc="${l.id}"`)).join('') +
-      (byLoc.null || byLoc.undefined ? chip(prefs.locations.includes('none'), `Sem localidade <b>${(byLoc.null || 0) + (byLoc.undefined || 0)}</b>`, 'data-loc="none"') : '');
+      (byLoc.null || byLoc.undefined ? chip(prefs.locations.includes('none'), `Sem localização <b>${(byLoc.null || 0) + (byLoc.undefined || 0)}</b>`, 'data-loc="none"') : '');
     el.querySelectorAll('[data-impact]').forEach((b) => b.addEventListener('click', () => {
       toggle(prefs.impacts, b.dataset.impact); save(); paintChips(); render();
     }));
@@ -223,7 +223,7 @@ Views.tickets = async function tickets(el, opts = {}) {
       list.forEach((t) => used.set(String(t.location_id || 'none'), t));
       const cols = locs.filter((l) => used.has(String(l.id)))
         .map((l) => ({ key: String(l.id), label: l.name, sub: l.entity_name, entity_id: l.entity_id, drop: { location_id: l.id } }));
-      if (used.has('none')) cols.push({ key: 'none', label: 'Sem localidade', drop: null });
+      if (used.has('none')) cols.push({ key: 'none', label: 'Sem localização', drop: null });
       return cols.map((c) => ({ ...c, items: list.filter((t) => String(t.location_id || 'none') === c.key) }));
     }
     return BOARD_STATUS.filter((s) => !s.closed || prefs.showClosed).map((s) => ({
@@ -238,7 +238,7 @@ Views.tickets = async function tickets(el, opts = {}) {
     const needSoon = t.needed_by && ![5, 6, 7].includes(t.status)
       && new Date(String(t.needed_by).slice(0, 10) + 'T23:59:59') - new Date() < 86400000 * 2;
     const initials = (n) => String(n || '').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
-    const shortNum = `#${t.id}`;
+    const shortNum = t.number || String(t.id);
     const cat = t.display_category ? String(t.display_category).split(' > ').pop() : '';
     return `
       <article class="kcard ${tone}" data-id="${t.id}" tabindex="0" aria-label="Chamado ${esc(t.number)}: ${esc(t.title)}">
@@ -259,6 +259,7 @@ Views.tickets = async function tickets(el, opts = {}) {
           ${late ? `<span class="kflag late" title="Prazo (SLA) vencido"><i class="bi bi-alarm-fill"></i></span>` : ''}
           ${needSoon ? `<span class="kflag need" title="Precisa até ${fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00')}"><i class="bi bi-calendar-event-fill"></i></span>` : ''}
           ${t.approval_status === 'pending' ? `<span class="kflag appr" title="Aguardando aprovação"><i class="bi bi-hourglass-split"></i></span>` : ''}
+          ${canDrag(t) ? `<button type="button" class="kmove" data-move="${t.id}" title="Mover para outra coluna" aria-label="Mover chamado ${esc(t.number)} para outra coluna"><i class="bi bi-arrow-left-right"></i></button>` : ''}
           ${t.assigned_name
             ? `<span class="kavatar" title="Técnico: ${esc(t.assigned_name)}">${esc(initials(t.assigned_name))}</span>`
             : `<span class="kavatar empty" title="Sem técnico"><i class="bi bi-person-plus"></i></span>`}
@@ -277,8 +278,14 @@ Views.tickets = async function tickets(el, opts = {}) {
       body.innerHTML = emptyState('Nenhum chamado por aqui', opts.watching ? 'Quando alguém adicionar você como observador(a), o chamado aparece aqui.' : 'Abra um chamado em "Novo chamado".', 'bi-kanban');
       return;
     }
+    // guarda onde a pessoa estava no quadro (coluna e rolagem) para não voltar ao começo
+    const antes = body.querySelector('#board');
+    const rolagem = antes ? {
+      x: antes.scrollLeft,
+      cols: Object.fromEntries([...antes.querySelectorAll('.kcol')].map((c) => [c.dataset.key, c.querySelector('.kcol-body')?.scrollTop || 0])),
+    } : null;
     body.innerHTML = `
-      <div class="board ${canDragAny() ? '' : 'readonly'}" id="board">
+      <div class="board sem-sigla ${canDragAny() ? '' : 'readonly'}" id="board">
         ${cols.map((c) => `
           <section class="kcol ${c.tone || ''} ${c.items.length ? '' : 'is-empty'}" data-key="${esc(c.key)}">
             <header class="kcol-head">
@@ -292,10 +299,28 @@ Views.tickets = async function tickets(el, opts = {}) {
           </section>`).join('')}
       </div>
       ${canDragAny() ? '<p class="board-tip"><i class="bi bi-arrows-move"></i> Arraste um cartão para outra coluna para mudar o chamado. No celular, segure o cartão por um instante antes de arrastar.</p>' : ''}`;
+    if (rolagem) {
+      const b = body.querySelector('#board');
+      b.scrollLeft = rolagem.x;
+      b.querySelectorAll('.kcol').forEach((c) => {
+        const corpo = c.querySelector('.kcol-body');
+        if (corpo && rolagem.cols[c.dataset.key]) corpo.scrollTop = rolagem.cols[c.dataset.key];
+      });
+    }
     body.querySelectorAll('.kcard').forEach((c) => {
-      c.addEventListener('click', () => { if (!Board.justDragged) location.hash = `#/tickets/${c.dataset.id}`; });
-      c.addEventListener('keydown', (e) => { if (e.key === 'Enter') location.hash = `#/tickets/${c.dataset.id}`; });
+      c.addEventListener('click', (e) => {
+        if (e.target.closest('.kmove')) return;
+        if (!Board.justDragged) location.hash = `#/tickets/${c.dataset.id}`;
+      });
+      c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.target.closest('.kmove')) location.hash = `#/tickets/${c.dataset.id}`; });
     });
+    // "Mover para…": alternativa ao arrastar (mais fácil no celular e no teclado)
+    body.querySelectorAll('.kmove').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const t = all.find((x) => String(x.id) === b.dataset.move);
+      const atual = cols.find((c) => c.items.includes(t));
+      abrirMenuMover(b, cols.filter((c) => c.drop && c !== atual), (col) => onDrop(t, col));
+    }));
     if (canDragAny()) {
       Board.enable(body.querySelector('#board'), {
         canDrag: (id) => canDrag(all.find((t) => String(t.id) === String(id))),
@@ -320,33 +345,50 @@ Views.tickets = async function tickets(el, opts = {}) {
     return false;
   }
 
+  // Mudanca rapida com "Desfazer" (so quando voltar e simples e seguro)
+  function avisoComDesfazer(msg, desfazer) {
+    toast(msg, 'success', desfazer ? { acao: { texto: 'Desfazer', aoClicar: async () => {
+      try { await desfazer(); toast('Desfeito.', 'info'); } catch (e) { showError(e); }
+      load();
+    } } } : {});
+  }
+
   async function onDrop(t, col) {
     if (!t || !col || !col.drop) return;
     try {
       if (col.drop.status !== undefined) {
         const to = col.drop.status;
-        if (to === t.status) return;
-        if (to === 5) { TicketModals.resolve(t, { onDone: load, onCancel: render }); return; }
+        const de = t.status;
+        if (to === de) return;
+        if (to === 5 || (to === 6 && de !== 5)) { TicketModals.resolve(t, { toStatus: to, onDone: load, onCancel: render }); return; }
         if (to === 2 && !t.assigned_user_id) {
           if (P('ticket.take') && !P('ticket.assign')) { await API.post(`/tickets/${t.id}/assign`, {}); toast(`${t.number} assumido por você.`, 'success'); return load(); }
           TicketModals.assign(t, { onDone: load, onCancel: render }); return;
         }
         await API.post(`/tickets/${t.id}/status`, { status: to });
-        toast(`${t.number} → ${LABELS.status[to]}`, 'success');
+        const simples = [1, 2, 3, 4].includes(de) && [1, 2, 3, 4].includes(to);
+        avisoComDesfazer(`${t.number} → ${LABELS.status[to]}`,
+          simples ? () => API.post(`/tickets/${t.id}/status`, { status: de }) : null);
       } else if (col.drop.impact_id !== undefined) {
         if (String(col.drop.impact_id) === String(t.impact_id)) return;
+        const de = t.impact_id;
         await API.patch(`/tickets/${t.id}`, { impact_id: col.drop.impact_id });
-        toast(`${t.number}: urgência alterada para ${col.label}`, 'success');
+        avisoComDesfazer(`${t.number}: urgência alterada para ${col.label}`,
+          de ? () => API.patch(`/tickets/${t.id}`, { impact_id: de }) : null);
       } else if (col.drop.location_id !== undefined) {
         if (String(col.drop.location_id) === String(t.location_id)) return;
         if (col.entity_id && String(col.entity_id) !== String(t.entity_id)) {
-          toast('Essa localidade é de outra empresa.', 'warning'); return render();
+          toast('Essa localização é de outra empresa.', 'warning'); return render();
         }
+        const de = t.location_id;
         await API.patch(`/tickets/${t.id}`, { location_id: col.drop.location_id });
-        toast(`${t.number} movido para ${col.label}`, 'success');
+        avisoComDesfazer(`${t.number} movido para ${col.label}`,
+          de ? () => API.patch(`/tickets/${t.id}`, { location_id: de }) : null);
       }
     } catch (e) {
-      if (e.data?.request_approval) { TicketModals.resolve(t, { onDone: load, onCancel: render }); return; }
+      if (e.data?.request_approval || e.data?.resolution_form) {
+        TicketModals.resolve(t, { toStatus: col.drop.status === 6 ? 6 : 5, onDone: load, onCancel: render }); return;
+      }
       showError(e);
     }
     load();
@@ -403,7 +445,7 @@ Views.tickets = async function tickets(el, opts = {}) {
       <div class="card panel-card"><div class="table-responsive">
         <table class="table table-hover align-middle mb-0 ticket-table">
           <thead><tr>
-            <th>Chamado</th><th>Status</th><th>Urgência</th><th>Localidade</th><th>Técnico</th><th>Solicitante</th><th>Aberto</th>
+            <th>Chamado</th><th>Status</th><th>Urgência</th><th>Localização</th><th>Técnico</th><th>Solicitante</th><th>Aberto</th>
           </tr></thead>
           <tbody>
             ${list.map((t) => `
@@ -427,7 +469,15 @@ Views.tickets = async function tickets(el, opts = {}) {
   }
 
   // atualizacao em tempo real (chamada pelo socket em app.js)
-  Views.tickets.refresh = () => { if (!Board.dragging && document.body.contains(el.querySelector('#tickets-body'))) load(); };
+  // espera um instante e junta várias mudanças seguidas numa atualização só
+  let esperaRefresh = null;
+  Views.tickets.refresh = () => {
+    clearTimeout(esperaRefresh);
+    esperaRefresh = setTimeout(() => {
+      if (Board.dragging || document.querySelector('.menu-mover')) return Views.tickets.refresh();
+      if (document.body.contains(el.querySelector('#tickets-body'))) load();
+    }, 600);
+  };
 
   try {
     [levels, locs] = await Promise.all([
@@ -456,6 +506,7 @@ const Board = {
     Board.install();
     // mouse
     board.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.kmove')) return;
       const c = e.target.closest('.kcard');
       if (!c || e.button !== 0 || !canDrag(c.dataset.id)) return;
       Board.st = { sx: e.clientX, sy: e.clientY, pending: c };
@@ -463,6 +514,7 @@ const Board = {
     });
     // toque: segurar ~0,3s para arrastar (assim a rolagem continua normal)
     board.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.kmove')) return;
       const c = e.target.closest('.kcard');
       if (!c || !canDrag(c.dataset.id)) return;
       const t = e.touches[0];
@@ -566,3 +618,26 @@ const Board = {
     if (col && col !== fromCol && Board.ctx) Board.ctx.onDrop(st.cardEl.dataset.id, col.dataset.key);
   },
 };
+
+// Menu "Mover para…" do cartão do quadro
+function abrirMenuMover(botao, colunas, escolher) {
+  document.querySelector('.menu-mover')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'dropdown-menu show menu-mover';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `<h6 class="dropdown-header">Mover para…</h6>` + (colunas.length
+    ? colunas.map((c, i) => `<button type="button" class="dropdown-item" role="menuitem" data-i="${i}">${esc(c.label)}</button>`).join('')
+    : '<span class="dropdown-item-text text-muted small">Nenhuma outra coluna</span>');
+  document.body.appendChild(menu);
+  const r = botao.getBoundingClientRect();
+  const larg = menu.offsetWidth, alt = menu.offsetHeight;
+  menu.style.position = 'fixed';
+  menu.style.left = Math.max(8, Math.min(r.right - larg, window.innerWidth - larg - 8)) + 'px';
+  menu.style.top = (r.bottom + alt + 8 > window.innerHeight ? Math.max(8, r.top - alt - 4) : r.bottom + 4) + 'px';
+  const fechar = () => { menu.remove(); document.removeEventListener('click', foraDoMenu, true); document.removeEventListener('keydown', tecla); botao.focus(); };
+  const foraDoMenu = (e) => { if (!menu.contains(e.target)) { e.stopPropagation(); fechar(); } };
+  const tecla = (e) => { if (e.key === 'Escape') fechar(); };
+  setTimeout(() => { document.addEventListener('click', foraDoMenu, true); document.addEventListener('keydown', tecla); }, 0);
+  menu.querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => { const c = colunas[Number(b.dataset.i)]; fechar(); escolher(c); }));
+  menu.querySelector('[data-i]')?.focus();
+}

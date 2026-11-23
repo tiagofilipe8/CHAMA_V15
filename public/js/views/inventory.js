@@ -47,7 +47,7 @@ async function openAssetModal(asset, cb) {
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">Status</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${a?.status===k?'selected':''}>${v}</option>`).join('')}</select></div>
-        <div class="col-md-4 mb-2 multi-empresa"><label class="form-label small">Entidade *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
+        <div class="col-md-4 mb-2 multi-empresa"><label class="form-label small">Empresa *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Localização</label><input class="form-control inv-upper" id="a-location" value="${esc(up(a?.location).toUpperCase())}"></div>
       </div>
       <div class="row">
@@ -188,7 +188,7 @@ Views.inventory = async function inventory(el) {
             <tr>
               <th>Foto</th>
               <th>Status</th>
-              <th class="multi-empresa">Entidade</th>
+              <th class="multi-empresa">Empresa</th>
               <th>Localização</th>
               <th>Nome</th>
               <th>Tipo</th>
@@ -411,7 +411,7 @@ Views.assetDetail = async function assetDetail(id, el) {
         </div></div>
       </div>
       <div class="col-lg-4">
-        <div class="card panel-card mb-3"><div class="card-header">Ordens de Serviço</div><div class="list-group list-group-flush" id="asset-tickets">${(a.tickets||[]).map(t=>`<a href="#/tickets/${t.id}" class="list-group-item list-group-item-action small"><b>${esc(t.number)}</b> ${esc(t.title)}<br><span class="badge text-bg-secondary">${t.status}</span></a>`).join('') || '<div class="p-3 text-muted small">Nenhuma OS vinculada</div>'}</div>
+        <div class="card panel-card mb-3"><div class="card-header">Chamados deste equipamento</div><div class="list-group list-group-flush" id="asset-tickets">${(a.tickets||[]).map(t=>`<a href="#/tickets/${t.id}" class="list-group-item list-group-item-action small"><b>${esc(t.number)}</b> ${esc(t.title)}<br><span class="badge text-bg-secondary">${t.status}</span></a>`).join('') || '<div class="p-3 text-muted small">Nenhuma OS vinculada</div>'}</div>
           <div class="card-body"><button class="btn btn-sm btn-outline-primary w-100" id="btn-new-os-asset"><i class="bi bi-plus"></i> Nova OS para este ativo</button></div>
         </div>
         <div class="card panel-card"><div class="card-header">Histórico</div><div class="list-group list-group-flush" style="max-height:400px;overflow:auto">${(a.history||[]).map(h=>`<div class="list-group-item small"><div class="fw-bold">${esc(h.action)} ${h.field?`· ${esc(h.field)}`:''}</div><div>${esc(h.old_value||'')}${h.new_value?` → ${esc(h.new_value)}`:''}</div><div class="text-muted">${fmt.dateTime(h.created_at)} · ${esc(h.user_name||'Agent')}</div></div>`).join('') || '<div class="p-3 text-muted small">Sem histórico</div>'}</div></div>
@@ -540,7 +540,7 @@ Views.assetDetail = async function assetDetail(id, el) {
 };
 
 Views.agents = async function agents(el){
-  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th class="multi-empresa">Entidade</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
+  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th class="multi-empresa">Empresa</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
   try{
     const agents = await API.get('/inventory/agents');
     document.getElementById('agents-body').innerHTML = agents.length ? agents.map(a=>`

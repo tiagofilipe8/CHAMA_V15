@@ -95,8 +95,8 @@ router.post('/', requireRoles('admin'), async (req, res) => {
          SELECT name, description, examples, priority, sort_order, TRUE, $1
          FROM impact_levels WHERE profile_id IS NULL AND active`, [pid]);
       await q(
-        `INSERT INTO resolution_causes (name, description, sort_order, active, profile_id)
-         SELECT name, description, sort_order, TRUE, $1
+        `INSERT INTO resolution_causes (name, description, sort_order, active, neutral, profile_id)
+         SELECT name, description, sort_order, TRUE, neutral, $1
          FROM resolution_causes WHERE profile_id IS NULL AND active`, [pid]);
       return rows[0];
     });

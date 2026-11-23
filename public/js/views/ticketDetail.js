@@ -146,9 +146,12 @@ Views.ticketDetail = function ticketDetail(id) {
           </div>` : ''}
 
           <div class="card panel-card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span><i class="bi bi-paperclip me-1"></i> Anexos <span class="badge text-bg-secondary">${(t.attachments||[]).length}</span></span>
-              <button class="btn btn-sm btn-outline-primary" id="td-add-att"><i class="bi bi-plus-lg"></i> Adicionar</button>
+            <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <span class="text-nowrap"><i class="bi bi-paperclip me-1"></i> Anexos <span class="badge text-bg-secondary">${(t.attachments||[]).length}</span></span>
+              <span class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary btn-anexo" id="td-add-att"><i class="bi bi-paperclip me-1"></i>Anexar arquivo</button>
+                <button class="btn btn-sm btn-outline-primary btn-anexo" id="td-add-photo"><i class="bi bi-camera me-1"></i>Tirar foto</button>
+              </span>
             </div>
             <div class="list-group list-group-flush" id="td-att-list">${(t.attachments||[]).map(f => {
               const isImg = /^image\//.test(f.mime_type || '');
@@ -164,12 +167,12 @@ Views.ticketDetail = function ticketDetail(id) {
                 <button class="btn btn-sm btn-outline-danger td-del-att" data-att="${f.id}" title="Remover"><i class="bi bi-trash"></i></button>
               </div>`;
             }).join('') || '<div class="p-3 text-muted small">Nenhum anexo</div>'}</div>
-            <input type="file" id="td-att-input" multiple hidden
-                   accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,video/mp4,audio/mpeg">
+            <input type="file" id="td-att-input" multiple hidden accept="${ANEXO_ACCEPT}">
+            <input type="file" id="td-photo-input" accept="image/*" capture="environment" hidden>
           </div>
 
           <div class="card panel-card">
-            <div class="card-header"><i class="bi bi-clock-history me-1"></i> Timeline</div>
+            <div class="card-header"><i class="bi bi-chat-dots me-1"></i> Conversa</div>
             <div class="card-body">
               <ul class="timeline mb-0">${timeline}</ul>
               <div class="d-flex gap-2 mt-3">
@@ -299,10 +302,15 @@ Views.ticketDetail = function ticketDetail(id) {
       }
 
       const attInput = el.querySelector('#td-att-input');
+      const photoInput = el.querySelector('#td-photo-input');
       el.querySelector('#td-add-att')?.addEventListener('click', () => attInput?.click());
-      attInput?.addEventListener('change', async () => {
-        const files = Array.from(attInput.files || []);
+      el.querySelector('#td-add-photo')?.addEventListener('click', () => photoInput?.click());
+      const enviarAnexos = async (input) => {
+        const files = filtrarAnexos(input.files);
+        input.value = '';
         if (!files.length) return;
+        const grandes = files.filter((f) => f.size > 15 * 1024 * 1024);
+        if (grandes.length) { toast(`${grandes[0].name}: maior que 15 MB`, 'warning'); return; }
         const fd = new FormData();
         files.forEach(f => fd.append('files', f));
         try {
@@ -310,8 +318,9 @@ Views.ticketDetail = function ticketDetail(id) {
           toast(files.length === 1 ? 'Anexo enviado.' : `${files.length} anexos enviados.`, 'success');
           afterReload();
         } catch (e) { showError(e); }
-        attInput.value = '';
-      });
+      };
+      attInput?.addEventListener('change', () => enviarAnexos(attInput));
+      photoInput?.addEventListener('change', () => enviarAnexos(photoInput));
       el.querySelectorAll('.td-del-att').forEach((b) => b.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Remover anexo', body: 'Excluir este anexo do chamado?', confirmText: 'Remover', danger: true });
         if (!ok) return;
@@ -426,7 +435,7 @@ Views.ticketDetail = function ticketDetail(id) {
                 `<option value="${s}">${LABELS.status[s]}</option>`).join('')}
             </select>
             <textarea class="form-control" id="s-comment" rows="3" placeholder="Comentário (opcional)..."></textarea>
-            <div class="form-text">Para marcar como <b>Resolvido</b>, use o botão "Resolver chamado" (tem um formulário de encerramento).</div>
+            <div class="form-text">Para <b>Resolver</b> ou <b>Fechar</b>, o sistema abre o formulário de encerramento (a causa é obrigatória).</div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -487,14 +496,26 @@ Views.ticketDetail = function ticketDetail(id) {
 
       // status
       el.querySelector('#btn-save-status')?.addEventListener('click', async () => {
+        const novo = parseInt(el.querySelector('#s-status').value, 10);
+        // Fechar sem ter resolvido antes: passa pelo formulário de encerramento
+        if (novo === 6 && t.status !== 5) {
+          hideModal('modal-status');
+          TicketModals.resolve(t, { toStatus: 6, onDone: () => afterReload() });
+          return;
+        }
         try {
           await API.post(`/tickets/${t.id}/status`, {
-            status: parseInt(el.querySelector('#s-status').value, 10),
+            status: novo,
             comment: el.querySelector('#s-comment').value.trim(),
           });
           hideModal('modal-status');
           toast('Status atualizado.', 'success'); afterReload();
         } catch (e) {
+          if (e.data?.resolution_form || e.data?.request_approval) {
+            hideModal('modal-status');
+            TicketModals.resolve(t, { toStatus: novo, onDone: () => afterReload() });
+            return;
+          }
           showError(e);
         }
       });
@@ -593,4 +614,4 @@ Views.ticketDetail = function ticketDetail(id) {
 
     }
   };
-};
+};

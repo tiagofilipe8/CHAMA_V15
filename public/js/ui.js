@@ -31,7 +31,8 @@ const fmt = {
 
 const LABELS = {
   status: { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' },
-  priority: { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' },
+  // um nome só para a mesma coisa: a urgência do chamado
+  priority: { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' },
   role: {
     admin: 'Administrador Mestre', admin_local: 'Administrador Local', moderator: 'Moderador',
     technician: 'Técnico', client: 'Cliente',
@@ -41,7 +42,7 @@ const LABELS = {
     created: 'Chamado criado', status: 'Status alterado', reopened: 'Chamado reaberto',
     technician: 'Técnico', moderator: 'Moderador', category: 'Categoria', impact: 'Urgência',
     entity: 'Empresa',
-    priority: 'Prioridade', location: 'Localização', needed_by: 'Data de necessidade',
+    priority: 'Urgência', location: 'Localização', needed_by: 'Data de necessidade',
     estimated_at: 'Previsão de atendimento', due_at: 'Prazo (SLA)', asset: 'Equipamento',
     title: 'Título', description: 'Descrição alterada', watcher_added: 'Observador adicionado',
     watcher_removed: 'Observador removido', solution: 'Solução registrada',
@@ -64,6 +65,20 @@ const STATUS_BADGE = { 1: 'new', 2: 'assigned', 3: 'progress', 4: 'pending', 5: 
 const Views = {};
 const PRIO_BADGE = { 1: 'prio-low', 2: 'prio-med', 3: 'prio-high', 4: 'prio-urgent' };
 
+// Anexos: so PDF e fotos (o servidor confere de novo)
+const ANEXO_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif';
+const ANEXO_MSG = 'Só é possível anexar PDF ou fotos (PNG, JPG, JPEG, WEBP, GIF ou HEIC).';
+function anexoPermitido(f) {
+  return /\.(pdf|png|jpe?g|webp|gif|heic|heif)$/i.test(f?.name || '');
+}
+// Separa os arquivos aceitos; avisa sobre os recusados
+function filtrarAnexos(files) {
+  const ok = [], ruins = [];
+  for (const f of Array.from(files || [])) (anexoPermitido(f) ? ok : ruins).push(f);
+  if (ruins.length) toast(`${ruins.map((f) => f.name).join(', ')}: ${ANEXO_MSG}`, 'warning');
+  return ok;
+}
+
 function badgeStatus(s) {
   return `<span class="badge bd-${STATUS_BADGE[s] || 'new'}">${LABELS.status[s] || s}</span>`;
 }
@@ -77,15 +92,27 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function toast(message, type = 'info') {
+// toast(msg, tipo, { acao: { texto, aoClicar }, tempo })
+function toast(message, type = 'info', extra = {}) {
   const colors = { info: 'text-bg-primary', success: 'text-bg-success', danger: 'text-bg-danger', warning: 'text-bg-warning' };
   const box = document.getElementById('toast-wrap');
   const t = document.createElement('div');
-  t.className = `toast align-items-center border-0 ${colors[type]}`;
-  t.innerHTML = `<div class="d-flex"><div class="toast-body">${esc(message)}</div>
-    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+  t.className = `toast align-items-center border-0 ${colors[type] || colors.info}`;
+  t.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+  t.setAttribute('aria-live', type === 'danger' ? 'assertive' : 'polite');
+  // fundo amarelo: texto e X escuros (contraste)
+  const xClaro = type !== 'warning';
+  t.innerHTML = `<div class="d-flex align-items-center"><div class="toast-body">${esc(message)}</div>
+    ${extra.acao ? `<button type="button" class="btn btn-sm ${xClaro ? 'btn-light' : 'btn-dark'} me-1 toast-acao">${esc(extra.acao.texto)}</button>` : ''}
+    <button type="button" class="btn-close ${xClaro ? 'btn-close-white' : ''} me-2 m-auto" data-bs-dismiss="toast" aria-label="Fechar"></button></div>`;
   box.appendChild(t);
-  const bs = new bootstrap.Toast(t, { delay: 4500 });
+  // erro nao some sozinho: fica ate a pessoa fechar
+  const bs = new bootstrap.Toast(t, type === 'danger'
+    ? { autohide: false }
+    : { delay: extra.tempo || (extra.acao ? 8000 : 4500) });
+  if (extra.acao) {
+    t.querySelector('.toast-acao').addEventListener('click', () => { bs.hide(); extra.acao.aoClicar(); });
+  }
   bs.show();
   t.addEventListener('hidden.bs.toast', () => t.remove());
 }
@@ -178,7 +205,7 @@ function fmtDuration(fromIso, toIso) {
 // Urgencia do chamado (nome configuravel) com a cor da prioridade equivalente
 function badgeImpact(t) {
   if (!t.impact_name) return badgePriority(t.priority);
-  return `<span class="badge ${PRIO_BADGE[t.priority] || 'prio-med'}" title="Prioridade ${esc(LABELS.priority[t.priority] || '')}"><i class="bi bi-flag-fill me-1"></i>${esc(t.impact_name)}</span>`;
+  return `<span class="badge ${PRIO_BADGE[t.priority] || 'prio-med'}" title="Nível: ${esc(LABELS.priority[t.priority] || '')}"><i class="bi bi-flag-fill me-1"></i>${esc(t.impact_name)}</span>`;
 }
 
 // Valor legivel no historico do chamado (datas em formato brasileiro)
@@ -200,25 +227,25 @@ function starsHtml(n) {
 // um sublinhado pontilhado. No computador, passe o mouse; no celular, toque.
 // ---------------------------------------------------------------
 const SIGLAS = {
-  NOC: 'Central de Operações: painel que acompanha os chamados em tempo real (do inglês Network Operations Center).',
-  SLA: 'Prazo combinado para atender e resolver o chamado (acordo de nível de serviço).',
-  TMR: 'Tempo médio de resposta: quanto a equipe demora, em média, para dar a 1ª resposta.',
-  TMA: 'Tempo médio de atendimento: quanto demora, em média, para resolver o chamado.',
-  OS: 'Ordem de Serviço: o mesmo que chamado.',
-  TI: 'Tecnologia da Informação: a equipe que cuida de computadores, rede, internet e sistemas.',
-  TAG: 'Etiqueta de patrimônio que identifica cada equipamento.',
-  PDV: 'Ponto de Venda: o caixa.',
+  NOC: 'Painel da equipe que mostra os chamados ao vivo.',
+  SLA: 'Prazo combinado para resolver o chamado.',
+  TMR: 'Tempo médio até a equipe dar a primeira resposta.',
+  TMA: 'Tempo médio até o chamado ser resolvido.',
+  OS: 'O mesmo que chamado.',
+  TI: 'A equipe que cuida de computadores, internet e sistemas.',
+  TAG: 'Etiqueta com o número do equipamento.',
+  PDV: 'O caixa da loja.',
   IP: 'Endereço do equipamento na rede.',
-  MAC: 'Código único da placa de rede do equipamento.',
+  MAC: 'Código da placa de rede do equipamento.',
   CPU: 'Processador do computador.',
   RAM: 'Memória do computador.',
   HD: 'Disco onde ficam os arquivos do computador.',
   SSD: 'Disco rápido onde ficam os arquivos do computador.',
-  DNS: 'Serviço que transforma o nome de um site no endereço dele na internet.',
+  DNS: 'Serviço que encontra o endereço dos sites na internet.',
   VPN: 'Conexão segura com a rede da empresa pela internet.',
-  UF: 'Estado (sigla, ex.: SP).',
-  QR: 'Código QR: aponte a câmera do celular para ler.',
-  ID: 'Número que identifica o registro.',
+  UF: 'Estado (ex.: SP).',
+  QR: 'Código para ler com a câmera do celular.',
+  ID: 'Número do registro.',
 };
 const SIGLA_RE = new RegExp(`(^|[^\\wÀ-ÿ])(${Object.keys(SIGLAS).join('|')})(?=$|[^\\wÀ-ÿ])`, 'g');
 const SIGLA_PULAR = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'CODE', 'PRE', 'ABBR', 'SVG', 'TEXT', 'TSPAN', 'TITLE', 'BUTTON']);
@@ -265,7 +292,7 @@ function ligarSiglas(aviso) {
       requestAnimationFrame(() => {
         obs.disconnect();
         const lote = fila; fila = []; agendado = false;
-        lote.forEach((n) => { if (n.isConnected) marcarSiglas(n); });
+        lote.forEach((n) => { if (n.isConnected && !n.closest('#board, .sem-sigla')) marcarSiglas(n); });
         obs.observe(document.body, { childList: true, subtree: true });
       });
     }
@@ -273,10 +300,14 @@ function ligarSiglas(aviso) {
   marcarSiglas(document.body);
   obs.observe(document.body, { childList: true, subtree: true });
   // toque no celular: mostra a explicação
+  // (o toque na sigla não abre o cartão/linha que está por baixo)
   document.addEventListener('click', (ev) => {
     const ab = ev.target.closest && ev.target.closest('abbr.sigla');
-    if (ab) aviso(`${ab.textContent}: ${ab.title}`);
-  });
+    if (!ab) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    aviso(`${ab.textContent}: ${ab.title}`);
+  }, true);
 }
 
 document.addEventListener('DOMContentLoaded', () => ligarSiglas((msg) => toast(msg, 'info')));

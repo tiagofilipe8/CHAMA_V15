@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const regrasArquivo = require('../uploadRules');
 const config = require('../config');
 const { query } = require('../db');
 const { requireAuth, requireRoles } = require('../middleware/auth');
@@ -12,7 +13,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, config.uploadsDir),
   filename: (req, file, cb) => {
     const stamp = Date.now();
-    const safe = file.originalname.replace(/[^\w.\-]/g, '_').slice(-40);
+    const safe = file.originalname.replace(/\.[^.]*$/, '').replace(/[^\w\-]/g, '_').slice(-40) + regrasArquivo.extensaoSegura(file.originalname);
     cb(null, `${file.fieldname || 'file'}-${stamp}-${safe}`);
   },
 });
@@ -20,8 +21,9 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/^image\/(png|jpe?g|webp|gif|svg\+xml)/.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Somente imagens são permitidas (PNG, JPG, WEBP, GIF, SVG)'));
+    const ext = regrasArquivo.extensao(file.originalname);
+    if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext) && regrasArquivo.aceitaArquivo(file)) cb(null, true);
+    else cb(new Error('Somente imagens são permitidas (PNG, JPG, WEBP ou GIF).'));
   },
 });
 
@@ -45,6 +47,10 @@ router.get('/', async (req, res) => {
 // Upload da logomarca do cliente (admin) — retorna apenas a URL
 router.post('/upload', requireRoles('admin'), upload.single('file'), (req, res) => {
   if (!req.file) return res.status(422).json({ error: 'Envie um arquivo de imagem.' });
+  {
+    const ruim = regrasArquivo.conferirGravados([req.file]);
+    if (ruim) return res.status(422).json({ error: ruim });
+  }
   res.status(201).json({ url: `/uploads/${req.file.filename}` });
 });
 
@@ -117,4 +123,4 @@ router.delete('/:id', requireRoles('admin'), async (req, res) => {
   res.json({ ok: true, message: 'Entidade removida.' });
 });
 
-module.exports = router;
+module.exports = router;

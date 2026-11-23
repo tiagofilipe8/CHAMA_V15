@@ -26,9 +26,13 @@ router.get('/', requireAuth, async (req, res) => {
 // Marca como lidas: todas, ou so as de um chamado (body.ticket_id: ao abrir o chamado)
 router.post('/read', requireAuth, async (req, res) => {
   const ticketId = req.body && req.body.ticket_id;
+  const notifId = req.body && req.body.id;
   if (ticketId != null && /^\d+$/.test(String(ticketId))) {
     await query(`UPDATE inapp_notifications SET is_read = TRUE
                  WHERE user_id = $1 AND ticket_id = $2 AND is_read = FALSE`, [req.user.id, ticketId]);
+  } else if (notifId != null && /^\d+$/.test(String(notifId))) {
+    // so uma notificacao (ex.: aviso de manutencao, sem chamado)
+    await query(`UPDATE inapp_notifications SET is_read = TRUE WHERE user_id = $1 AND id = $2`, [req.user.id, notifId]);
   } else {
     await query(`UPDATE inapp_notifications SET is_read = TRUE WHERE user_id = $1`, [req.user.id]);
   }
@@ -69,4 +73,4 @@ router.post('/webhook', (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = router;

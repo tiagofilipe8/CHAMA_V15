@@ -252,6 +252,9 @@ async function router() {
   activeNav();
   const hash = location.hash || '#/dashboard';
   const viewEl = document.getElementById('view');
+  // trocou de tela: fecha janelas (modais) e menus que ficaram abertos
+  document.querySelectorAll('.modal.show').forEach((m) => bootstrap.Modal.getInstance(m)?.hide());
+  document.querySelector('.menu-mover')?.remove();
   // abriu um chamado: as notificacoes dele contam como lidas (some o sininho dele)
   const aberto = hash.match(/^#\/tickets\/(\d+)/);
   if (aberto && novidades.includes(Number(aberto[1]))) {
@@ -289,10 +292,18 @@ function connectSocket() {
   socket = io({ auth: { token: API.token } });
   socket.on('connect', () => console.log('Socket conectado'));
 
+  // várias mudanças seguidas = uma atualização só do painel
+  let esperaPainel = null;
+  const atualizarPainel = () => {
+    clearTimeout(esperaPainel);
+    esperaPainel = setTimeout(() => {
+      if (location.hash === '#/dashboard') Views.dashboard(document.getElementById('view'), { silent: true });
+    }, 1500);
+  };
   socket.on('ticket:new', (tk) => {
     if (location.hash === '#/dashboard') {
       Voice.announceNewTicket(tk);
-      Views.dashboard(document.getElementById('view'), { silent: true });
+      atualizarPainel();
     } else {
       toast(`Novo chamado ${tk.number} — ${tk.title}`, 'success');
     }
@@ -300,9 +311,9 @@ function connectSocket() {
 
   socket.on('ticket:update', (tk) => {
     if (location.hash === '#/dashboard') {
-      Views.dashboard(document.getElementById('view'), { silent: true });
+      atualizarPainel();
     } else if (location.hash === `#/tickets/${tk.id}`) {
-      Views.ticketDetail(tk.id)(document.getElementById('view'), { silent: true });
+      atualizarChamadoAberto(tk.id);
     } else if (/^#\/(tickets|team-tickets|watching|mine)$/.test(location.hash) && Views.tickets.refresh) {
       Views.tickets.refresh();
     }
@@ -310,9 +321,49 @@ function connectSocket() {
 
   socket.on('notification:new', (n) => {
     loadBell();
-    // notifica em tela quando nao esta no dashboard (evita duplicidade)
+    // sem aviso repetido: nao avisa do chamado que ja esta aberto na tela,
+    // nem repete o mesmo titulo em poucos segundos
+    if (n.ticket_id && location.hash === `#/tickets/${n.ticket_id}`) return;
+    const chave = `${n.ticket_id || ''}|${n.title}`;
+    if (ultimosAvisos.has(chave)) return;
+    ultimosAvisos.add(chave);
+    setTimeout(() => ultimosAvisos.delete(chave), 5000);
     toast(n.title, 'info');
   });
+}
+const ultimosAvisos = new Set();
+
+// A pessoa esta escrevendo algo na tela do chamado? (mensagem, modal aberto, campo em foco)
+function editandoNaTela(viewEl) {
+  if (document.querySelector('.modal.show')) return true;
+  const a = document.activeElement;
+  if (a && viewEl.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName) && a.type !== 'file') return true;
+  for (const c of viewEl.querySelectorAll('textarea, input[type="text"], input:not([type])')) {
+    if (c.value && c.value !== c.defaultValue) return true;
+  }
+  return false;
+}
+
+// Chamado aberto mudou (outra pessoa mexeu). Se ninguem esta digitando, atualiza na hora;
+// se esta digitando, mostra um aviso para atualizar quando quiser (nada do que foi digitado se perde).
+function atualizarChamadoAberto(id) {
+  const viewEl = document.getElementById('view');
+  const recarregar = async () => {
+    const rascunho = viewEl.querySelector('#msg-content')?.value || '';
+    await Views.ticketDetail(id)(viewEl, { silent: true });
+    const campo = viewEl.querySelector('#msg-content');
+    if (campo && rascunho && !campo.value) campo.value = rascunho;
+  };
+  if (!editandoNaTela(viewEl)) { recarregar(); return; }
+  if (viewEl.querySelector('#aviso-atualizado')) return;
+  const aviso = document.createElement('div');
+  aviso.id = 'aviso-atualizado';
+  aviso.className = 'alert alert-info d-flex align-items-center justify-content-between gap-2 py-2 mb-2 aviso-atualizado';
+  aviso.setAttribute('role', 'status');
+  aviso.innerHTML = `<span><i class="bi bi-arrow-repeat me-1"></i>Este chamado teve novidades. O que você está escrevendo continua aqui.</span>
+    <button type="button" class="btn btn-sm btn-primary">Mostrar novidades</button>`;
+  aviso.querySelector('button').onclick = () => { aviso.remove(); recarregar(); };
+  viewEl.prepend(aviso);
 }
 
 // Chamados meus (abertos por mim ou comigo) com notificacao nao lida
@@ -342,14 +393,19 @@ async function loadBell() {
     countEl.textContent = data.unread > 99 ? '99+' : data.unread;
     listEl.innerHTML = data.list.length
       ? data.list.map((n) => `
-        <a class="dropdown-item notif-item ${n.is_read ? '' : 'unread'}" href="${n.ticket_id ? `#/tickets/${n.ticket_id}` : (String(n.title).includes('Manutenção') ? '#/dashboard' : '#/inventory')}">
+        <a class="dropdown-item notif-item ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-ticket="${n.ticket_id || ''}" href="${n.ticket_id ? `#/tickets/${n.ticket_id}` : (String(n.title).includes('Manutenção') ? '#/dashboard' : '#/inventory')}">
           <div class="notif-title">${esc(n.title)}</div>
           <div class="notif-msg">${esc(n.message)}</div>
           <small class="text-muted">${fmt.timeAgo(n.created_at)}</small>
         </a>`).join('')
       : '<div class="px-3 py-3 text-muted small">Nenhuma notificação.</div>';
+    // clicar numa notificacao marca como lida so as daquele chamado
     listEl.querySelectorAll('.notif-item').forEach((el) => {
-      el.addEventListener('click', () => { API.post('/notifications/read').catch(() => {}); });
+      el.addEventListener('click', () => {
+        const tid = el.dataset.ticket ? Number(el.dataset.ticket) : null;
+        API.post('/notifications/read', tid ? { ticket_id: tid } : { id: Number(el.dataset.id) })
+          .then(loadBell).catch(() => {});
+      });
     });
   } catch {}
 }
@@ -476,4 +532,4 @@ function logout() {
   location.href = '/';
 }
 
-document.addEventListener('DOMContentLoaded', boot);
+document.addEventListener('DOMContentLoaded', boot);

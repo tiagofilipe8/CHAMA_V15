@@ -17,6 +17,7 @@ const IMPACT_LEVELS = [
 ];
 
 const RESOLUTION_CAUSES = [
+  { name: 'Sem problema / aberto por engano', description: 'Não havia nada para consertar: chamado aberto por engano, duplicado ou o problema já tinha sumido.', neutral: true },
   { name: 'Erro do usuário', description: 'Uso incorreto, configuração alterada ou passo esquecido pelo usuário.' },
   { name: 'Acidente', description: 'Dano físico sem intenção: queda, líquido derramado, cabo puxado.' },
   { name: 'Mau uso / negligência', description: 'Uso indevido ou descuido repetido com o equipamento.' },
@@ -27,7 +28,7 @@ const RESOLUTION_CAUSES = [
   { name: 'Fornecedor externo', description: 'Causa em sistema, serviço ou equipamento de terceiros.' },
   { name: 'Solicitação / serviço planejado', description: 'Não houve falha: instalação, configuração, troca preventiva ou pedido.' },
   { name: 'Causa não identificada', description: 'Resolvido, mas não foi possível descobrir a causa.' },
-].map((c, i) => ({ ...c, sort_order: i + 1 }));
+].map((c, i) => ({ neutral: false, ...c, sort_order: i }));
 
 // Arvore de categorias complexas padrao (caminhos)
 const COMPLEX_PATHS = [
@@ -101,12 +102,13 @@ async function restoreResolutionCauses(q) {
   const keep = [];
   for (const c of RESOLUTION_CAUSES) {
     const { rows } = await q(
-      `INSERT INTO resolution_causes (name, description, sort_order, active) VALUES ($1, $2, $3, TRUE)
-       ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, sort_order = EXCLUDED.sort_order, active = TRUE
-       RETURNING id`, [c.name, c.description, c.sort_order]);
+      `INSERT INTO resolution_causes (name, description, sort_order, active, neutral) VALUES ($1, $2, $3, TRUE, $4)
+       ON CONFLICT ((COALESCE(profile_id, 0)), name) DO UPDATE SET description = EXCLUDED.description,
+         sort_order = EXCLUDED.sort_order, active = TRUE, neutral = EXCLUDED.neutral
+       RETURNING id`, [c.name, c.description, c.sort_order, c.neutral]);
     keep.push(String(rows[0].id));
   }
-  const off = await q(`UPDATE resolution_causes SET active = FALSE WHERE active AND NOT (id = ANY($1::bigint[]))`, [keep]);
+  const off = await q(`UPDATE resolution_causes SET active = FALSE WHERE active AND profile_id IS NULL AND NOT (id = ANY($1::bigint[]))`, [keep]);
   return { restored: keep.length, deactivated: off.rowCount };
 }
 

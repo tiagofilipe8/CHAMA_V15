@@ -640,3 +640,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_resolution_causes_perfil_nome ON resolution
 UPDATE entities e SET option_profile_id = NULL
  WHERE option_profile_id IS NOT NULL
    AND EXISTS (SELECT 1 FROM option_profiles p WHERE p.id = e.option_profile_id AND p.deleted_at IS NOT NULL);
+
+-- =====================================================================
+-- Causa neutra no encerramento: chamado aberto por engano, duplicado ou
+-- que já se resolveu sozinho. Com ela só a causa é obrigatória.
+-- Existe no Padrão e em cada perfil de opções.
+-- =====================================================================
+ALTER TABLE resolution_causes ADD COLUMN IF NOT EXISTS neutral BOOLEAN NOT NULL DEFAULT FALSE;
+INSERT INTO resolution_causes (name, description, sort_order, active, neutral, profile_id)
+SELECT 'Sem problema / aberto por engano',
+       'Não havia nada para consertar: chamado aberto por engano, duplicado ou o problema já tinha sumido.',
+       0, TRUE, TRUE, p.id
+  FROM (SELECT NULL::bigint AS id UNION ALL SELECT id FROM option_profiles WHERE deleted_at IS NULL) p
+ WHERE NOT EXISTS (SELECT 1 FROM resolution_causes rc
+                    WHERE rc.neutral AND COALESCE(rc.profile_id, 0) = COALESCE(p.id, 0))
+   AND NOT EXISTS (SELECT 1 FROM resolution_causes rc
+                    WHERE rc.name = 'Sem problema / aberto por engano' AND COALESCE(rc.profile_id, 0) = COALESCE(p.id, 0));
+UPDATE resolution_causes SET neutral = TRUE
+ WHERE name = 'Sem problema / aberto por engano' AND NOT neutral;

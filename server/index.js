@@ -100,7 +100,17 @@ process.on('uncaughtException', (err) => {
 
 
 // Arquivos estaticos
-app.use('/uploads', express.static(config.uploadsDir, { fallthrough: true, index: false }));
+// /uploads publico serve SO as imagens do sistema (logo e fundo), que ficam
+// na raiz da pasta. Anexos de chamados e fotos de equipamentos ficam em
+// subpastas e so saem pelas rotas com login (que conferem o acesso).
+app.use('/uploads', (req, res, next) => {
+  const nome = decodeURIComponent(req.path || '');
+  if (nome.slice(1).includes('/') || nome.includes('\\') || !/\.(png|jpe?g|webp|gif)$/i.test(nome)) {
+    return res.status(404).json({ error: 'Arquivo não encontrado.' });
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+}, express.static(config.uploadsDir, { fallthrough: false, index: false, dotfiles: 'deny' }));
 app.use('/vendor', express.static(path.join(config.publicDir, 'vendor'), { index: false }));
 app.use(express.static(config.publicDir));
 

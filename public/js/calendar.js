@@ -38,7 +38,7 @@ const CalendarUI = (() => {
   // ------------------------------------------------------------
   // Seletor de data com carga por dia
   // ------------------------------------------------------------
-  function picker(el, { value = null, loadCounts, onChange } = {}) {
+  function picker(el, { value = null, loadCounts, onChange, atalhos = true } = {}) {
     const today = todayIso();
     let selected = value;
     const base = selected ? parse(selected) : new Date();
@@ -71,6 +71,9 @@ const CalendarUI = (() => {
       <div class="cal-picked"></div>`;
 
     const grid = el.querySelector('.cal-grid');
+    // sem contagem (quem abre o chamado não precisa ver a carga da equipe): esconde a legenda
+    if (!loadCounts) el.querySelector('.cal-legend')?.remove();
+    if (!atalhos) el.querySelector('.cal-quick')?.remove();
 
     function paint() {
       el.querySelector('.cal-title').textContent = `${MONTHS[month]} ${year}`;
@@ -85,7 +88,7 @@ const CalendarUI = (() => {
         const lv = loadLevel(n);
         const cls = ['cal-day', out ? 'out' : '', past ? 'past' : '', key === today ? 'today' : '',
           key === selected ? 'sel' : '', d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : '', `lv${lv}`].join(' ');
-        const label = `${fmtLong(key)}${past ? '' : `: ${n} chamado${n === 1 ? '' : 's'} em aberto`}`;
+        const label = `${fmtLong(key)}${past || !loadCounts ? '' : `: ${n} chamado${n === 1 ? '' : 's'} em aberto`}`;
         return `<button type="button" class="${cls}" data-day="${key}" ${past ? 'disabled' : ''} aria-label="${label}" aria-pressed="${key === selected}">
           <span class="cal-n">${d.getDate()}</span>
           ${!past && n ? `<span class="cal-count">${n}</span>` : ''}
@@ -95,7 +98,7 @@ const CalendarUI = (() => {
       if (selected) {
         const n = counts[selected] || 0;
         pickedEl.innerHTML = `<i class="bi bi-calendar-check"></i> Precisa até <b>${fmtLong(selected).toLowerCase()}</b>
-          <span class="text-muted">· ${n ? `${n} chamado${n === 1 ? '' : 's'} já marcado${n === 1 ? '' : 's'} para este dia` : 'dia livre'}</span>`;
+          ${loadCounts ? `<span class="text-muted">· ${n ? `${n} chamado${n === 1 ? '' : 's'} já marcado${n === 1 ? '' : 's'} para este dia` : 'dia livre'}</span>` : ''}`;
         pickedEl.classList.add('on');
       } else {
         pickedEl.innerHTML = '<i class="bi bi-hand-index"></i> Toque no dia em que você precisa disso resolvido.';
@@ -135,6 +138,7 @@ const CalendarUI = (() => {
     load();
     return {
       get value() { return selected; },
+      set(key) { if (key) choose(key); else { selected = null; paint(); } },
       flagInvalid() { el.classList.add('cal-invalid'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
     };
   }
@@ -309,7 +313,7 @@ const CalendarUI = (() => {
           <i class="cg-num ${URG_CLS[i.prioridade]}" title="${esc(nomes[i.prioridade])}"></i>
           <span class="cg-item-tx">
             <span class="t">${esc(i.t.title)}</span>
-            <span class="cg-sub">#${i.t.id}${i.t.location_name ? ` · ${esc(i.t.location_name)}` : ''} · ${i.t.assigned_name ? esc(i.t.assigned_name) : '<em>sem técnico</em>'}${i.dia !== diaSel ? ` · ${dateLabel.toLowerCase()} ${curta(i.dia)}` : ''}</span>
+            <span class="cg-sub">${esc(i.t.number || String(i.t.id))}${i.t.location_name ? ` · ${esc(i.t.location_name)}` : ''} · ${i.t.assigned_name ? esc(i.t.assigned_name) : '<em>sem técnico</em>'}${i.dia !== diaSel ? ` · ${dateLabel.toLowerCase()} ${curta(i.dia)}` : ''}</span>
           </span>
           <span class="cg-item-tg">${etiqueta(i)}</span>
         </a>`;
@@ -431,7 +435,7 @@ const CalendarUI = (() => {
             <dt>Técnico</dt><dd>${t.assigned_name ? esc(t.assigned_name) : 'sem técnico'}</dd>
             ${t.location_name ? `<dt>Local</dt><dd>${esc(t.location_name)}</dd>` : ''}
             ${t.requester_name ? `<dt>Solicitante</dt><dd>${esc(t.requester_name)}</dd>` : ''}
-            <dt>Chamado</dt><dd>${esc(t.number || `#${t.id}`)}</dd>
+            <dt>Chamado</dt><dd>${esc(t.number || String(t.id))}</dd>
           </dl>
           ${coms.length ? `<div class="cg-pop-coms">${coms.map((k) => `<div class="cg-pop-com"><b>${esc(k.quem || '—')}</b> <span>${esc(fmt.timeAgo(k.quando))}</span><div>${esc(corta(k.texto, 160))}</div></div>`).join('')}</div>` : ''}
           <span class="cg-pop-abrir">Abrir <i class="bi bi-arrow-right"></i></span></div></div>`;

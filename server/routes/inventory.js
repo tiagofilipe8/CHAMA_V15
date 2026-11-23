@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const regrasArquivo = require('../uploadRules');
 const config = require('../config');
 const { query } = require('../db');
 const {
@@ -23,12 +24,13 @@ const router = express.Router();
 // Storage para fotos de ativos — reutiliza config.uploadsDir
 const assetPhotoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
+    if (!/^\d+$/.test(String(req.params.id))) return cb(new Error('Equipamento inválido.'));
     const dir = path.join(config.uploadsDir, 'assets', String(req.params.id));
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = regrasArquivo.extensaoSegura(file.originalname);
     const name = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
     cb(null, name);
   },
@@ -37,7 +39,8 @@ const assetPhotoUpload = multer({
   storage: assetPhotoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/^image\/(jpeg|png|webp)$/.test(file.mimetype)) cb(null, true);
+    const ext = regrasArquivo.extensao(file.originalname);
+    if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext) && regrasArquivo.aceitaArquivo(file)) cb(null, true);
     else cb(new Error('Apenas JPEG, PNG e WEBP são permitidos'));
   },
 });
@@ -241,9 +244,11 @@ router.delete('/assets/:id', requireInv, async (req, res) => {
 router.post('/assets/:id/photos', requireInv, assetPhotoUpload.single('photo'), async (req, res) => {
   const assetId = req.params.id;
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [assetId]);
-  if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
-  if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
+  if (!rows.length) { regrasArquivo.apagarGravados([req.file].filter(Boolean)); return res.status(404).json({ error: 'Ativo não encontrado' }); }
+  if (!canAccessEntity(req.user, rows[0].entity_id)) { regrasArquivo.apagarGravados([req.file].filter(Boolean)); return res.status(403).json({ error: 'Acesso negado' }); }
   if (!req.file) return res.status(422).json({ error: 'Envie uma foto' });
+  const ruim = regrasArquivo.conferirGravados([req.file]);
+  if (ruim) return res.status(422).json({ error: ruim });
   const caption = req.body.caption || null;
   const isPrimary = req.body.is_primary === 'true' || req.body.is_primary === true;
   if (isPrimary) await query('UPDATE asset_photos SET is_primary=false WHERE asset_id=$1', [assetId]);

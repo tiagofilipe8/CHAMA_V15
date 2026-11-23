@@ -25,7 +25,7 @@ Views.newTicket = async function newTicket(el) {
   const chooseEntity = Roles.isStaff(user) || myEntities.length > 1;
 
   const step = (n, title, hint, body) => `
-    <div class="nt-step mb-4">
+    <div class="nt-step mb-4" id="nt-step-${n}">
       <div class="d-flex align-items-baseline gap-2 mb-2">
         <span class="badge rounded-pill text-bg-primary">${n}</span>
         <h6 class="mb-0">${title}</h6>
@@ -66,23 +66,31 @@ Views.newTicket = async function newTicket(el) {
                  <textarea class="form-control" id="nt-desc" rows="3"
                            placeholder="Conte com suas palavras: o que aconteceu, desde quando e o que você já tentou."></textarea>
                  <div class="d-flex flex-wrap gap-2 mt-2">
-                   <button type="button" class="btn btn-outline-secondary btn-sm" id="nt-pick-photo">
-                     <i class="bi bi-camera me-1"></i> Foto
+                   <button type="button" class="btn btn-outline-secondary btn-sm btn-anexo" id="nt-pick-files">
+                     <i class="bi bi-paperclip me-1"></i> Anexar arquivo
                    </button>
-                   <button type="button" class="btn btn-outline-secondary btn-sm" id="nt-pick-files">
-                     <i class="bi bi-paperclip me-1"></i> Arquivo
+                   <button type="button" class="btn btn-outline-secondary btn-sm btn-anexo" id="nt-pick-photo">
+                     <i class="bi bi-camera me-1"></i> Tirar foto
                    </button>
                  </div>
-                 <input type="file" id="nt-files" multiple hidden
-                        accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,video/mp4,audio/mpeg">
+                 <div class="form-text">PDF ou fotos, até 15 MB cada.</div>
+                 <input type="file" id="nt-files" multiple hidden accept="${ANEXO_ACCEPT}">
                  <input type="file" id="nt-photo" accept="image/*" capture="environment" hidden>
                  <ul class="list-group list-group-flush mt-2" id="nt-file-list" style="display:none"></ul>`)}
 
               ${step(3, 'Isso está afetando a operação?', '',
                 `<div class="row g-2" id="nt-impact-box"><div class="text-muted small">Carregando...</div></div>`)}
 
-              ${step(4, 'Para quando você precisa?', 'Toque no dia. O número mostra quantos chamados já estão marcados nele.',
-                `<div id="nt-cal"></div>`)}
+              ${step(4, 'Para quando você precisa? <span class="text-muted fw-normal small">(opcional)</span>', '',
+                `<div class="d-flex flex-wrap gap-2 nt-prazo" role="group" aria-label="Para quando você precisa">
+                   <button type="button" class="btn btn-outline-primary btn-sm" data-prazo="hoje">Hoje</button>
+                   <button type="button" class="btn btn-outline-primary btn-sm" data-prazo="amanha">Amanhã</button>
+                   <button type="button" class="btn btn-outline-primary btn-sm" data-prazo="semana">Até sexta</button>
+                   <button type="button" class="btn btn-outline-primary btn-sm" data-prazo="sem">Sem pressa</button>
+                   <button type="button" class="btn btn-outline-secondary btn-sm" data-prazo="dia"><i class="bi bi-calendar3 me-1"></i>Escolher o dia</button>
+                 </div>
+                 <div class="small mt-2" id="nt-prazo-txt" aria-live="polite"></div>
+                 <div id="nt-cal" class="mt-2" hidden></div>`)}
 
               <details class="mb-4" id="nt-more">
                 <summary class="small text-primary" style="cursor:pointer">Mais detalhes (opcional): título e equipamento</summary>
@@ -94,6 +102,7 @@ Views.newTicket = async function newTicket(el) {
                 </div>
               </details>
 
+              <div id="nt-erro-envio"></div>
               <button type="button" class="btn btn-primary btn-lg w-100" id="btn-submit">
                 <i class="bi bi-send me-1"></i> Enviar chamado
               </button>
@@ -158,9 +167,48 @@ Views.newTicket = async function newTicket(el) {
   }
 
   // ---------- data de necessidade (calendario aberto, obrigatorio) ----------
-  const neededCal = CalendarUI.picker(document.getElementById('nt-cal'), {
-    loadCounts: (from, to) => API.get(`/tickets/calendar/load?from=${from}&to=${to}`),
-  });
+  // ---------- data de necessidade (opcional, escolha rápida) ----------
+  // O calendário só abre (e só busca dados) se a pessoa quiser escolher um dia.
+  // A contagem de chamados por dia só aparece para a equipe.
+  const dIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const prazoTxt = document.getElementById('nt-prazo-txt');
+  const calBox = document.getElementById('nt-cal');
+  let calendario = null;
+  let prazo = null; // 'AAAA-MM-DD' ou null (sem pressa / não informado)
+  const mostrarPrazo = (escolha) => {
+    document.querySelectorAll('[data-prazo]').forEach((b) => {
+      const on = b.dataset.prazo === escolha;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on);
+    });
+    prazoTxt.innerHTML = prazo
+      ? `<i class="bi bi-calendar-check text-success me-1"></i>Precisa até <b>${esc(new Date(prazo + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }))}</b>`
+      : (escolha === 'sem' ? '<i class="bi bi-check2 me-1"></i>Sem data: a equipe atende pela urgência.' : '');
+  };
+  document.querySelectorAll('[data-prazo]').forEach((b) => b.addEventListener('click', () => {
+    const d = new Date();
+    const tipo = b.dataset.prazo;
+    if (tipo === 'dia') {
+      calBox.hidden = false;
+      if (!calendario) {
+        calendario = CalendarUI.picker(calBox, {
+          atalhos: false,
+          loadCounts: Roles.isStaff(user) ? (from, to) => API.get(`/tickets/calendar/load?from=${from}&to=${to}`) : undefined,
+          onChange: (k) => { prazo = k; mostrarPrazo('dia'); },
+        });
+      }
+      prazo = calendario.value || null;
+      mostrarPrazo('dia');
+      return;
+    }
+    calBox.hidden = true;
+    if (tipo === 'hoje') prazo = dIso(d);
+    else if (tipo === 'amanha') { d.setDate(d.getDate() + 1); prazo = dIso(d); }
+    else if (tipo === 'semana') { d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7)); prazo = dIso(d); }
+    else prazo = null;
+    mostrarPrazo(tipo);
+  }));
+  const neededCal = { get value() { return prazo; } };
 
   // ---------- urgencia (cada opção na cor da sua urgência) ----------
   const URG_ICON = { 4: 'bi-sign-stop-fill', 3: 'bi-exclamation-triangle-fill', 2: 'bi-hourglass-split', 1: 'bi-clipboard-check' };
@@ -311,7 +359,7 @@ Views.newTicket = async function newTicket(el) {
     }));
   };
   const addFiles = (fileListLike) => {
-    for (const f of Array.from(fileListLike || [])) {
+    for (const f of filtrarAnexos(fileListLike)) {
       if (f.size > 15 * 1024 * 1024) { toast(`${f.name}: maior que 15MB`, 'warning'); continue; }
       if (picked.length >= 10) { toast('Máximo de 10 anexos', 'warning'); break; }
       if (!picked.some((p) => p.name === f.name && p.size === f.size)) picked.push(f);
@@ -328,24 +376,46 @@ Views.newTicket = async function newTicket(el) {
     const entityId = currentEntity();
     const title = document.getElementById('nt-title').value.trim();
     const desc = document.getElementById('nt-desc').value.trim();
-    const needWhere = () => { showWhere(); toast(window.EMPRESA_UNICA ? 'Confira a localização do chamado.' : 'Confira o local do chamado (empresa e localização).', 'warning'); };
+    // Erros ficam escritos em vermelho no próprio passo (não somem sozinhos)
+    const limparErros = () => {
+      document.querySelectorAll('.nt-erro').forEach((x) => x.remove());
+      document.querySelectorAll('.nt-tem-erro').forEach((x) => x.classList.remove('nt-tem-erro'));
+    };
+    const erroNo = (box, msg) => {
+      limparErros();
+      if (!box) { toast(msg, 'danger'); return; }
+      box.classList.add('nt-tem-erro');
+      const aviso = document.createElement('div');
+      aviso.className = 'nt-erro';
+      aviso.setAttribute('role', 'alert');
+      aviso.innerHTML = `<i class="bi bi-exclamation-circle-fill me-1"></i>${esc(msg)}`;
+      box.appendChild(aviso);
+      const sair = () => { aviso.remove(); box.classList.remove('nt-tem-erro'); };
+      ['input', 'change', 'click'].forEach((ev) => box.addEventListener(ev, (e) => { if (!aviso.contains(e.target)) sair(); }, { once: true }));
+      box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const foco = box.querySelector('textarea, select:not([disabled]), input:not([type="hidden"]):not([hidden]):not(.visually-hidden), button');
+      foco?.focus({ preventScroll: true });
+    };
+    limparErros();
+    document.getElementById('nt-erro-envio').innerHTML = '';
+    const localBox = document.querySelector('.nt-local');
+    const needWhere = () => { showWhere(); erroNo(localBox, window.EMPRESA_UNICA ? 'Escolha a localização do chamado.' : 'Escolha a empresa e a localização do chamado.'); };
     const catSel = document.getElementById('nt-cat');
     const locSel = document.getElementById('nt-location');
     if (chooseEntity && !entityId) { needWhere(); return; }
     if (!locSel.disabled && !locSel.value) { needWhere(); return; }
-    if (catMode === 'simple' ? !pickedSimple : !(catSel && catSel.value)) { toast('Escolha o que você precisa (passo 1).', 'warning'); return; }
+    if (catMode === 'simple' ? !pickedSimple : !(catSel && catSel.value)) { erroNo(document.getElementById('nt-step-1'), 'Escolha o que você precisa.'); return; }
     const itens = Object.entries(qtds).filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: Number(id), quantity: q }));
-    if (ehMaterial && !itens.length) { toast('Escolha pelo menos um material (passo 2).', 'warning'); return; }
-    if (!ehMaterial && !desc) { toast('Conte o que está acontecendo (passo 2).', 'warning'); return; }
-    if (!pickedImpact) { toast('Diga se isso está afetando a operação (passo 3).', 'warning'); return; }
-    if (!neededCal.value) { neededCal.flagInvalid(); toast('Marque no calendário o dia em que você precisa disso (passo 4).', 'warning'); return; }
+    if (ehMaterial && !itens.length) { erroNo(document.getElementById('nt-step-2'), 'Escolha pelo menos um material.'); return; }
+    if (!ehMaterial && !desc) { erroNo(document.getElementById('nt-step-2'), 'Conte o que está acontecendo.'); return; }
+    if (!pickedImpact) { erroNo(document.getElementById('nt-step-3'), 'Diga se isso está afetando a operação.'); return; }
 
     const payload = {
       title,
       description: desc,
       impact_id: parseInt(pickedImpact, 10),
-      needed_by: neededCal.value,
     };
+    if (neededCal.value) payload.needed_by = neededCal.value;
     if (ehMaterial) payload.materials = itens;
     if (catMode === 'simple') payload.simple_category_id = parseInt(pickedSimple, 10);
     else payload.category_id = parseInt(catSel.value, 10);
@@ -372,11 +442,18 @@ Views.newTicket = async function newTicket(el) {
             <p class="text-muted mb-1">Status: <b>${esc(LABELS.status[t.status] || '')}</b></p>
             <p class="text-muted">A equipe vai analisar e informar a previsão de atendimento.
               Você recebe um aviso a cada novidade.</p>
-            <a class="btn btn-primary" href="#/tickets/${t.id}"><i class="bi bi-eye me-1"></i> Acompanhar chamado</a>
+            <div class="d-flex flex-wrap gap-2 justify-content-center">
+              <a class="btn btn-primary" href="#/tickets/${t.id}"><i class="bi bi-eye me-1"></i> Acompanhar chamado</a>
+              <button type="button" class="btn btn-outline-primary" id="nt-outro"><i class="bi bi-plus-lg me-1"></i> Abrir outro chamado</button>
+            </div>
           </div></div>
         </div></div>`;
+      document.getElementById('nt-outro').onclick = () => Views.newTicket(el);
     } catch (e) {
-      showError(e);
+      // erro do servidor: fica escrito acima do botão de enviar
+      const caixa = document.getElementById('nt-erro-envio');
+      caixa.innerHTML = `<div class="nt-erro mb-2" role="alert"><i class="bi bi-exclamation-circle-fill me-1"></i>${esc(e.message || 'Não foi possível enviar o chamado.')}</div>`;
+      caixa.scrollIntoView({ behavior: 'smooth', block: 'center' });
       btn.disabled = false;
     }
   };

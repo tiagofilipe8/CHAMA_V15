@@ -7,7 +7,7 @@
   <script>try{document.documentElement.setAttribute('data-bs-theme',localStorage.getItem('tema')==='dark'?'dark':'light')}catch(e){}</script>
   <link rel="stylesheet" href="/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/vendor/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="/css/app.css?v=20261119j">
+  <link rel="stylesheet" href="/css/app.css?v=20261123a">
 </head>
 <body class="app-body">
 
@@ -18,7 +18,7 @@
         <div class="sidebar-logo" id="side-logo"><i class="bi bi-headset"></i></div>
         <div>
           <strong id="side-title">Central</strong>
-          <small>Ordens de Serviço</small>
+          <small>Chamados</small>
         </div>
       </div>
       <nav class="sidebar-nav" id="side-nav"><!-- gerado por usuario --></nav>
@@ -39,7 +39,7 @@
     <div class="app-main">
       <header class="topbar">
         <div class="topbar-left">
-          <button class="icon-btn d-lg-none" id="btn-side-toggle"><i class="bi bi-list"></i></button>
+          <button class="icon-btn d-lg-none" id="btn-side-toggle" aria-label="Abrir menu"><i class="bi bi-list"></i></button>
           <div class="page-head">
             <div class="page-head-row">
               <h2 id="page-title">Painel</h2>
@@ -49,17 +49,17 @@
           </div>
         </div>
         <div class="topbar-right">
-          <button class="icon-btn" id="btn-tema" title="Modo escuro / claro"><i class="bi bi-moon-stars-fill"></i></button>
+          <button class="icon-btn" id="btn-tema" title="Modo escuro / claro" aria-label="Modo escuro / claro"><i class="bi bi-moon-stars-fill"></i></button>
           <button class="icon-btn" id="btn-voice" title="Notificação por voz">
             <i class="bi bi-volume-up-fill" id="voice-icon"></i>
           </button>
           <div class="dropdown notif-drop">
-            <button class="icon-btn position-relative" id="btn-notif" data-bs-toggle="dropdown">
+            <button class="icon-btn position-relative" id="btn-notif" data-bs-toggle="dropdown" aria-label="Notificações">
               <i class="bi bi-bell"></i>
               <span class="notif-badge badge rounded-pill text-bg-danger d-none" id="notif-count">0</span>
             </button>
             <div class="dropdown-menu dropdown-menu-end notif-menu">
-              <div class="notif-header">Notificações <button class="btn btn-sm btn-link" id="btn-notif-read">marcar lidas</button></div>
+              <div class="notif-header">Notificações <button class="btn btn-sm btn-link" id="btn-notif-read">marcar todas como lidas</button></div>
               <div id="notif-list" class="notif-list"></div>
             </div>
           </div>
@@ -70,21 +70,21 @@
   </div>
 
   <a href="#/new" class="fab-novo" id="fab-novo" aria-label="Abrir chamado"><i class="bi bi-plus-lg"></i><span>Abrir chamado</span></a>
-  <div class="toast-wrap" id="toast-wrap"></div>
+  <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/vendor/bootstrap.bundle.min.js"></script>
-  <script src="/js/ui.js?v=20261119j"></script>
-  <script src="/js/api.js?v=20261119j"></script>
-  <script src="/js/voice.js?v=20261119j"></script>
-  <script src="/js/calendar.js?v=20261119j"></script>
-  <script src="/js/views/dashboard.js?v=20261119j"></script>
-  <script src="/js/views/tickets.js?v=20261119j"></script>
-  <script src="/js/views/ticketModals.js?v=20261119j"></script>
-  <script src="/js/views/ticketDetail.js?v=20261119j"></script>
-  <script src="/js/views/newTicket.js?v=20261119j"></script>
-  <script src="/js/views/settingsView.js?v=20261119j"></script>
-  <script src="/js/views/inventory.js?v=20261119j"></script>
-  <script src="/js/app.js?v=20261119j"></script>
+  <script src="/js/ui.js?v=20261123a"></script>
+  <script src="/js/api.js?v=20261123a"></script>
+  <script src="/js/voice.js?v=20261123a"></script>
+  <script src="/js/calendar.js?v=20261123a"></script>
+  <script src="/js/views/dashboard.js?v=20261123a"></script>
+  <script src="/js/views/tickets.js?v=20261123a"></script>
+  <script src="/js/views/ticketModals.js?v=20261123a"></script>
+  <script src="/js/views/ticketDetail.js?v=20261123a"></script>
+  <script src="/js/views/newTicket.js?v=20261123a"></script>
+  <script src="/js/views/settingsView.js?v=20261123a"></script>
+  <script src="/js/views/inventory.js?v=20261123a"></script>
+  <script src="/js/app.js?v=20261123a"></script>
 </body>
 </html>

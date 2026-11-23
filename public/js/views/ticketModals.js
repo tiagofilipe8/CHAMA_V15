@@ -58,12 +58,15 @@ const TicketModals = (() => {
   // ---------------- Resolver (formulario de encerramento) ----------------
   const EMPRESA_PADRAO_WHATSAPP = 'WhatsApp - não identificado';
   function resolve(t, opts = {}) {
+    // opts.toStatus: 5 = Resolvido (padrão) ou 6 = Fechado. Os dois passam por este formulário.
+    const paraStatus = opts.toStatus === 6 ? 6 : 5;
+    const verbo = paraStatus === 6 ? 'Fechar' : 'Resolver';
     // Chamado do WhatsApp ainda na empresa padrao: atribuir empresa e obrigatorio.
     const precisaEmpresa = !!t.via_whatsapp
       && String(t.entity_name || '').trim() === EMPRESA_PADRAO_WHATSAPP;
     const html = `<div class="modal fade" tabindex="-1">
       <div class="modal-dialog modal-lg"><div class="modal-content">
-        <div class="modal-header"><h6><i class="bi bi-check2-circle me-1"></i> Resolver chamado · ${esc(t.number)}</h6>
+        <div class="modal-header"><h6><i class="bi bi-check2-circle me-1"></i> ${verbo} chamado · ${esc(t.number)}</h6>
           <button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
           <div class="small text-muted mb-2">${esc(t.title || '')}</div>
@@ -84,33 +87,37 @@ const TicketModals = (() => {
               <button type="button" class="btn btn-primary btn-sm mt-2" data-f="salvar-empresa">Atribuir</button>
             </div>
           </div>` : ''}
-          <div class="mb-3"><label class="form-label">1. O que aconteceu e o que foi feito? <span class="text-danger">*</span></label>
+          <div class="mb-3"><label class="form-label">1. Qual foi a causa? <span class="text-danger">*</span></label>
+            <select class="form-select" data-f="cause"><option value="">Carregando...</option></select>
+            <div class="form-text" data-f="cause-help"></div>
+            <div class="invalid-feedback" data-f="cause-err">Escolha a causa. Se não havia problema, use “Sem problema / aberto por engano”.</div></div>
+          <div class="alert alert-info small py-2 d-none" data-f="neutro-info"><i class="bi bi-info-circle me-1"></i>
+            Chamado sem problema: só a causa é obrigatória. O resto é opcional.</div>
+          <div class="mb-3"><label class="form-label">2. O que aconteceu e o que foi feito? <span class="text-danger" data-obrig>*</span></label>
             <textarea class="form-control" data-f="notes" rows="4" placeholder="Ex.: O cabo de rede estava solto atrás do computador. Reconectei e testei a internet."></textarea>
+            <div class="invalid-feedback">Escreva pelo menos uma frase curta.</div>
             <div class="form-text">O solicitante vê este texto.</div></div>
-          <div class="row">
-            <div class="col-md-6 mb-3"><label class="form-label">2. Qual foi a causa? <span class="text-danger">*</span></label>
-              <select class="form-select" data-f="cause"><option value="">Carregando...</option></select>
-              <div class="form-text" data-f="cause-help"></div></div>
-            <div class="col-md-6 mb-3"><label class="form-label">3. O que aconteceu com o equipamento? <span class="text-danger">*</span></label>
+          <div class="mb-3"><label class="form-label">3. O que aconteceu com o equipamento? <span class="text-danger" data-obrig>*</span></label>
               <select class="form-select" data-f="action">
                 <option value="">— escolha —</option>
                 ${Object.entries(LABELS.equipmentAction).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
               </select>
+              <div class="invalid-feedback">Escolha uma opção.</div>
               ${t.asset_id ? `<div class="form-text">Fica registrado também no histórico de manutenção de <b>${esc(t.asset_name || 'equipamento')}</b>.</div>` : ''}</div>
-          </div>
-          <div class="mb-2"><label class="form-label">4. Nota para o usuário <b>${esc(t.requester_name || '')}</b> neste chamado <span class="text-danger">*</span></label>
+          <div class="mb-2"><label class="form-label">4. Nota para o usuário <b>${esc(t.requester_name || '')}</b> neste chamado <span class="text-danger" data-obrig>*</span></label>
             <div class="d-flex align-items-center gap-3 flex-wrap">
               <span class="star-pick" data-f="stars">${[1, 2, 3, 4, 5].map((n) => `<i class="bi bi-star" data-n="${n}"></i>`).join('')}</span>
               <button type="button" class="btn btn-sm btn-outline-secondary" data-f="zero">0 estrelas</button>
               <span class="small text-muted" data-f="stars-label">Toque nas estrelas</span>
             </div>
+            <div class="text-danger small d-none" data-f="stars-err">Dê uma nota de 0 a 5 estrelas.</div>
             <input class="form-control form-control-sm mt-2" data-f="rating-comment" maxlength="300" placeholder="Comentário sobre o usuário (opcional)">
             <div class="form-text"><i class="bi bi-lock me-1"></i>A causa e a nota só são vistas pela equipe — o usuário não vê.</div>
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button class="btn btn-success" data-f="save"><i class="bi bi-check2-circle"></i> Resolver</button>
+          <button class="btn btn-success" data-f="save"><i class="bi bi-check2-circle"></i> ${verbo}</button>
         </div>
       </div></div></div>`;
     return open(html, (m, finish) => {
@@ -130,13 +137,29 @@ const TicketModals = (() => {
       // causas do perfil de opções da empresa do chamado
       const carregarCausas = () => API.get(`/resolution-causes?entity_id=${encodeURIComponent(t.entity_id || '')}`).then((causes) => {
         causeSel.innerHTML = '<option value="">— escolha —</option>' +
-          causes.map((c) => `<option value="${c.id}" data-help="${esc(c.description || '')}">${esc(c.name)}</option>`).join('');
+          causes.map((c) => `<option value="${c.id}" data-help="${esc(c.description || '')}" ${c.neutral ? 'data-neutral="1"' : ''}>${esc(c.name)}</option>`).join('');
         f('cause-help').textContent = '';
+        atualizarNeutro();
       }).catch(() => {});
       carregarCausas();
+      const ehNeutra = () => causeSel.selectedOptions[0]?.dataset.neutral === '1';
+      function atualizarNeutro() {
+        const n = ehNeutra();
+        f('neutro-info').classList.toggle('d-none', !n);
+        m.querySelectorAll('[data-obrig]').forEach((x) => { x.textContent = n ? '(opcional)' : '*'; x.className = n ? 'text-muted small' : 'text-danger'; });
+        if (n) {
+          ['notes', 'action'].forEach((k) => f(k).classList.remove('is-invalid'));
+          f('stars-err').classList.add('d-none');
+        }
+      }
       causeSel.addEventListener('change', () => {
         f('cause-help').textContent = causeSel.selectedOptions[0]?.dataset.help || '';
+        causeSel.classList.remove('is-invalid');
+        atualizarNeutro();
       });
+      ['notes', 'action'].forEach((k) => f(k).addEventListener('input', () => f(k).classList.remove('is-invalid')));
+      f('stars').addEventListener('click', () => f('stars-err').classList.add('d-none'));
+      f('zero').addEventListener('click', () => f('stars-err').classList.add('d-none'));
 
       // Empresa obrigatoria para chamados do WhatsApp ainda sem empresa real
       let empresaOk = !precisaEmpresa;
@@ -173,21 +196,25 @@ const TicketModals = (() => {
           return;
         }
         const body = {
-          status: 5,
+          status: paraStatus,
           resolution_notes: f('notes').value.trim(),
           resolution_cause_id: parseInt(causeSel.value, 10) || null,
           equipment_action: f('action').value,
           requester_rating: rating,
           requester_rating_comment: f('rating-comment').value.trim(),
         };
-        if (body.resolution_notes.length < 5) { toast('Descreva o que aconteceu e o que foi feito.', 'warning'); return; }
-        if (!body.resolution_cause_id) { toast('Escolha a causa.', 'warning'); return; }
-        if (!body.equipment_action) { toast('Informe o que aconteceu com o equipamento.', 'warning'); return; }
-        if (rating === null) { toast('Dê uma nota de 0 a 5 estrelas para o usuário.', 'warning'); return; }
+        // Erros ficam marcados em vermelho no próprio campo (não somem)
+        const neutra = ehNeutra();
+        const erros = [];
+        if (!body.resolution_cause_id) { causeSel.classList.add('is-invalid'); erros.push(causeSel); }
+        if (!neutra && body.resolution_notes.length < 5) { f('notes').classList.add('is-invalid'); erros.push(f('notes')); }
+        if (!neutra && !body.equipment_action) { f('action').classList.add('is-invalid'); erros.push(f('action')); }
+        if (!neutra && rating === null) { f('stars-err').classList.remove('d-none'); erros.push(f('zero')); }
+        if (erros.length) { erros[0].focus(); erros[0].scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
         try {
           try {
             await API.post(`/tickets/${t.id}/status`, body);
-            toast(`${t.number} resolvido.`, 'success');
+            toast(`${t.number} ${paraStatus === 6 ? 'fechado' : 'resolvido'}.`, 'success');
           } catch (e) {
             // perfil que precisa da aprovacao do solicitante: envia para aprovar
             if (!e.data?.request_approval) throw e;

@@ -15,6 +15,7 @@ const notify = require('../services/notify');
 const settingsStore = require('../services/settingsStore');
 const realtime = require('../services/realtime');
 const { perfilDaEmpresa } = require('./optionProfiles');
+const regrasArquivo = require('../uploadRules');
 
 // A opção (categoria, urgência ou causa) é do perfil de opções da empresa?
 // perfil undefined = não confere (compatibilidade); null = Padrão.
@@ -60,7 +61,7 @@ const attStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = regrasArquivo.extensaoSegura(file.originalname);
     const base = path.basename(file.originalname, path.extname(file.originalname))
       .replace(/[^\w\-À-ÿ ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'arquivo';
     cb(null, `${Date.now()}-${crypto.randomBytes(3).toString('hex')}-${base}${ext}`);
@@ -69,11 +70,9 @@ const attStorage = multer.diskStorage({
 const attUpload = multer({
   storage: attStorage,
   limits: { fileSize: 15 * 1024 * 1024, files: 10 },
-  fileFilter: (req, file, cb) => {
-    const ok = /^(image\/(jpeg|png|webp|gif)|application\/pdf|text\/plain|application\/msword|application\/vnd\.openxmlformats-officedocument\.[\w.]+|application\/vnd\.ms-excel|video\/mp4|audio\/mpeg)$/i.test(file.mimetype);
-    if (ok) cb(null, true);
-    else cb(new Error('Tipo de arquivo não permitido (máx. 15MB)'));
-  },
+  // so PDF e fotos (ver server/uploadRules.js)
+  fileFilter: regrasArquivo.fileFilter,
+
 });
 
 const TICKET_SELECT = `
@@ -209,22 +208,32 @@ const EQUIPMENT_ACTIONS = {
 
 // Formulario de encerramento: o que aconteceu, causa, acao no equipamento e nota do usuario
 async function readResolution(body = {}, perfil) {
-  const notes = String(body.resolution_notes || body.comment || '').trim();
-  if (notes.length < 5) return { error: 'Descreva o que aconteceu e o que foi feito.' };
+  // A causa e sempre obrigatoria
   const causeId = body.resolution_cause_id;
-  if (!causeId) return { error: 'Escolha a causa do problema.' };
-  const c = await query('SELECT id, name, profile_id FROM resolution_causes WHERE id = $1 AND active', [causeId]);
+  if (!causeId || !/^\d+$/.test(String(causeId))) return { error: 'Escolha a causa do problema.' };
+  const c = await query('SELECT id, name, profile_id, neutral FROM resolution_causes WHERE id = $1 AND active', [causeId]);
   if (!c.rows.length || !mesmoPerfil(c.rows[0], perfil)) return { error: 'Causa inválida.' };
-  const action = String(body.equipment_action || '');
-  if (!EQUIPMENT_ACTIONS[action]) return { error: 'Informe o que aconteceu com o equipamento.' };
+  const cause = c.rows[0];
+  let notes = String(body.resolution_notes || body.comment || '').trim();
+  let action = String(body.equipment_action || '');
   const rating = body.requester_rating;
-  if (rating === undefined || rating === null || rating === '' || !/^[0-5]$/.test(String(rating))) {
+  const semNota = rating === undefined || rating === null || rating === '';
+  const ratingComment = String(body.requester_rating_comment || '').trim() || null;
+
+  // Causa neutra (aberto por engano, duplicado...): o resto e opcional
+  if (cause.neutral) {
+    if (!notes) notes = `Encerrado sem atendimento: ${cause.name}.`;
+    if (!EQUIPMENT_ACTIONS[action]) action = 'no_equipment';
+    if (!semNota && !/^[0-5]$/.test(String(rating))) return { error: 'A nota vai de 0 a 5 estrelas.' };
+    return { notes, cause, action, rating: semNota ? null : parseInt(rating, 10), ratingComment };
+  }
+
+  if (notes.length < 5) return { error: 'Descreva o que aconteceu e o que foi feito.' };
+  if (!EQUIPMENT_ACTIONS[action]) return { error: 'Informe o que aconteceu com o equipamento.' };
+  if (semNota || !/^[0-5]$/.test(String(rating))) {
     return { error: 'Dê uma nota de 0 a 5 estrelas para o usuário.' };
   }
-  return {
-    notes, cause: c.rows[0], action, rating: parseInt(rating, 10),
-    ratingComment: String(body.requester_rating_comment || '').trim() || null,
-  };
+  return { notes, cause, action, rating: parseInt(rating, 10), ratingComment };
 }
 
 async function saveResolution(ticket, user, r) {
@@ -435,10 +444,12 @@ router.post('/', async (req, res) => {
     if (rows.length) return res.status(422).json({ error: 'Informe onde está acontecendo (localização).' });
   }
 
-  if (!needed_by) return res.status(422).json({ error: 'Marque no calendário a data em que você precisa disso resolvido.' });
-  if (!validDate(needed_by)) return res.status(422).json({ error: 'Data de necessidade inválida.' });
-  if (String(needed_by) < new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10)) {
-    return res.status(422).json({ error: 'A data de necessidade não pode ser no passado.' });
+  // Data de necessidade e opcional ("sem pressa" = sem data)
+  if (needed_by) {
+    if (!validDate(needed_by)) return res.status(422).json({ error: 'Data de necessidade inválida.' });
+    if (String(needed_by) < new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10)) {
+      return res.status(422).json({ error: 'A data de necessidade não pode ser no passado.' });
+    }
   }
 
   // SLA da entidade: se não informado, usa dias/horas da entidade
@@ -904,15 +915,20 @@ router.post('/:id/status', async (req, res) => {
 
   const settings = await settingsStore.getAll();
 
+  // Encerrar (Resolvido ou Fechado) sempre passa pelo formulario de encerramento.
+  // Fechar um chamado que ja foi resolvido (com causa registrada) nao pede de novo.
+  const jaTemEncerramento = ticket.status === 5 && !!ticket.resolution_cause_id;
+  const precisaFormulario = toStatus === 5 || (toStatus === 6 && !jaTemEncerramento);
+
   // Quem nao pode resolver direto -> solicita aprovacao do solicitante (modelo GLPI)
-  if (toStatus === 5 && needsApproval(user) && settings['app.approval_on_solve']) {
+  if (precisaFormulario && needsApproval(user) && settings['app.approval_on_solve']) {
     return res.status(409).json({
-      error: 'Para marcar como resolvido, solicite a aprovação do cliente antes.',
+      error: 'Para encerrar, registre a solução e peça a aprovação do cliente.',
       request_approval: true,
     });
   }
   let resolution = null;
-  if (toStatus === 5) {
+  if (precisaFormulario) {
     resolution = await readResolution(req.body, await perfilDaEmpresa(ticket.entity_id));
     if (resolution.error) return res.status(422).json({ error: resolution.error, resolution_form: true });
   }
@@ -935,14 +951,14 @@ router.post('/:id/status', async (req, res) => {
     `INSERT INTO ticket_messages (ticket_id, user_id, kind, content, new_status)
      VALUES ($1, $2, $3, $4, $5)`,
     [req.params.id, user.id, (comment || resolution) ? 'comment' : 'system',
-     resolution ? `Chamado resolvido.\n\nO que foi feito: ${resolution.notes}`
+     resolution ? `Chamado ${toStatus === 6 ? 'fechado' : 'resolvido'}.\n\nO que foi feito: ${resolution.notes}`
        : comment || `${user.name} alterou o status de "${notify.STATUS_LABELS[ticket.status]}" para "${notify.STATUS_LABELS[toStatus]}".`,
      toStatus]);
   if (triage) await claimModerator(ticket, user);
 
   const updated = await loadTicket(req.params.id);
   await notify.statusChanged(updated, user, toStatus);
-  if (toStatus === 5 && resolution) {
+  if (resolution) {
     await notify.solutionToWhatsApp(updated, resolution.notes).catch((e) =>
       console.log('[tickets] aviso whatsapp da solucao falhou:', e.message));
   }
@@ -1104,14 +1120,26 @@ router.post('/:id/messages', async (req, res) => {
 // ---------------------------------------------------------------------
 // Anexos
 // ---------------------------------------------------------------------
-router.post('/:id/attachments', (req, res, next) => {
+router.post('/:id/attachments', async (req, res, next) => {
+  // Confere o chamado e o acesso ANTES de gravar qualquer arquivo no disco
+  if (!/^\d+$/.test(String(req.params.id))) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  let ticket;
+  try {
+    ticket = await loadTicket(req.params.id);
+  } catch (e) { return next(e); }
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!canViewTicket(req.user, ticket)) return res.status(403).json({ error: 'Acesso negado.' });
+
   attUpload.array('files', 10)(req, res, async (err) => {
-    if (err) return res.status(422).json({ error: err.message });
+    if (err) {
+      regrasArquivo.apagarGravados(req.files);
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Arquivo grande demais (máximo 15 MB).' : err.message;
+      return res.status(422).json({ error: msg });
+    }
     try {
-      const ticket = await loadTicket(req.params.id);
-      if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
-      if (!canViewTicket(req.user, ticket)) return res.status(403).json({ error: 'Acesso negado.' });
       if (!req.files?.length) return res.status(422).json({ error: 'Envie ao menos um arquivo.' });
+      const ruim = regrasArquivo.conferirGravados(req.files);
+      if (ruim) return res.status(422).json({ error: ruim });
       const inserted = [];
       for (const f of req.files) {
         const storagePath = path.join('uploads', 'tickets', String(ticket.id), f.filename).replace(/\\/g, '/');
@@ -1129,6 +1157,7 @@ router.post('/:id/attachments', (req, res, next) => {
       emitUpdate(ticket, s);
       res.status(201).json(inserted);
     } catch (e) {
+      regrasArquivo.apagarGravados(req.files);
       next(e);
     }
   });
@@ -1144,8 +1173,12 @@ router.get('/:id/attachments/:attId/file', async (req, res, next) => {
     if (!ticket || !canViewTicket(req.user, ticket)) return res.status(403).json({ error: 'Acesso negado.' });
     const filePath = path.join(config.uploadsDir, 'tickets', String(req.params.id), path.basename(rows[0].storage_path));
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado no servidor.' });
-    const inline = req.query.inline === '1' && /^image\//.test(rows[0].mime_type || '');
-    res.type(rows[0].mime_type || 'application/octet-stream');
+    const inline = req.query.inline === '1' && /^image\/(png|jpeg|webp|gif)$/.test(rows[0].mime_type || '');
+    // arquivo antigo de tipo nao permitido: so baixa, nunca abre no navegador
+    const tipoSeguro = /^(image\/(png|jpeg|webp|gif|heic|heif)|application\/pdf)$/.test(rows[0].mime_type || '');
+    res.type(tipoSeguro ? rows[0].mime_type : 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
     res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(rows[0].file_name)}`);
     res.sendFile(path.resolve(filePath));
   } catch (err) {

@@ -1054,3 +1054,63 @@ abbr.sigla { text-decoration: underline dotted; text-underline-offset: 2px; curs
 .op-trava { background: var(--surface-2); border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px; color: var(--muted); }
 .op-trava .bi { color: var(--primary); }
 .cg-pop-lin .badge, .cg-item-tg .badge { font-size: .68rem; font-weight: 600; }
+
+/* =====================================================================
+   Ajustes de leitura e toque (contraste, tamanho mínimo, alvos de 44px)
+   ===================================================================== */
+/* texto escuro sobre amarelo e laranja (branco ali fica ilegível) */
+.f-chip.on.u-slow, .f-chip.on.u-soon,
+.tcal-qtd.u-slow, .tcal-qtd.u-soon,
+.u-slow .tcal-qtd, .u-soon .tcal-qtd,
+.u-slow > .tcal-qtd, .u-soon > .tcal-qtd { color: #2b1d00; }
+.cg-num.urg-3 { color: #2b1400; }
+.cg-num.urg-2 { color: #2b1d00; }
+.toast.text-bg-warning .toast-body { color: #2b1d00; }
+
+/* nada menor que 12px */
+.knum, .kurg { font-size: .78rem; }
+.kavatar { font-size: .75rem; }
+.nav-group { font-size: .75rem; color: #56657a; }
+.notif-badge { font-size: .72rem; }
+.tcal-qtd { font-size: .75rem; }
+.cg-num { font-size: .75rem; }
+@media (max-width: 575px) { .page-desc { font-size: .8rem; } }
+
+/* botão "Mover para…" do cartão do quadro */
+.kmove {
+  border: 1px solid var(--border, #dde4ea); background: var(--card); color: var(--muted);
+  border-radius: 8px; width: 30px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: .8rem; flex-shrink: 0; padding: 0;
+}
+.kmove:hover, .kmove:focus-visible { color: var(--primary); border-color: var(--primary); }
+.kmove:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.menu-mover { z-index: 2000; min-width: 200px; max-height: 70vh; overflow: auto; }
+
+/* erros escritos no próprio campo do formulário (não somem sozinhos) */
+.nt-erro {
+  color: #b42318; background: #fef3f2; border: 1px solid #fda29b; border-radius: 8px;
+  padding: 8px 10px; margin-top: 8px; font-size: .9rem; font-weight: 500;
+}
+.nt-tem-erro { border-left: 3px solid #d92d20; padding-left: 10px; }
+[data-bs-theme="dark"] .nt-erro { color: #fecdca; background: rgba(217,45,32,.18); border-color: rgba(253,162,155,.5); }
+.nt-prazo .btn.active { color: #fff; }
+
+/* aviso de chamado atualizado enquanto a pessoa escreve */
+.aviso-atualizado { position: sticky; top: 8px; z-index: 20; box-shadow: 0 4px 14px rgba(19,37,58,.15); }
+
+/* botões de anexo lado a lado */
+.btn-anexo { white-space: nowrap; }
+
+/* pisca-pisca: só para quem não pediu menos movimento */
+@media (prefers-reduced-motion: reduce) { .blink, .blink-dot { animation: none !important; } }
+
+/* telas de toque: alvos com pelo menos 44px */
+@media (pointer: coarse) {
+  .nav-item, .f-chip, .seg button, .kmove, .btn-anexo, .nt-prazo .btn,
+  .cal-nav, .notif-item, .dropdown-item, .td-del-att, .nt-rm-file { min-height: 44px; }
+  .kmove { min-width: 44px; }
+  .f-chip, .seg button { display: inline-flex; align-items: center; }
+  .nav-item { display: flex; align-items: center; }
+  .nt-rm-file { min-width: 44px; }
+  .btn-sm { min-height: 40px; }
+}

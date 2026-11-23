@@ -34,11 +34,11 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </div>
     </div>`;
 
-  const prioLabel = { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' };
-  const prioTone = { 1: 'secondary', 2: 'info', 3: 'warning', 4: 'danger' };
+  const prioLabel = LABELS.priority;
+  const PRIO_BADGE_D = { 1: 'prio-low', 2: 'prio-med', 3: 'prio-high', 4: 'prio-urgent' };
 
   // 1. Visão Geral e Volume
-  const backlogByPrio = (v.backlog_by_priority || []).map(p => `<span class="badge text-bg-${prioTone[p.priority]} me-1">${prioLabel[p.priority]}: ${p.total}</span>`).join('') || '<span class="text-muted small">sem backlog</span>';
+  const backlogByPrio = (v.backlog_by_priority || []).map(p => `<span class="badge ${PRIO_BADGE_D[p.priority]} me-1">${prioLabel[p.priority]}: ${p.total}</span>`).join('') || '<span class="text-muted small">sem backlog</span>';
 
   const volumeCards = `
     <div class="stats-row">
@@ -57,7 +57,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <div class="card panel-card h-100">
           <div class="card-body text-center">
             <div class="display-6 fw-bold ${realtime >= 98 ? 'text-success' : realtime >= 90 ? 'text-warning' : 'text-danger'}">${realtime}%</div>
-            <div class="small text-muted">Compliance em tempo real</div>
+            <div class="small text-muted">Dentro do SLA agora</div>
             <div class="progress mt-2" style="height:8px"><div class="progress-bar ${realtime >= 98 ? 'bg-success' : realtime >= 90 ? 'bg-warning' : 'bg-danger'}" style="width:${realtime}%"></div></div>
             <div class="small mt-1">${sla.overdue ?? 0} vencidos · ${sla.without_sla ?? 0} sem SLA</div>
           </div>
@@ -79,7 +79,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
             <div class="h4 mb-1"><span class="badge text-bg-warning">${sla.risk_30m ?? 0}</span> <span class="badge text-bg-danger">${sla.risk_1h ?? 0}</span></div>
             <div class="small text-muted">Radar de risco</div>
             <div class="small">≤30min · ≤1h para estourar</div>
-            <div class="small ${ (sla.risk_30m||0) >0 ? 'text-danger fw-bold blink' : 'text-muted'}">${(sla.risk_30m||0)>0 ? 'ATENÇÃO!' : 'Sem risco iminente'}</div>
+            <div class="small ${(sla.risk_30m || 0) > 0 ? 'text-danger fw-bold' : 'text-muted'}">${(sla.risk_30m || 0) > 0 ? '<i class="bi bi-exclamation-triangle-fill me-1"></i>Atenção: prazo quase vencendo' : 'Sem risco iminente'}</div>
           </div>
         </div>
       </div>
@@ -115,10 +115,10 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     <div class="card panel-card mt-3">
       <div class="card-header d-flex justify-content-between align-items-center">
         <strong><i class="bi bi-radar me-1 text-danger"></i> Radar de Risco — SLA próximo do estouro</strong>
-        <span class="badge text-bg-dark">${(sla.radar||[]).length} tickets</span>
+        <span class="badge text-bg-dark">${(sla.radar||[]).length} chamados</span>
       </div>
       <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead><tr><th>ID</th><th>Título</th><th>Prioridade</th><th class="multi-empresa">Entidade</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
+        <thead><tr><th>Chamado</th><th>Título</th><th>Urgência</th><th class="multi-empresa">Empresa</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
         <tbody>${radarRows}</tbody>
       </table></div>
     </div>`;
@@ -131,13 +131,13 @@ Views.dashboard = async function dashboard(el, opts = {}) {
 
   const byCat = (dist.by_category || []).map(r => `<div class="d-flex justify-content-between"><span>${esc(r.category)}</span><span class="badge text-bg-secondary">${r.total}</span></div>`).join('') || '<span class="text-muted small">sem dados</span>';
 
-  const byPrio = (dist.by_priority || []).map(r => `<span class="badge text-bg-${prioTone[r.priority]} me-1">${prioLabel[r.priority]} ${r.total}</span>`).join('');
+  const byPrio = (dist.by_priority || []).map(r => `<span class="badge ${PRIO_BADGE_D[r.priority]} me-1">${prioLabel[r.priority]}: ${r.total}</span>`).join('');
 
   const distRow = `
     <div class="row g-3 mt-1">
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por Status</div><div class="card-body small">${byStatus}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por Categoria</div><div class="card-body small">${byCat}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por Prioridade / Fila</div><div class="card-body small">${byPrio}<hr><div>Não atribuídos: <span class="badge text-bg-warning">${team.unassigned ?? 0}</span></div></div></div></div>
+      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por status</div><div class="card-body small">${byStatus}</div></div></div>
+      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por categoria</div><div class="card-body small">${byCat}</div></div></div>
+      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por urgência / fila</div><div class="card-body small">${byPrio}<hr><div>Não atribuídos: <span class="badge text-bg-warning">${team.unassigned ?? 0}</span></div></div></div></div>
     </div>`;
 
   // 4. Equipe
@@ -149,17 +149,11 @@ Views.dashboard = async function dashboard(el, opts = {}) {
 
   const prodRows = (team.productivity || []).map(u => `<div class="d-flex justify-content-between small"><span>${esc(u.name)}</span><span class="badge text-bg-success">${u.closed_today} fechados hoje</span></div>`).join('') || '<span class="text-muted small">nenhum fechamento hoje</span>';
 
-  const analystRows = (team.analyst_status || []).map(a => {
-    const st = a.open_count >=8 ? 'Em atendimento' : a.open_count >=3 ? 'Disponível' : a.open_count===0 ? 'Livre' : 'Em pausa';
-    const tone = st==='Em atendimento' ? 'danger' : st==='Disponível' ? 'success' : 'secondary';
-    return `<tr><td>${esc(a.name)}</td><td><span class="badge text-bg-${tone}">${st}</span></td><td>${a.open_count}</td><td class="small text-muted">${a.last_activity ? fmt.timeAgo(a.last_activity) : '—'}</td></tr>`;
-  }).join('') || `<tr><td colspan="4" class="text-center text-muted">sem dados</td></tr>`;
-
+  // (o antigo "Status dos Analistas" foi tirado: era adivinhado pela quantidade de chamados, não era real)
   const teamRow = `
     <div class="row g-3 mt-1">
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header"><i class="bi bi-people me-1"></i> Carga por Analista</div><div class="card-body">${workloadRows}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header"><i class="bi bi-trophy me-1"></i> Produtividade do Turno</div><div class="card-body small">${prodRows}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Status dos Analistas</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Analista</th><th>Status</th><th>Abertos</th><th>Atividade</th></tr></thead><tbody>${analystRows}</tbody></table></div></div></div>
+      <div class="col-md-6"><div class="card panel-card h-100"><div class="card-header"><i class="bi bi-people me-1"></i> Chamados abertos por técnico</div><div class="card-body">${workloadRows}</div></div></div>
+      <div class="col-md-6"><div class="card panel-card h-100"><div class="card-header"><i class="bi bi-trophy me-1"></i> Fechados hoje por técnico</div><div class="card-body small">${prodRows}</div></div></div>
     </div>`;
 
   // Tabela de chamados em aberto (original)
@@ -181,14 +175,14 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <div class="d-flex align-items-center gap-2"><span class="text-muted small" id="dash-clock"></span><button class="btn btn-sm btn-outline-secondary" id="btn-refresh"><i class="bi bi-arrow-clockwise"></i> Atualizar</button></div>
       </div>
       <div class="table-responsive"><table class="table table-hover align-middle dashboard-table mb-0">
-        <thead><tr><th style="width:120px">ID</th><th style="width:110px">Status</th><th>Título</th><th style="width:180px">Técnico</th><th style="width:180px">Requerente</th><th style="width:110px">Prioridade</th><th style="width:110px">Atualização</th></tr></thead>
+        <thead><tr><th style="width:120px">Chamado</th><th style="width:110px">Status</th><th>Título</th><th style="width:180px">Técnico</th><th style="width:180px">Solicitante</th><th style="width:110px">Urgência</th><th style="width:110px">Atualização</th></tr></thead>
         <tbody>${rows || `<tr><td colspan="7" class="text-center py-5 text-muted">Nenhum chamado em aberto.</td></tr>`}</tbody>
       </table></div>
     </div>`;
 
   const header = `
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h4 class="mb-0"><i class="bi bi-broadcast me-2 text-danger"></i> Dashboard NOC — Central de Operações</h4>
+      <h4 class="mb-0"><i class="bi bi-broadcast me-2 text-danger"></i> Painel NOC</h4>
       <span class="badge text-bg-dark"><i class="bi bi-circle-fill text-success blink-dot me-1"></i> Tempo real</span>
     </div>`;
 
@@ -196,12 +190,12 @@ Views.dashboard = async function dashboard(el, opts = {}) {
   const maintAlert = (maint.overdue_count || 0) > 0 ? `
     <div class="card panel-card mt-3 border-danger">
       <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-tools me-1"></i> Alerta de Manutenção de Ativos</strong>
+        <strong><i class="bi bi-tools me-1"></i> Manutenção de equipamentos vencida</strong>
         <span class="badge text-bg-dark">${maint.overdue_count} vencida(s)</span>
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-hover mb-0">
-          <thead><tr><th>Ativo</th><th class="multi-empresa">Entidade</th><th>Vencimento</th><th>Atraso</th></tr></thead>
+          <thead><tr><th>Equipamento</th><th class="multi-empresa">Empresa</th><th>Vencimento</th><th>Atraso</th></tr></thead>
           <tbody>
             ${(maint.items || []).map(a => `
               <tr class="table-danger asset-row" data-id="${a.id}" style="cursor:pointer">
@@ -224,13 +218,24 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       <div class="card-body"><div id="dash-cal"></div></div>
     </div>`;
 
-  el.innerHTML = header + volumeCards + calCard + maintAlert + slaCards + radarCard + distRow + teamRow + table;
-
-  dashboard._calState = dashboard._calState || {};
-  CalendarUI.month(document.getElementById('dash-cal'), {
-    state: dashboard._calState,
-    loadTickets: (from, to) => API.get(`/tickets/calendar?from=${from}&to=${to}`),
-  });
+  // Atualização sem piscar: na primeira vez monta tudo; depois troca só os blocos que mudaram
+  // (o calendário fica no lugar, sem perder o mês nem o dia escolhido).
+  const secoes = { topo: header + volumeCards, manut: maintAlert, sla: slaCards + radarCard, dist: distRow, equipe: teamRow, tabela: table };
+  const montado = !!el.querySelector('[data-dash="topo"]') && opts.silent;
+  if (!montado) {
+    el.innerHTML = `<div data-dash="topo"></div>${calCard}<div data-dash="manut"></div><div data-dash="sla"></div><div data-dash="dist"></div><div data-dash="equipe"></div><div data-dash="tabela"></div>`;
+    dashboard._calState = dashboard._calState || {};
+    dashboard._cal = CalendarUI.month(document.getElementById('dash-cal'), {
+      state: dashboard._calState,
+      loadTickets: (from, to) => API.get(`/tickets/calendar?from=${from}&to=${to}`),
+    });
+  } else if (dashboard._cal?.reload && !el.querySelector('#dash-cal:hover')) {
+    dashboard._cal.reload();
+  }
+  for (const [k, html] of Object.entries(secoes)) {
+    const box = el.querySelector(`[data-dash="${k}"]`);
+    if (box && box._html !== html) { box.innerHTML = html; box._html = html; }
+  }
 
   const clock = document.getElementById('dash-clock');
   if (clock) {
@@ -241,7 +246,8 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         if (dashboard._nocTimer) { clearInterval(dashboard._nocTimer); dashboard._nocTimer = null; }
         return;
       }
-      clock.textContent = new Date().toLocaleTimeString('pt-BR');
+      const relogio = document.getElementById('dash-clock');
+      if (relogio) relogio.textContent = new Date().toLocaleTimeString('pt-BR');
     };
     tick(); dashboard._clockTimer = setInterval(tick, 1000);
   }
@@ -252,6 +258,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       if (dashboard._clockTimer) { clearInterval(dashboard._clockTimer); dashboard._clockTimer = null; }
       return;
     }
+    if (document.hidden) return; // aba escondida: não gasta
     dashboard(el, { silent: true });
   }, 30000);
   // limpeza extra ao navegar
@@ -265,10 +272,12 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     });
   }
   document.getElementById('btn-refresh').onclick = () => dashboard(el, { silent: true });
-  el.querySelectorAll('.ticket-row').forEach((row) => {
+  el.querySelectorAll('.ticket-row:not([data-ok])').forEach((row) => {
+    row.dataset.ok = '1';
     row.addEventListener('click', () => { location.hash = `#/tickets/${row.dataset.id}`; });
   });
-  el.querySelectorAll('.asset-row').forEach((row) => {
+  el.querySelectorAll('.asset-row:not([data-ok])').forEach((row) => {
+    row.dataset.ok = '1';
     row.addEventListener('click', () => { location.hash = `#/inventory/${row.dataset.id}`; });
   });
 };
