@@ -1,5 +1,8 @@
 // ---------------------------------------------------------------
-// Views.dashboard — NOC Dashboard (Network Operations Center)
+// Views.dashboard — Painel
+//   1. Resumo (4 cartões): Abertos · Por urgência · Comigo e fechados · Radar de prazo
+//   2. Calendário (esquerda) + Equipe e Novos sem técnico (direita)
+//   3. Prazos (SLA) numa faixa só · manutenção vencida · distribuição · tabela de abertos
 // ---------------------------------------------------------------
 
 Views.dashboard = async function dashboard(el, opts = {}) {
@@ -17,213 +20,164 @@ Views.dashboard = async function dashboard(el, opts = {}) {
   }
 
   const c = data.counts || {};
-  const isClient = !Roles.isStaff(user); // gestor / admin local: painel das próprias empresas
+  const isClient = !Roles.isStaff(user); // gestor: painel das próprias empresas
   const v = noc?.volume || {};
   const sla = noc?.sla || {};
   const dist = noc?.distribution || {};
   const team = noc?.team || {};
+  const equipe = noc?.equipe || [];
+  const novos = noc?.novos_sem_tecnico || [];
+  const URG = { 4: 'Operação parada', 3: 'Parada iminente', 2: 'Operação prejudicada', 1: 'Requisição' };
+  const TOM = { 4: 'u-stop', 3: 'u-soon', 2: 'u-slow', 1: 'u-req' };
+  const num = (n) => Number(n || 0);
 
-  const statCard = (label, value, icon, tone, sub, extra) => `
-    <div class="stat-card ${tone || ''}">
-      <div class="stat-icon"><i class="bi ${icon}"></i></div>
-      <div class="stat-info">
-        <div class="stat-value">${value}</div>
-        <div class="stat-label">${label}</div>
-        ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
-        ${extra || ''}
+  // ---------------- 1. Resumo ----------------
+  const porPrio = {};
+  (v.backlog_by_priority || []).forEach((p) => { porPrio[p.priority] = p.total; });
+  const totalAbertos = v.open_total ?? c.open_total ?? 0;
+
+  const radar = (sla.radar || []).map((t) => ({ ...t, min: Math.round(Number(t.minutes_left)) }));
+  const vencidos = radar.filter((t) => t.min < 0);
+  const em1h = radar.filter((t) => t.min >= 0 && t.min <= 60);
+  const hoje24 = radar.filter((t) => t.min > 60);
+
+  const resumo = `
+    <div class="dp-resumo">
+      <a class="dp-card dp-abertos" href="#/tickets">
+        <div class="dp-tit"><i class="bi bi-journal-text"></i> Abertos</div>
+        <div class="dp-big">${totalAbertos}</div>
+        <div class="dp-sub">${num(v.open_today ?? c.open_today)} abertos hoje · ${num(team.unassigned)} sem técnico</div>
+      </a>
+      <div class="dp-card">
+        <div class="dp-tit" title="Chamados ainda não resolvidos, separados pela urgência"><i class="bi bi-bar-chart-steps"></i> Abertos por urgência</div>
+        <div class="dp-urgs">${[4, 3, 2, 1].map((p) => `
+          <div class="dp-urg ${TOM[p]}"><i></i><span>${URG[p]}</span><b>${num(porPrio[p])}</b></div>`).join('')}
+        </div>
+      </div>
+      <div class="dp-card">
+        <div class="dp-tit"><i class="bi bi-person-check"></i> ${isClient ? 'Da sua empresa' : 'Comigo e fechados'}</div>
+        <a class="dp-linha dp-azul" href="${isClient ? '#/team-tickets' : '#/mine'}"><span>${isClient ? 'Em aberto' : 'Atribuídos a mim'}</span><b>${num(data.my_open)}</b></a>
+        <div class="dp-linha dp-verde"><span>Fechados</span><b>${num(v.closed_total)}</b><small>${num(v.closed_today)} hoje</small></div>
+      </div>
+      <div class="dp-card dp-radar ${vencidos.length ? 'alerta' : ''}" id="dp-radar" tabindex="0">
+        <div class="dp-tit"><i class="bi bi-radar"></i> Radar de prazo <i class="bi bi-info-circle dp-info" title="Passe o mouse para ver os chamados"></i></div>
+        <div class="dp-linha dp-vermelho" data-grupo="vencidos"><span>Prazo vencido</span><b>${vencidos.length}</b></div>
+        <div class="dp-linha dp-laranja" data-grupo="em1h"><span>Vence em até 1h</span><b>${em1h.length}</b></div>
+        <div class="dp-linha dp-amarelo" data-grupo="hoje24"><span>Vence nas próximas 24h</span><b>${hoje24.length}</b></div>
       </div>
     </div>`;
 
-  const prioLabel = LABELS.priority;
-  const PRIO_BADGE_D = { 1: 'prio-low', 2: 'prio-med', 3: 'prio-high', 4: 'prio-urgent' };
-
-  // 1. Visão Geral e Volume
-  const backlogByPrio = (v.backlog_by_priority || []).map(p => `<span class="badge ${PRIO_BADGE_D[p.priority]} me-1">${prioLabel[p.priority]}: ${p.total}</span>`).join('') || '<span class="text-muted small">sem backlog</span>';
-
-  const volumeCards = `
-    <div class="stats-row">
-      ${statCard('Abertos', v.open_total ?? c.open_total ?? 0, 'bi-journal-text', 'tone-primary', `${v.open_today ?? c.open_today ?? 0} hoje · ${v.closed_today ?? 0} fechados hoje`)}
-      ${statCard('Backlog', v.backlog_total ?? c.open_total ?? 0, 'bi-stack', 'tone-amber', backlogByPrio)}
-      ${statCard(isClient ? 'Chamados abertos' : 'Meus em aberto', data.my_open ?? 0, 'bi-person-check', 'tone-green', isClient ? '' : 'Atribuídos a mim')}
-      ${statCard('Fechados', v.closed_total ?? 0, 'bi-check-circle', 'tone-success', `${v.closed_today ?? 0} hoje`)}
+  // ---------------- 2. Lado direito: Equipe e Novos sem técnico ----------------
+  const pill = (p, n) => (n ? `<span class="dp-pill ${TOM[p]}" title="${n} · ${URG[p]}">${n}</span>` : '');
+  const equipeCard = isClient && !equipe.length ? '' : `
+    <div class="card panel-card dp-bloco">
+      <div class="dp-bloco-cab"><span><i class="bi bi-people"></i> Equipe</span>
+        <a class="small" href="#/atendimento">meu atendimento <i class="bi bi-arrow-right"></i></a></div>
+      ${equipe.length ? `<div class="dp-equipe">${equipe.map((u) => `
+        <div class="dp-tec">
+          <div class="dp-tec-l1">
+            <span class="dp-avatar">${esc((u.name || '?').trim().charAt(0).toUpperCase())}</span>
+            <b class="dp-tec-nome">${esc(u.name)}</b>
+            <span class="dp-pills">${pill(4, u.p4)}${pill(3, u.p3)}${pill(2, u.p2)}${pill(1, u.p1)}${u.total ? '' : '<span class="text-muted small">sem chamados</span>'}</span>
+          </div>
+          ${u.atendendo ? `<a class="dp-tec-l2 dp-ativo" href="#/tickets/${u.atendendo.id}" title="Atendendo agora${u.working_since ? ` desde ${fmt.timeAgo(u.working_since)}` : ''}">
+              <i class="dp-pulso"></i>Atendendo: <b>#${u.atendendo.id}</b> ${esc(u.atendendo.title)}</a>`
+    : u.prioritario ? `<a class="dp-tec-l2" href="#/tickets/${u.prioritario.id}" title="O mais urgente da fila dele">
+              <i class="bi bi-flag-fill ${TOM[u.prioritario.priority]}-tx"></i>Prioritário: <b>#${u.prioritario.id}</b> ${esc(u.prioritario.title)}</a>`
+      : '<div class="dp-tec-l2 text-muted">Nenhum chamado com ele.</div>'}
+        </div>`).join('')}</div>` : '<div class="dp-vazio">Nenhum técnico cadastrado.</div>'}
     </div>`;
 
-  // 2. SLA
+  const novosCard = `
+    <div class="card panel-card dp-bloco">
+      <div class="dp-bloco-cab"><span><i class="bi bi-inbox"></i> Novos sem técnico</span>
+        <span class="tg ${num(team.unassigned) ? 'tg-amber' : 'tg-gray'}">${num(team.unassigned)}</span></div>
+      ${novos.length ? `<div class="dp-novos">${novos.map((t) => `
+        <a class="dp-novo ${TOM[t.priority] || 'u-req'}" href="#/tickets/${t.id}">
+          <div class="dp-novo-l1"><b>${esc(t.title)}</b><span class="tg tg-amber">Não atribuído</span></div>
+          <div class="dp-novo-l2">#${t.id} · ${esc(t.impact_name || URG[t.priority] || '')}${t.category_name ? ` · ${esc(t.category_name)}` : ''}</div>
+          <div class="dp-novo-l2">${t.location_name ? `<i class="bi bi-geo-alt"></i>${esc(t.location_name)} · ` : ''}${esc(t.requester_name || '')} · aberto ${fmt.timeAgo(t.created_at)}</div>
+        </a>`).join('')}</div>` : '<div class="dp-vazio"><i class="bi bi-check2-circle text-success"></i> Todos os chamados têm técnico.</div>'}
+    </div>`;
+
+  const calCard = `
+    <div class="card panel-card dp-bloco">
+      <div class="dp-bloco-cab"><span><i class="bi bi-calendar3"></i> Calendário de necessidade</span>
+        <span class="small text-muted">o dia em que cada solicitante precisa do chamado resolvido</span></div>
+      <div class="dp-cal-corpo"><div id="dash-cal"></div></div>
+    </div>`;
+
+  // ---------------- 3. Prazos, manutenção, distribuição e tabela ----------------
   const compliance = sla.compliance || { pct: 100, with_sla: 0, within_sla: 0 };
   const realtime = sla.realtime_compliance ?? 100;
-  const slaCards = `
-    <div class="row g-3 mt-1">
-      <div class="col-md-3">
-        <div class="card panel-card h-100">
-          <div class="card-body text-center">
-            <div class="display-6 fw-bold ${realtime >= 98 ? 'text-success' : realtime >= 90 ? 'text-warning' : 'text-danger'}">${realtime}%</div>
-            <div class="small text-muted">Dentro do SLA agora</div>
-            <div class="progress mt-2" style="height:8px"><div class="progress-bar ${realtime >= 98 ? 'bg-success' : realtime >= 90 ? 'bg-warning' : 'bg-danger'}" style="width:${realtime}%"></div></div>
-            <div class="small mt-1">${sla.overdue ?? 0} vencidos · ${sla.without_sla ?? 0} sem SLA</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card panel-card h-100">
-          <div class="card-body text-center">
-            <div class="display-6 fw-bold ${compliance.pct >= 98 ? 'text-success' : 'text-warning'}">${compliance.pct}%</div>
-            <div class="small text-muted">SLA Resolução (30d)</div>
-            <div class="small">${compliance.within_sla}/${compliance.with_sla} dentro do prazo</div>
-            <div class="small text-muted">TMA ${sla.tma_hours ?? 0}h · TMR ${sla.tmr_hours ?? 0}h</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card panel-card h-100 border-warning">
-          <div class="card-body text-center">
-            <div class="h4 mb-1"><span class="badge text-bg-warning">${sla.risk_30m ?? 0}</span> <span class="badge text-bg-danger">${sla.risk_1h ?? 0}</span></div>
-            <div class="small text-muted">Radar de risco</div>
-            <div class="small">≤30min · ≤1h para estourar</div>
-            <div class="small ${(sla.risk_30m || 0) > 0 ? 'text-danger fw-bold' : 'text-muted'}">${(sla.risk_30m || 0) > 0 ? '<i class="bi bi-exclamation-triangle-fill me-1"></i>Atenção: prazo quase vencendo' : 'Sem risco iminente'}</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="card panel-card h-100">
-          <div class="card-body">
-            <div class="small fw-bold mb-1"><i class="bi bi-stopwatch me-1"></i> SLA 1ª Resposta / Resolução</div>
-            <div class="small">TMR médio: <b>${sla.tmr_hours ?? 0}h</b> (1ª resposta)</div>
-            <div class="small">TMA médio: <b>${sla.tma_hours ?? 0}h</b> (resolução)</div>
-            <div class="small text-muted mt-1">Prazo (SLA) de cada chamado</div>
-          </div>
-        </div>
-      </div>
+  const corPct = (p) => (p >= 98 ? 'text-success' : p >= 90 ? 'text-warning' : 'text-danger');
+  const prazos = `
+    <div class="card panel-card dp-prazos">
+      <div class="dp-prazo"><b class="${corPct(realtime)}">${realtime}%</b><span>no prazo agora</span><small>${num(sla.overdue)} vencidos · ${num(sla.without_sla)} sem prazo</small></div>
+      <div class="dp-prazo"><b class="${corPct(compliance.pct)}">${compliance.pct}%</b><span>resolvidos no prazo</span><small>${compliance.within_sla}/${compliance.with_sla} nos últimos 30 dias</small></div>
+      <div class="dp-prazo"><b>${num(sla.tmr_hours)}h</b><span>até a 1ª resposta</span><small>média, 30 dias</small></div>
+      <div class="dp-prazo"><b>${num(sla.tma_hours)}h</b><span>até resolver</span><small>média, 30 dias</small></div>
     </div>`;
 
-  // Radar tabela
-  const radarRows = (sla.radar || []).map(t => {
-    const mins = Math.round(t.minutes_left);
-    const tone = mins < 0 ? 'table-danger' : mins <= 30 ? 'table-warning' : '';
-    const badge = mins < 0 ? '<span class="badge text-bg-danger">VENCIDO</span>' : mins <= 30 ? '<span class="badge text-bg-warning text-dark">≤30m</span>' : '<span class="badge text-bg-info">≤1h</span>';
-    return `<tr class="${tone} ticket-row" data-id="${t.id}">
-      <td class="fw-bold">${esc(t.number)}</td>
-      <td>${esc(t.title)}</td>
-      <td>${badgePriority(t.priority)}</td>
-      <td class="multi-empresa">${esc(t.entity_name||'')}</td>
-      <td>${esc(t.assigned_name||'—')}</td>
-      <td>${t.due_at ? fmt.dateTime(t.due_at) : '—'}</td>
-      <td>${badge} ${mins < 0 ? Math.abs(mins)+'m atraso' : mins+'m restantes'}</td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="7" class="text-center text-muted py-3">Nenhum chamado em risco</td></tr>`;
+  const maint = noc?.maintenance || {};
+  const maintAlert = num(maint.overdue_count) > 0 ? `
+    <div class="card panel-card dp-bloco dp-manut">
+      <div class="dp-bloco-cab"><span><i class="bi bi-tools"></i> Manutenção de equipamentos vencida</span>
+        <span class="tg tg-red">${maint.overdue_count}</span></div>
+      <div class="dp-manut-lista">${(maint.items || []).map((a) => `
+        <a class="dp-manut-item" href="#/inventory/${a.id}"><b>${esc(a.name)}</b> ${esc(a.asset_tag || '')}
+          <span class="multi-empresa text-muted">· ${esc(a.entity_name || '')}</span>
+          <span class="tg tg-red ms-auto">${a.days_overdue} dia(s)</span></a>`).join('')}</div>
+    </div>` : '';
 
-  const radarCard = `
-    <div class="card panel-card mt-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-radar me-1 text-danger"></i> Radar de Risco — SLA próximo do estouro</strong>
-        <span class="badge text-bg-dark">${(sla.radar||[]).length} chamados</span>
-      </div>
-      <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead><tr><th>Chamado</th><th>Título</th><th>Urgência</th><th class="multi-empresa">Empresa</th><th>Técnico</th><th>Prazo SLA</th><th>Status</th></tr></thead>
-        <tbody>${radarRows}</tbody>
-      </table></div>
-    </div>`;
-
-  // 3. Distribuição
-  const byStatus = (dist.by_status || []).map(r => {
-    const label = {1:'Novo',2:'Atribuído',3:'Em andamento',4:'Pendente',5:'Resolvido',6:'Fechado',7:'Cancelado'}[r.status] || r.status;
-    return `<div class="d-flex justify-content-between align-items-center mb-1"><span>${label}</span><span class="badge text-bg-primary">${r.total}</span></div><div class="progress mb-2" style="height:6px"><div class="progress-bar" style="width:${Math.round((r.total/Math.max(1,(dist.by_status||[]).reduce((a,b)=>a+b.total,0)))*100)}%"></div></div>`;
-  }).join('') || '<span class="text-muted small">sem dados</span>';
-
-  const byCat = (dist.by_category || []).map(r => `<div class="d-flex justify-content-between"><span>${esc(r.category)}</span><span class="badge text-bg-secondary">${r.total}</span></div>`).join('') || '<span class="text-muted small">sem dados</span>';
-
-  const byPrio = (dist.by_priority || []).map(r => `<span class="badge ${PRIO_BADGE_D[r.priority]} me-1">${prioLabel[r.priority]}: ${r.total}</span>`).join('');
-
+  const STATUS = { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' };
+  const totStatus = Math.max(1, (dist.by_status || []).reduce((a, b) => a + b.total, 0));
   const distRow = `
-    <div class="row g-3 mt-1">
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por status</div><div class="card-body small">${byStatus}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por categoria</div><div class="card-body small">${byCat}</div></div></div>
-      <div class="col-md-4"><div class="card panel-card h-100"><div class="card-header">Por urgência / fila</div><div class="card-body small">${byPrio}<hr><div>Não atribuídos: <span class="badge text-bg-warning">${team.unassigned ?? 0}</span></div></div></div></div>
+    <div class="card panel-card dp-bloco">
+      <div class="dp-bloco-cab"><span><i class="bi bi-pie-chart"></i> Distribuição</span></div>
+      <div class="dp-dist">
+        <div><div class="dp-dist-tit">Por situação</div>${(dist.by_status || []).map((r) => `
+          <div class="dp-barra"><span>${STATUS[r.status] || r.status}</span><i style="--w:${Math.round((r.total / totStatus) * 100)}%"></i><b>${r.total}</b></div>`).join('') || '<span class="text-muted small">sem dados</span>'}</div>
+        <div><div class="dp-dist-tit">Abertos por categoria</div>${(dist.by_category || []).map((r) => `
+          <div class="dp-barra"><span>${esc(r.category)}</span><i style="--w:${Math.round((r.total / Math.max(1, ...(dist.by_category || []).map((x) => x.total))) * 100)}%"></i><b>${r.total}</b></div>`).join('') || '<span class="text-muted small">sem dados</span>'}</div>
+      </div>
     </div>`;
 
-  // 4. Equipe
-  const workloadRows = (team.workload || []).map(u => {
-    const bar = Math.min(100, (u.open_count/ Math.max(1, Math.max(...team.workload.map(x=>x.open_count))))*100);
-    const tone = u.open_count >=8 ? 'bg-danger' : u.open_count >=5 ? 'bg-warning' : 'bg-success';
-    return `<div class="mb-2"><div class="d-flex justify-content-between small"><span>${esc(u.name)}</span><span class="badge text-bg-primary">${u.open_count}</span></div><div class="progress" style="height:6px"><div class="progress-bar ${tone}" style="width:${bar}%"></div></div></div>`;
-  }).join('') || '<span class="text-muted small">sem técnicos</span>';
-
-  const prodRows = (team.productivity || []).map(u => `<div class="d-flex justify-content-between small"><span>${esc(u.name)}</span><span class="badge text-bg-success">${u.closed_today} fechados hoje</span></div>`).join('') || '<span class="text-muted small">nenhum fechamento hoje</span>';
-
-  // (o antigo "Status dos Analistas" foi tirado: era adivinhado pela quantidade de chamados, não era real)
-  const teamRow = `
-    <div class="row g-3 mt-1">
-      <div class="col-md-6"><div class="card panel-card h-100"><div class="card-header"><i class="bi bi-people me-1"></i> Chamados abertos por técnico</div><div class="card-body">${workloadRows}</div></div></div>
-      <div class="col-md-6"><div class="card panel-card h-100"><div class="card-header"><i class="bi bi-trophy me-1"></i> Fechados hoje por técnico</div><div class="card-body small">${prodRows}</div></div></div>
-    </div>`;
-
-  // Tabela de chamados em aberto (original)
-  const rows = (data.tickets || []).slice(0, 20).map((t) => `
-    <tr class="ticket-row" data-id="${t.id}">
-      <td class="fw-bold text-primary">${esc(t.number)}</td>
-      <td>${badgeStatus(t.status)} ${t.approval_status === 'pending' ? '<span class="badge bd-pending-approval ms-1"><i class="bi bi-check2-circle"></i> aprovação</span>' : ''}</td>
+  const rows = (data.tickets || []).slice(0, 12).map((t) => `
+    <tr class="ticket-row ${TOM[t.priority] || ''}" data-id="${t.id}">
+      <td class="fw-bold text-primary">#${t.id}</td>
       <td class="ticket-title">${esc(t.title)}</td>
-      <td>${t.assigned_name ? `<span class="tech-chip"><i class="bi bi-person-badge"></i> ${esc(t.assigned_name)}</span>` : '<span class="text-muted">— não atribuído —</span>'}</td>
-      <td>${esc(t.requester_name || '—')}<br><small class="text-muted multi-empresa">${esc(t.entity_name || '')}</small></td>
-      <td>${badgePriority(t.priority)}</td>
+      <td>${badgeStatus(t.status)} ${t.approval_status === 'pending' ? '<span class="badge bd-pending-approval ms-1"><i class="bi bi-check2-circle"></i> aprovação</span>' : ''}</td>
+      <td>${t.assigned_name ? esc(t.assigned_name) : '<span class="tg tg-amber">Não atribuído</span>'}</td>
       <td class="text-muted small">${fmt.timeAgo(t.updated_at)}</td>
     </tr>`).join('');
-
   const table = `
-    <div class="card panel-card mt-3">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div><i class="bi bi-activity me-1 text-success blink-dot"></i><strong>Chamados em aberto — tempo real</strong> <span class="badge text-bg-warning ms-2">${team.unassigned ?? 0} não atribuídos</span></div>
-        <div class="d-flex align-items-center gap-2"><span class="text-muted small" id="dash-clock"></span><button class="btn btn-sm btn-outline-secondary" id="btn-refresh"><i class="bi bi-arrow-clockwise"></i> Atualizar</button></div>
-      </div>
-      <div class="table-responsive"><table class="table table-hover align-middle dashboard-table mb-0">
-        <thead><tr><th style="width:120px">Chamado</th><th style="width:110px">Status</th><th>Título</th><th style="width:180px">Técnico</th><th style="width:180px">Solicitante</th><th style="width:110px">Urgência</th><th style="width:110px">Atualização</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="7" class="text-center py-5 text-muted">Nenhum chamado em aberto.</td></tr>`}</tbody>
+    <div class="card panel-card dp-bloco">
+      <div class="dp-bloco-cab"><span><i class="bi bi-activity text-success blink-dot"></i> Últimas movimentações</span>
+        <a class="small" href="#/tickets">ver todos <i class="bi bi-arrow-right"></i></a></div>
+      <div class="table-responsive"><table class="table table-sm table-hover align-middle dashboard-table mb-0">
+        <thead><tr><th style="width:70px">Nº</th><th>Título</th><th style="width:150px">Situação</th><th style="width:170px">Técnico</th><th style="width:110px">Atualizado</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="text-center py-4 text-muted">Nenhum chamado em aberto.</td></tr>'}</tbody>
       </table></div>
     </div>`;
 
   const header = `
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h4 class="mb-0"><i class="bi bi-broadcast me-2 text-danger"></i> Painel NOC</h4>
-      <span class="badge text-bg-dark"><i class="bi bi-circle-fill text-success blink-dot me-1"></i> Tempo real</span>
-    </div>`;
-
-  const maint = noc?.maintenance || {};
-  const maintAlert = (maint.overdue_count || 0) > 0 ? `
-    <div class="card panel-card mt-3 border-danger">
-      <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-tools me-1"></i> Manutenção de equipamentos vencida</strong>
-        <span class="badge text-bg-dark">${maint.overdue_count} vencida(s)</span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover mb-0">
-          <thead><tr><th>Equipamento</th><th class="multi-empresa">Empresa</th><th>Vencimento</th><th>Atraso</th></tr></thead>
-          <tbody>
-            ${(maint.items || []).map(a => `
-              <tr class="table-danger asset-row" data-id="${a.id}" style="cursor:pointer">
-                <td><b>${esc(a.name)}</b> ${esc(a.asset_tag || '')}${a.next_maintenance_notes ? `<br><small class="text-muted">${esc(a.next_maintenance_notes)}</small>` : ''}</td>
-                <td class="multi-empresa">${esc(a.entity_name || '')}</td>
-                <td>${String(a.next_maintenance_date).slice(0, 10)}</td>
-                <td><span class="badge text-bg-danger">${a.days_overdue} dia(s)</span></td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>` : '';
-
-  const calCard = `
-    <div class="card panel-card mt-3">
-      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span><i class="bi bi-calendar3 me-1"></i> <strong>Calendário de necessidade</strong>
-          <span class="text-muted small ms-1">o dia em que cada solicitante precisa do chamado resolvido</span></span>
-      </div>
-      <div class="card-body"><div id="dash-cal"></div></div>
+    <div class="dp-topo">
+      <span class="tg tg-teal"><i class="bi bi-circle-fill blink-dot"></i> Tempo real</span>
+      <span class="text-muted small" id="dash-clock"></span>
+      <button class="btn btn-sm btn-outline-secondary ms-auto" id="btn-refresh"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
     </div>`;
 
   // Atualização sem piscar: na primeira vez monta tudo; depois troca só os blocos que mudaram
   // (o calendário fica no lugar, sem perder o mês nem o dia escolhido).
-  const secoes = { topo: header + volumeCards, manut: maintAlert, sla: slaCards + radarCard, dist: distRow, equipe: teamRow, tabela: table };
+  const secoes = {
+    topo: header + resumo, lado: equipeCard + novosCard, prazos, manut: maintAlert, dist: distRow, tabela: table,
+  };
   const montado = !!el.querySelector('[data-dash="topo"]') && opts.silent;
   if (!montado) {
-    el.innerHTML = `<div data-dash="topo"></div>${calCard}<div data-dash="manut"></div><div data-dash="sla"></div><div data-dash="dist"></div><div data-dash="equipe"></div><div data-dash="tabela"></div>`;
+    el.innerHTML = `<div data-dash="topo"></div>
+      <div class="dp-meio"><div class="dp-meio-cal">${calCard}</div><div class="dp-meio-lado" data-dash="lado"></div></div>
+      <div data-dash="prazos"></div><div data-dash="manut"></div><div data-dash="dist"></div><div data-dash="tabela"></div>`;
     dashboard._calState = dashboard._calState || {};
     dashboard._cal = CalendarUI.month(document.getElementById('dash-cal'), {
       state: dashboard._calState,
@@ -235,6 +189,42 @@ Views.dashboard = async function dashboard(el, opts = {}) {
   for (const [k, html] of Object.entries(secoes)) {
     const box = el.querySelector(`[data-dash="${k}"]`);
     if (box && box._html !== html) { box.innerHTML = html; box._html = html; }
+  }
+
+  // ---- Radar de prazo: passar o mouse mostra a prévia dos chamados (mesmo jeito do calendário) ----
+  const radarEl = document.getElementById('dp-radar');
+  if (radarEl && !radarEl.dataset.ok) {
+    radarEl.dataset.ok = '1';
+    let dica = document.getElementById('dash-dica');
+    if (!dica) { dica = document.createElement('div'); dica.id = 'dash-dica'; document.body.appendChild(dica); }
+    const grupos = { vencidos: ['Prazo vencido', vencidos], em1h: ['Vence em até 1h', em1h], hoje24: ['Vence nas próximas 24h', hoje24] };
+    const tempo = (m) => (m < 0 ? `venceu há ${fmtMin(-m)}` : `vence em ${fmtMin(m)}`);
+    const montar = (chave) => {
+      const lista = chave ? [[...grupos[chave]]] : Object.values(grupos);
+      const html = lista.filter(([, l]) => l.length).map(([tit, l]) => `
+        <div class="dd-grupo">${esc(tit)} (${l.length})</div>
+        ${l.slice(0, 6).map((t) => `<div class="dd-item"><i class="dd-dot ${TOM[t.priority] || 'u-req'}"></i>
+          <span><b>#${t.id}</b> ${esc(t.title)}<small>${tempo(t.min)} · ${esc(t.assigned_name || 'sem técnico')}${t.location_name ? ` · ${esc(t.location_name)}` : ''}</small></span></div>`).join('')}
+        ${l.length > 6 ? `<div class="dd-mais">+${l.length - 6}</div>` : ''}`).join('');
+      dica.innerHTML = html || '<div class="dd-vazio"><i class="bi bi-check2-circle"></i> Nenhum chamado com prazo perto de vencer.</div>';
+    };
+    let atual = null;
+    radarEl.addEventListener('mousemove', (ev) => {
+      const linha = ev.target.closest('[data-grupo]');
+      const chave = linha ? linha.dataset.grupo : '';
+      if (chave !== atual) { atual = chave; montar(chave || null); }
+      dica.classList.add('on');
+      const w = dica.offsetWidth; const h = dica.offsetHeight;
+      let x = ev.clientX + 16; if (x + w > innerWidth - 6) x = ev.clientX - w - 12;
+      let y = ev.clientY + 18; if (y + h > innerHeight - 6) y = ev.clientY - h - 12;
+      dica.style.transform = `translate(${x}px, ${y}px)`;
+    });
+    radarEl.addEventListener('mouseleave', () => { dica.classList.remove('on'); atual = null; });
+    radarEl.addEventListener('click', () => {
+      const primeiro = vencidos[0] || em1h[0] || hoje24[0];
+      if (primeiro) location.hash = `#/tickets/${primeiro.id}`;
+    });
+    window.addEventListener('hashchange', () => dica.classList.remove('on'), { once: true });
   }
 
   const clock = document.getElementById('dash-clock');
@@ -261,7 +251,6 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     if (document.hidden) return; // aba escondida: não gasta
     dashboard(el, { silent: true });
   }, 30000);
-  // limpeza extra ao navegar
   if (!dashboard._hashListener) {
     dashboard._hashListener = true;
     window.addEventListener('hashchange', () => {
@@ -276,8 +265,12 @@ Views.dashboard = async function dashboard(el, opts = {}) {
     row.dataset.ok = '1';
     row.addEventListener('click', () => { location.hash = `#/tickets/${row.dataset.id}`; });
   });
-  el.querySelectorAll('.asset-row:not([data-ok])').forEach((row) => {
-    row.dataset.ok = '1';
-    row.addEventListener('click', () => { location.hash = `#/inventory/${row.dataset.id}`; });
-  });
 };
+
+// minutos -> "35 min" / "2h 10min" / "3 dias"
+function fmtMin(m) {
+  if (m < 60) return `${m} min`;
+  if (m < 60 * 24) return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}min` : ''}`;
+  const d = Math.floor(m / (60 * 24));
+  return `${d} dia${d > 1 ? 's' : ''}`;
+}

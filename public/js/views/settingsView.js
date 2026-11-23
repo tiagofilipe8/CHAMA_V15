@@ -932,53 +932,100 @@ Views.adminLocations = async function adminLocations(el) {
   const ents = (await API.get('/entities').catch(() => [])).filter((e) => Roles.isMaster(u) || String(e.id) === String(u.entity_id));
 
   el.innerHTML = `
-    <div class="card panel-card mb-3"><div class="card-body py-3 d-flex flex-wrap gap-2 align-items-center">
+    <div class="card panel-card mb-3"><div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
       <select class="form-select form-select-sm multi-empresa" id="l-entity" style="max-width:280px" ${!Roles.isMaster(u) ? 'disabled' : ''}>
         ${Roles.isMaster(u) ? '<option value="">Todas as empresas</option>' : ''}
         ${ents.map((e) => `<option value="${e.id}" ${String(e.id) === entityFilter ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
       </select>
+      <input class="form-control form-control-sm" id="l-busca" style="max-width:240px" placeholder="Buscar localização...">
+      <label class="form-check-label small d-flex align-items-center gap-1 ms-1"><input class="form-check-input mt-0" type="checkbox" id="l-inativas"> Mostrar inativas</label>
       <button class="btn btn-primary btn-sm ms-auto" id="btn-new-loc"><i class="bi bi-geo-alt"></i> Nova localização</button>
     </div></div>
-    <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Localização</th><th class="multi-empresa">Empresa</th><th>Cidade/UF</th><th>Acesso do posto</th><th>Usuários</th><th>Chamados abertos</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
-      <tbody id="l-body"><tr><td colspan="8">${spinner()}</td></tr></tbody>
-    </table></div></div>`;
+    <div id="l-body">${spinner()}</div>`;
+
+  // Localizações separadas por empresa: um bloco por empresa, com as localizações dela em linhas
+  let todas = [];
+  const linkMapa = (l) => (l.latitude != null && l.longitude != null
+    ? `https://www.openstreetmap.org/?mlat=${encodeURIComponent(l.latitude)}&mlon=${encodeURIComponent(l.longitude)}#map=17/${encodeURIComponent(l.latitude)}/${encodeURIComponent(l.longitude)}` : null);
+  const pintar = () => {
+    const busca = (document.getElementById('l-busca').value || '').trim().toLowerCase();
+    const inativas = document.getElementById('l-inativas').checked;
+    const lista = todas.filter((l) => (inativas || l.active)
+      && (!busca || [l.name, l.code, l.address, l.city].some((v) => String(v || '').toLowerCase().includes(busca))));
+    const porEmpresa = new Map();
+    // empresas sem localização também aparecem (para criar a primeira), quando não há busca
+    // (empresas desativadas só aparecem com "Mostrar inativas")
+    ents.filter((e) => (!entityFilter || String(e.id) === String(entityFilter)) && (inativas || e.active !== false))
+      .forEach((e) => { if (!busca) porEmpresa.set(String(e.id), { e, locs: [] }); });
+    const inativasDe = (id) => todas.filter((l) => String(l.entity_id) === String(id) && !l.active).length;
+    lista.forEach((l) => {
+      const k = String(l.entity_id);
+      if (!porEmpresa.has(k)) porEmpresa.set(k, { e: ents.find((x) => String(x.id) === k) || { id: l.entity_id, name: l.entity_name, logo: l.entity_logo }, locs: [] });
+      porEmpresa.get(k).locs.push(l);
+    });
+    const blocos = [...porEmpresa.values()];
+    document.getElementById('l-body').innerHTML = blocos.map(({ e, locs }) => `
+      <div class="card panel-card mb-3 loc-emp">
+        <div class="loc-emp-head">
+          ${e.logo ? `<img src="${esc(e.logo)}" class="loc-emp-logo" alt="">` : '<span class="loc-emp-ico"><i class="bi bi-building"></i></span>'}
+          <div class="flex-grow-1 min-w-0">
+            <div class="loc-emp-nome">${esc(e.name)}</div>
+            <div class="small text-muted">${locs.length} localização(ões)${locs.length ? ` · ${locs.reduce((s, l) => s + (l.open_tickets || 0), 0)} chamado(s) aberto(s)` : ''}</div>
+          </div>
+          <button class="btn btn-sm btn-outline-primary l-nova" data-ent="${e.id}"><i class="bi bi-plus-lg"></i> Localização</button>
+        </div>
+        ${locs.length ? `<div class="loc-lista">${locs.map((l) => `
+          <div class="loc-item ${l.active ? '' : 'inativa'}">
+            <i class="bi bi-geo-alt-fill loc-pin"></i>
+            <div class="loc-info">
+              <div><b>${esc(l.name)}</b>${l.code ? ` <small class="text-muted">(${esc(l.code)})</small>` : ''}${l.active ? '' : ' <span class="tg tg-gray">Inativa</span>'}</div>
+              <div class="small text-muted">${esc([l.address, [l.city, l.state].filter(Boolean).join('/')].filter(Boolean).join(' · ') || 'sem endereço')}</div>
+            </div>
+            <div class="loc-tags">
+              ${linkMapa(l) ? `<a class="tg tg-blue" href="${linkMapa(l)}" target="_blank" rel="noopener noreferrer" title="${esc(`${l.latitude}, ${l.longitude}`)}"><i class="bi bi-map"></i>mapa</a>` : '<span class="tg tg-gray" title="Sem latitude/longitude"><i class="bi bi-map"></i>sem mapa</span>'}
+              ${l.posto_username ? `<span class="tg tg-teal" title="Acesso do posto"><i class="bi bi-shop"></i>@${esc(l.posto_username)}</span>` : ''}
+              <span class="tg tg-gray" title="Usuários ligados"><i class="bi bi-people"></i>${l.users_count}</span>
+              <span class="tg ${l.open_tickets ? 'tg-amber' : 'tg-gray'}" title="Chamados abertos"><i class="bi bi-journal-text"></i>${l.open_tickets}</span>
+            </div>
+            <div class="loc-acoes">
+              <button class="btn btn-sm btn-outline-primary l-edit" data-id="${l.id}" title="Editar"><i class="bi bi-pencil"></i></button>
+              ${l.active ? `<button class="btn btn-sm btn-outline-danger l-off" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
+            </div>
+          </div>`).join('')}</div>` : `<div class="loc-vazio">${inativasDe(e.id)
+    ? `Nenhuma localização ativa (${inativasDe(e.id)} desativada${inativasDe(e.id) > 1 ? 's' : ''}). <a href="#" class="l-ver-inativas">Mostrar</a>`
+    : 'Nenhuma localização nesta empresa ainda.'}</div>`}
+      </div>`).join('') || emptyState('Nenhuma localização encontrada', busca ? 'Tente outra busca.' : 'Cadastre a primeira localização.', 'bi-geo-alt');
+    document.querySelectorAll('.l-edit').forEach((b) => b.addEventListener('click', () => openModal(todas.find((x) => String(x.id) === b.dataset.id))));
+    document.querySelectorAll('.l-nova').forEach((b) => b.addEventListener('click', () => openModal(null, b.dataset.ent)));
+    document.querySelectorAll('.l-ver-inativas').forEach((a) => a.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      document.getElementById('l-inativas').checked = true;
+      pintar();
+    }));
+    document.querySelectorAll('.l-off').forEach((b) => b.addEventListener('click', async () => {
+      const ok = await confirmDialog({ title: 'Desativar localização', body: 'Ela deixa de aparecer para novos chamados. O histórico é mantido.', confirmText: 'Desativar', danger: true });
+      if (!ok) return;
+      try { await API.del('/locations/' + b.dataset.id); toast('Localização desativada.', 'warning'); load(); } catch (e) { showError(e); }
+    }));
+  };
 
   const load = async () => {
     const q = entityFilter ? `?entity_id=${entityFilter}` : '';
     try {
-      const locs = await API.get('/locations' + q);
-      document.getElementById('l-body').innerHTML = locs.map((l) => `
-        <tr>
-          <td><strong>${esc(l.name)}</strong>${l.code ? ` <small class="text-muted">(${esc(l.code)})</small>` : ''}
-            ${l.address ? `<br><small class="text-muted">${esc(l.address)}</small>` : ''}</td>
-          <td class="multi-empresa">${esc(l.entity_name)}</td>
-          <td>${esc([l.city, l.state].filter(Boolean).join('/') || '—')}</td>
-          <td>${l.posto_username ? `<span class="tg tg-teal"><i class="bi bi-shop"></i>@${esc(l.posto_username)}</span>` : '<span class="tg tg-gray">sem acesso</span>'}</td>
-          <td><a href="#/admin/users">${l.users_count}</a></td>
-          <td>${l.open_tickets}</td>
-          <td>${l.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-outline-primary l-edit" data-id="${l.id}"><i class="bi bi-pencil"></i></button>
-            ${l.active ? `<button class="btn btn-sm btn-outline-danger l-off" data-id="${l.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
-          </td>
-        </tr>`).join('') || '<tr><td colspan="8" class="text-center py-4 text-muted">Nenhuma localização cadastrada.</td></tr>';
-      document.querySelectorAll('.l-edit').forEach((b) => b.addEventListener('click', () => openModal(locs.find((x) => String(x.id) === b.dataset.id))));
-      document.querySelectorAll('.l-off').forEach((b) => b.addEventListener('click', async () => {
-        const ok = await confirmDialog({ title: 'Desativar localização', body: 'Ela deixa de aparecer para novos chamados. O histórico é mantido.', confirmText: 'Desativar', danger: true });
-        if (!ok) return;
-        try { await API.del('/locations/' + b.dataset.id); toast('Localização desativada.', 'warning'); load(); } catch (e) { showError(e); }
-      }));
+      todas = await API.get('/locations' + q);
+      pintar();
     } catch (e) { showError(e); }
   };
 
   document.getElementById('l-entity').addEventListener('change', (ev) => { entityFilter = ev.target.value; load(); });
+  document.getElementById('l-busca').addEventListener('input', pintar);
+  document.getElementById('l-inativas').addEventListener('change', pintar);
   document.getElementById('btn-new-loc').onclick = () => openModal(null);
 
-  function openModal(l) {
+  function openModal(l, entPre) {
     const m = document.createElement('div');
     m.className = 'modal fade';
-    const defaultEnt = l ? l.entity_id : (entityFilter || (ents[0] && ents[0].id));
+    const defaultEnt = l ? l.entity_id : (entPre || entityFilter || (ents[0] && ents[0].id));
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
       <div class="modal-header"><h6>${l ? 'Editar localização' : 'Nova localização'}</h6>
         <button class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -1001,6 +1048,15 @@ Views.adminLocations = async function adminLocations(el) {
           <div class="col-4 mb-2"><label class="form-label small">UF</label>
             <input class="form-control" id="lm-state" maxlength="2" value="${esc((l && l.state) || '')}"></div>
         </div>
+        <div class="row">
+          <div class="col-6 mb-1"><label class="form-label small">Latitude</label>
+            <input class="form-control" id="lm-lat" inputmode="decimal" value="${esc(l && l.latitude != null ? String(l.latitude) : '')}" placeholder="-23.550520"></div>
+          <div class="col-6 mb-1"><label class="form-label small">Longitude</label>
+            <input class="form-control" id="lm-lng" inputmode="decimal" value="${esc(l && l.longitude != null ? String(l.longitude) : '')}" placeholder="-46.633308"></div>
+        </div>
+        <div class="form-text mb-2">Dica: no Google Maps, clique com o botão direito no local e clique nos números que aparecem
+          (ex.: <i>-23.5505, -46.6333</i>). Pode colar os dois juntos no campo Latitude.
+          <a href="#" id="lm-ver-mapa" class="ms-1">Ver no mapa</a></div>
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="lm-active" ${!l || l.active ? 'checked' : ''}>
           <label class="form-check-label small">Ativa</label>
@@ -1044,6 +1100,18 @@ Views.adminLocations = async function adminLocations(el) {
     const syncAcesso = () => { if (acesso) m.querySelector('#lm-acesso-box').style.display = acesso.checked ? '' : 'none'; };
     if (acesso) acesso.addEventListener('change', syncAcesso);
     syncAcesso();
+    // colar "-23.5505, -46.6333" (copiado do Google Maps) no campo Latitude separa os dois
+    const latIn = m.querySelector('#lm-lat'); const lngIn = m.querySelector('#lm-lng');
+    latIn.addEventListener('input', () => {
+      const par = latIn.value.match(/^\s*(-?\d+(?:[.,]\d+)?)\s*[,;]?\s+(-?\d+(?:[.,]\d+)?)\s*$/);
+      if (par) { latIn.value = par[1].replace(',', '.'); lngIn.value = par[2].replace(',', '.'); }
+    });
+    m.querySelector('#lm-ver-mapa').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const la = latIn.value.trim().replace(',', '.'); const lo = lngIn.value.trim().replace(',', '.');
+      if (!la || !lo) { toast('Preencha a latitude e a longitude primeiro.', 'warning'); return; }
+      window.open(`https://www.openstreetmap.org/?mlat=${encodeURIComponent(la)}&mlon=${encodeURIComponent(lo)}#map=17/${encodeURIComponent(la)}/${encodeURIComponent(lo)}`, '_blank', 'noopener');
+    });
     m.querySelector('#lm-save').onclick = async () => {
       const body = {
         name: m.querySelector('#lm-name').value.trim(),
@@ -1051,6 +1119,8 @@ Views.adminLocations = async function adminLocations(el) {
         address: m.querySelector('#lm-address').value.trim(),
         city: m.querySelector('#lm-city').value.trim(),
         state: m.querySelector('#lm-state').value.trim().toUpperCase(),
+        latitude: latIn.value.trim(),
+        longitude: lngIn.value.trim(),
         active: m.querySelector('#lm-active').checked,
       };
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
@@ -1623,8 +1693,25 @@ Views.adminRoles = async function adminRoles(el) {
     saveBtn.disabled = !dirty; undoBtn.disabled = !dirty;
   }
 
+  // Permissões que dependem de outra (vem do servidor): marcar a de cima marca a necessária;
+  // desmarcar a necessária desmarca as que dependem dela. Sempre avisa o que mudou junto.
+  const deps = data.dependencias || {};
+  const nomePerm = (k) => (permissions.find((p) => p.key === k) || {}).label || k;
   el.querySelectorAll('.rp-box').forEach((b) => b.addEventListener('change', () => {
-    matrix[b.dataset.role][b.dataset.perm] = b.checked;
+    const rk = b.dataset.role; const pk = b.dataset.perm;
+    const linha = matrix[rk];
+    linha[pk] = b.checked;
+    const avisos = [];
+    if (b.checked && deps[pk] && !deps[pk].some((k) => linha[k])) {
+      linha[deps[pk][0]] = true;
+      avisos.push(`marquei também "${nomePerm(deps[pk][0])}", senão essa permissão não funciona`);
+    }
+    if (!b.checked) {
+      const soltas = Object.entries(deps).filter(([perm, precisa]) => linha[perm] && precisa.includes(pk) && !precisa.some((k) => linha[k]));
+      soltas.forEach(([perm]) => { linha[perm] = false; });
+      if (soltas.length) avisos.push(`desmarquei também ${soltas.map(([perm]) => `"${nomePerm(perm)}"`).join(', ')}, que dependiam dela`);
+    }
+    if (avisos.length) toast(`${roles.find((r) => r.key === rk).label}: ${avisos.join('; ')}.`, 'info');
     paint();
   }));
   el.querySelectorAll('.rp-reset').forEach((b) => b.addEventListener('click', () => {
@@ -1710,9 +1797,9 @@ Views.adminRoles = async function adminRoles(el) {
 // Lista do que pode ser pedido no chamado "Pedido de material".
 Views.adminMaterials = async function adminMaterials(el) {
   const u = currentUser();
-  if (!(Roles.isMaster(u) || Roles.isLocalAdmin(u))) {
+  if (!Roles.can(u, 'materials.manage')) {
     location.hash = '#/dashboard';
-    toast('Apenas administradores editam a lista de materiais.', 'warning');
+    toast('Seu perfil não pode editar a lista de materiais.', 'warning');
     return;
   }
   el.innerHTML = `

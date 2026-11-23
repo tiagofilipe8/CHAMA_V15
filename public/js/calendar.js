@@ -290,19 +290,23 @@ const CalendarUI = (() => {
       const mesIso = `${year}-${pad(mon + 1)}`;
       dias.innerHTML = lista.map((d) => {
         const lst = m.get(d) || [];
-        const cont = [4, 3, 2, 1].map((p) => [p, lst.filter((i) => i.prioridade === p).length]).filter(([, n]) => n);
-        const atr = lst.filter((i) => i.atrasado).length;
+        // número por urgência = só os em aberto; o reloginho fica em cima do número (atrasados daquela urgência)
+        // e os resolvidos/fechados aparecem num ✓ verde ao lado
+        const abertosDia = lst.filter((i) => !i.feito);
+        const cont = [4, 3, 2, 1].map((p) => [p, abertosDia.filter((i) => i.prioridade === p).length,
+          abertosDia.filter((i) => i.prioridade === p && i.atrasado).length]).filter(([, n]) => n);
+        const feitos = lst.filter((i) => i.feito).length;
         const fora = d.slice(0, 7) !== mesIso;
         return `<button type="button" class="cg-cel${fora ? ' fora' : ''}${d === hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}" data-dia="${d}"
             aria-label="${tituloDia(d)}: ${plural(lst.length, 'chamado', 'chamados')}" aria-pressed="${d === diaSel}">
           <span class="cg-d">${Number(d.slice(8, 10))}</span>
-          ${atr ? `<span class="cg-atr" title="${plural(atr, 'atrasado', 'atrasados')}"><i class="bi bi-alarm"></i>${atr}</span>` : ''}
-          <span class="cg-nums">${cont.map(([p, n]) => `<i class="cg-num ${URG_CLS[p]}" title="${n} · ${esc(nomes[p])}">${n}</i>`).join('')}</span>
+          <span class="cg-nums">${cont.map(([p, n, a]) => `<i class="cg-num ${URG_CLS[p]}" title="${n} em aberto · ${esc(nomes[p])}${a ? ` · ${a} atrasado(s)` : ''}">${n}${a ? `<sup class="cg-sup" title="${a} atrasado(s)"><i class="bi bi-alarm-fill"></i>${a > 1 ? a : ''}</sup>` : ''}</i>`).join('')}${feitos ? `<i class="cg-ok" title="${feitos} resolvido(s)/fechado(s)"><i class="bi bi-check-lg"></i>${feitos}</i>` : ''}</span>
         </button>`;
       }).join('');
 
       $('.cg-legenda').innerHTML = `${[4, 3, 2, 1].map((p) => `<span><i class="cg-num ${URG_CLS[p]}"></i>${esc(nomes[p])}</span>`).join('')}
-        ${atraso ? '<span><i class="bi bi-alarm cg-alarme"></i>atrasado</span>' : ''}
+        ${atraso ? '<span><i class="bi bi-alarm-fill cg-alarme"></i>atrasado (em cima do número)</span>' : ''}
+        <span><i class="bi bi-check-lg cg-ok-leg"></i>resolvidos/fechados</span>
         <span class="ms-auto cg-nota">${esc(nota || `Cada chamado aparece no dia de "${dateLabel}".`)}</span>`;
 
       // lista do dia escolhido (ao lado)
@@ -345,7 +349,6 @@ const CalendarUI = (() => {
           t, dia, aberto, feito: FEITO.includes(t.status) || t.status === 7,
           prioridade: Number(t.priority) || 1, atrasado: atraso && aberto && dia < hoje,
         };
-        if (t.impact_name && t.priority) nomes[t.priority] = t.impact_name;
         if (dia < ini) { if (i.atrasado) antigos.push(i); return; }
         if (dia > fim) return;
         itens.push(i);

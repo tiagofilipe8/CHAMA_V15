@@ -262,7 +262,7 @@ Views.tickets = async function tickets(el, opts = {}) {
           ${canDrag(t) ? `<button type="button" class="kmove" data-move="${t.id}" title="Mover para outra coluna" aria-label="Mover chamado ${esc(t.number)} para outra coluna"><i class="bi bi-arrow-left-right"></i></button>` : ''}
           ${t.assigned_name
             ? `<span class="kavatar" title="Técnico: ${esc(t.assigned_name)}">${esc(initials(t.assigned_name))}</span>`
-            : `<span class="kavatar empty" title="Sem técnico"><i class="bi bi-person-plus"></i></span>`}
+            : `<span class="ksem" title="Ninguém pegou este chamado ainda"><i class="bi bi-person-plus"></i>Não atribuído</span>`}
         </footer>
       </article>`;
   }

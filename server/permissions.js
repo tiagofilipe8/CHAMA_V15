@@ -38,7 +38,36 @@ const PERMISSIONS = [
   // Administracao
   { key: 'users.manage', group: 'Administração', label: 'Gerenciar usuários da própria empresa' },
   { key: 'locations.manage', group: 'Administração', label: 'Gerenciar localizações da própria empresa' },
+  { key: 'materials.manage', group: 'Administração', label: 'Editar a lista de materiais (chamado "Pedido de material")' },
 ];
+
+// Permissões que só funcionam junto com outra. Ao salvar (e na tela) a dependência é ajustada:
+//   marcar a de cima marca a que ela precisa; desmarcar a necessária desmarca as que dependem dela.
+//   "ver chamados": precisa de uma das duas (da própria empresa OU de todas as empresas).
+const VER_CHAMADOS = ['ticket.view_company', 'ticket.view_all'];
+const DEPENDENCIAS = {
+  'ticket.triage': VER_CHAMADOS,
+  'ticket.assign': VER_CHAMADOS,
+  'ticket.watchers': VER_CHAMADOS,
+  'ticket.status_any': VER_CHAMADOS,
+  'ticket.manager_note': VER_CHAMADOS,
+  'ticket.take': VER_CHAMADOS,
+  'ticket.resolve_direct': ['ticket.status_any', 'ticket.work'],
+  'inventory.manage': ['inventory.view'],
+};
+
+// Corrige uma linha da matriz ({ perm: bool }): marca a dependência que faltar
+// (a primeira da lista) e devolve o que mudou, para avisar na tela.
+function normalizarPerfil(perms) {
+  const ajustes = [];
+  Object.entries(DEPENDENCIAS).forEach(([perm, precisa]) => {
+    if (perms[perm] && !precisa.some((k) => perms[k])) {
+      perms[precisa[0]] = true;
+      ajustes.push({ perm, marcou: precisa[0] });
+    }
+  });
+  return ajustes;
+}
 
 // Somente o Administrador Mestre (nao aparecem como caixas de selecao)
 const MASTER_ONLY = [
@@ -64,7 +93,7 @@ const DEFAULTS = {
     'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.approve', 'ticket.cancel', 'ticket.manager_note',
     'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
-    'locations.manage',
+    'locations.manage', 'materials.manage',
   ],
   user: ['ticket.create', 'ticket.approve', 'ticket.cancel'],
 };
@@ -77,4 +106,4 @@ function roleKeyOf(user) {
   return user.role;
 }
 
-module.exports = { ROLE_KEYS, PERMISSIONS, MASTER_ONLY, DEFAULTS, ALL_KEYS, roleKeyOf };
+module.exports = { ROLE_KEYS, PERMISSIONS, MASTER_ONLY, DEFAULTS, ALL_KEYS, roleKeyOf, DEPENDENCIAS, normalizarPerfil };

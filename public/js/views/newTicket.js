@@ -141,8 +141,13 @@ Views.newTicket = async function newTicket(el) {
       try { materiais = await API.get('/materials'); } catch (e) { boxM.innerHTML = `<div class="text-danger small">${esc(e.message)}</div>`; return; }
     }
     pintarMateriais();
-    // pedido de material normalmente não para a operação: já marca "Requisição" (dá para trocar)
-    if (!pickedImpact) document.querySelector('#nt-impact-box .urg-card.u-req')?.click();
+    // pedido de material normalmente não para a operação: já marca "Requisição" (dá para trocar).
+    // Marca sem "clicar" no cartão: o clique levava o foco (e a rolagem) para o passo 3,
+    // e a pessoa ainda precisa escolher os materiais na lista que acabou de abrir.
+    if (!pickedImpact) {
+      const req = document.querySelector('#nt-impact-box .urg-card.u-req input[name="nt-impact"]');
+      if (req) { req.checked = true; req.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
   }
   function pintarMateriais() {
     const boxM = document.getElementById('nt-mat-box');

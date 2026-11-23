@@ -330,6 +330,69 @@ router.get('/calendar/load', async (req, res) => {
 });
 
 // Chamados que o usuario ve, pela data de necessidade (painel)
+// ---------------------------------------------------------------------
+// Em atendimento: o chamado que o técnico (ou o Administrador Mestre) está atendendo agora.
+//   GET  /tickets/atendimento          -> o meu atual + os meus chamados em aberto (por urgência)
+//   POST /tickets/:id/atender          -> passa a atender este (troca o anterior)
+//   POST /tickets/atendimento/parar    -> para de atender (pausa)
+// Começar a atender um chamado Novo/Atribuído muda o status para "Em andamento".
+// Ao resolver, fechar, cancelar ou trocar o técnico, o "em atendimento" é limpo sozinho.
+// ---------------------------------------------------------------------
+const podeAtender = (u) => isMaster(u) || has(u, 'ticket.work');
+
+router.get('/atendimento', async (req, res) => {
+  const u = req.user;
+  if (!podeAtender(u)) return res.json({ pode: false, atual: null, meus: [] });
+  const me = await query('SELECT working_ticket_id, working_since FROM users WHERE id = $1', [u.id]);
+  const atualId = me.rows[0]?.working_ticket_id || null;
+  const { rows } = await query(
+    `${TICKET_SELECT} WHERE t.assigned_user_id = $1 AND t.status NOT IN (5,6,7)
+     ORDER BY t.priority DESC, t.needed_by NULLS LAST, t.created_at`, [u.id]);
+  let atual = atualId ? rows.find((r) => String(r.id) === String(atualId)) : null;
+  if (atualId && !atual) {
+    const t = await loadTicket(atualId);
+    atual = t && ![5, 6, 7].includes(t.status) && canViewTicket(u, t) ? t : null;
+    if (!atual) await query('UPDATE users SET working_ticket_id = NULL, working_since = NULL WHERE id = $1', [u.id]);
+  }
+  res.json({
+    pode: true,
+    desde: atual ? me.rows[0].working_since : null,
+    atual: atual ? decorate(atual, u) : null,
+    meus: rows.map((r) => decorate(r, u)),
+  });
+});
+
+router.post('/atendimento/parar', async (req, res) => {
+  await query('UPDATE users SET working_ticket_id = NULL, working_since = NULL WHERE id = $1', [req.user.id]);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'equipe:atendimento', { user_id: req.user.id });
+  res.json({ ok: true });
+});
+
+router.post('/:id/atender', async (req, res) => {
+  const u = req.user;
+  if (!podeAtender(u)) return res.status(403).json({ error: 'Seu perfil não atende chamados.' });
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if ([5, 6, 7].includes(ticket.status)) return res.status(422).json({ error: 'Este chamado já foi resolvido, fechado ou cancelado.' });
+  // só o técnico do chamado (o Administrador Mestre pode atender qualquer um que esteja com ele)
+  if (String(ticket.assigned_user_id || '') !== String(u.id)) {
+    return res.status(422).json({ error: 'Só dá para atender um chamado que está com você. Assuma ou peça a atribuição antes.' });
+  }
+  await query('UPDATE users SET working_ticket_id = $1, working_since = now() WHERE id = $2', [ticket.id, u.id]);
+  if ([1, 2].includes(ticket.status)) {
+    await query('UPDATE tickets SET status = 3 WHERE id = $1', [ticket.id]);
+    await query('INSERT INTO ticket_status_history (ticket_id, old_status, new_status, user_id) VALUES ($1, $2, 3, $3)',
+      [ticket.id, ticket.status, u.id]);
+    await addHistory(ticket.id, u.id, 'status', notify.STATUS_LABELS[ticket.status], notify.STATUS_LABELS[3]);
+    await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content, new_status) VALUES ($1, $2, 'system', $3, 3)`,
+      [ticket.id, u.id, `${u.name} começou a atender o chamado.`]);
+  }
+  const updated = await loadTicket(ticket.id);
+  emitUpdate(updated, await notify.summary(updated));
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'equipe:atendimento', { user_id: u.id, ticket_id: ticket.id });
+  res.json({ ok: true, ticket: decorate(updated, u) });
+});
+
 // Ultimos comentarios de varios chamados (previa no calendario: passar o mouse num dia).
 // So chamados que a pessoa pode ver; notas internas so para quem pode le-las.
 router.get('/comments-preview', async (req, res) => {

@@ -24,27 +24,30 @@ function buildNav(u) {
   // Para o cliente a lista "Chamados" ja e a dele: o atalho aponta para ela e ela sai do grupo.
   const listaJaEMinha = client || (!can('ticket.view_all') && !can('ticket.view_company'));
   items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-ticket-detailed', label: 'Meus chamados' });
+  // Em atendimento (quem atende chamados): o chamado que a pessoa está atendendo agora
+  if (Atendimento.pode(u)) items.push({ atend: true, href: '#/atendimento', icon: 'bi-play-circle', label: 'Em atendimento' });
 
   const atendimento = [];
   if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
   if (!listaJaEMinha) atendimento.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
   if (client && can('ticket.view_company')) atendimento.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da equipe' });
-  atendimento.push({ href: '#/watching', icon: 'bi-eye', label: 'Acompanhando' });
-  // so um item (ex.: cliente, que so tem "Acompanhando"): fica solto, sem titulo de grupo
+  // so um item: fica solto, sem titulo de grupo
   if (atendimento.length === 1) items.push({ ...atendimento[0], g: 'g-solto' });
   else grupo('Atendimento', 'g-atend', atendimento);
 
   grupo('Equipamentos', 'g-equip', can('inventory.view')
     ? [{ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' }] : []);
 
-  grupo('Locais', 'g-locais', can('locations.manage')
-    ? [{ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações' }] : []);
+  // Locais: Empresas e, logo abaixo (ligada por um "L"), as Localizações de cada empresa
+  const locais = [];
+  if (master) locais.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
+  if (can('locations.manage')) locais.push({ href: '#/admin/locations', icon: 'bi-geo-alt', label: 'Localizações', sub: master });
+  grupo('Locais', 'g-locais', locais);
 
   const cadastros = [];
   if (can('users.manage')) cadastros.push({ href: '#/admin/users', icon: 'bi-people', label: 'Usuários' });
-  if (master) cadastros.push({ href: '#/admin/entities', icon: 'bi-building', label: window.EMPRESA_UNICA ? 'Dados da empresa' : 'Empresas' });
-  if (master || Roles.isManager(u) || u.role === 'admin_local') cadastros.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
+  if (can('materials.manage')) cadastros.push({ href: '#/admin/materials', icon: 'bi-box-seam', label: 'Materiais' });
   if (master) cadastros.push({ href: '#/admin/categories', icon: 'bi-diagram-3', label: 'Categorias e opções' });
   grupo('Cadastros', 'g-cad', cadastros);
 
@@ -69,6 +72,7 @@ function pageTitleFromPath() {
     '/team-tickets': 'Chamados da Equipe',
     '/watching': 'Acompanhando',
     '/mine': 'Meus chamados',
+    '/atendimento': 'Meu atendimento',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
@@ -97,6 +101,7 @@ function pageDescFromPath() {
       : 'Os chamados que você abriu e o andamento de cada um.';
   const map = {
     '/dashboard': 'Resumo do atendimento: chamados abertos, urgências e o que precisa ficar pronto em cada dia.',
+    '/atendimento': 'O chamado que você está atendendo agora e a sua fila, do mais urgente para o menos urgente.',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
@@ -141,12 +146,15 @@ function renderNav() {
     } else if (it.sep) {
       html += '<hr class="nav-sep">';
     } else {
-      html += `<a class="nav-item ${it.g || ''}" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`;
+      html += it.atend
+        ? `<a class="nav-item nav-atend" id="nav-atend" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span><span class="nav-atend-num"></span></a>`
+        : `<a class="nav-item ${it.g || ''}${it.sub ? ' nav-sub' : ''}" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span></a>`;
     }
   });
   fecha();
   nav.innerHTML = html;
   pintarNovidades();
+  Atendimento.carregar();
 
   // identities
   const name = user.name || user.username;
@@ -231,6 +239,7 @@ const routes = [
   { re: /^#\/team-tickets$/, view: () => (el) => Views.tickets(el, { team: true }) },
   { re: /^#\/watching$/, view: () => (el) => Views.tickets(el, { watching: true }) },
   { re: /^#\/mine$/, view: () => (el) => Views.tickets(el, { mine: true }) },
+  { re: /^#\/atendimento$/, view: () => Views.atendimento },
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },
@@ -365,6 +374,104 @@ function atualizarChamadoAberto(id) {
   aviso.querySelector('button').onclick = () => { aviso.remove(); recarregar(); };
   viewEl.prepend(aviso);
 }
+
+// ---------------- Em atendimento ----------------
+// O chamado que o técnico (ou o Administrador Mestre) está atendendo agora. Aparece no menu
+// ("Em atendimento #12"), no Painel (card Equipe) e no chamado (botão Atender agora / pausar).
+const Atendimento = {
+  atualId: null,
+  dados: null,
+  _quando: 0,
+  pode: (u) => !!u && (Roles.isMaster(u) || Roles.can(u, 'ticket.work')),
+  async carregar(forcar = false) {
+    const u = currentUser();
+    if (!this.pode(u)) return null;
+    if (!forcar && this.dados && Date.now() - this._quando < 20000) { this.pintarMenu(); return this.dados; }
+    try {
+      this.dados = await API.get('/tickets/atendimento');
+      this._quando = Date.now();
+      this.atualId = this.dados.atual ? this.dados.atual.id : null;
+    } catch { /* sem rede: mantém o que tinha */ }
+    this.pintarMenu();
+    return this.dados;
+  },
+  pintarMenu() {
+    const a = document.getElementById('nav-atend');
+    if (!a) return;
+    const atual = this.dados && this.dados.atual;
+    a.classList.toggle('ativo', !!atual);
+    a.querySelector('.nav-atend-num').innerHTML = atual ? `<i class="dp-pulso"></i>#${atual.id}` : '';
+    a.title = atual ? `Atendendo agora: #${atual.id} ${atual.title}` : 'Nenhum chamado em atendimento — clique para escolher';
+  },
+  async atender(id) { await API.post(`/tickets/${id}/atender`, {}); await this.carregar(true); },
+  async parar() { await API.post('/tickets/atendimento/parar', {}); await this.carregar(true); },
+};
+window.Atendimento = Atendimento;
+
+Views.atendimento = async function atendimento(el) {
+  const u = currentUser();
+  if (!Atendimento.pode(u)) { location.hash = '#/mine'; return; }
+  const d = await Atendimento.carregar(true);
+  if (!d) { el.innerHTML = emptyState('Não foi possível carregar', 'Tente de novo em instantes.', 'bi-exclamation-triangle'); return; }
+  const TOM = { 4: 'u-stop', 3: 'u-soon', 2: 'u-slow', 1: 'u-req' };
+  const URG = { 4: 'Operação parada', 3: 'Parada iminente', 2: 'Operação prejudicada', 1: 'Requisição' };
+  const a = d.atual;
+  const precisa = (t) => (t.needed_by ? `precisa até ${fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00')}` : '');
+  const atrasado = (t) => t.needed_by && String(t.needed_by).slice(0, 10) < CalendarUI.todayIso();
+  const outros = d.meus.filter((t) => !a || String(t.id) !== String(a.id));
+  const porUrg = [4, 3, 2, 1].map((p) => [p, outros.filter((t) => Number(t.priority) === p)]).filter(([, l]) => l.length);
+
+  el.innerHTML = `
+    <div class="at-pagina">
+      <div class="card panel-card at-atual ${a ? TOM[a.priority] || 'u-req' : 'vazio'}">
+        ${a ? `
+          <div class="at-atual-cab"><i class="dp-pulso"></i> Atendendo agora <span class="text-muted">· desde ${esc(fmt.timeAgo(d.desde))}</span></div>
+          <div class="at-atual-tit"><span class="at-num">#${a.id}</span> ${esc(a.title)}</div>
+          <div class="at-atual-meta">
+            <span class="tg tg-gray">${esc(a.impact_name || URG[a.priority] || '')}</span> ${badgeStatus(a.status)}
+            ${a.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(a.location_name)}</span>` : ''}
+            ${a.requester_name ? `<span><i class="bi bi-person"></i>${esc(a.requester_name)}</span>` : ''}
+            ${precisa(a) ? `<span class="${atrasado(a) ? 'text-danger fw-semibold' : ''}"><i class="bi bi-calendar-event"></i>${precisa(a)}</span>` : ''}
+          </div>
+          <div class="at-atual-acoes">
+            <a class="btn btn-primary btn-sm" href="#/tickets/${a.id}"><i class="bi bi-box-arrow-up-right"></i> Abrir o chamado</a>
+            <button class="btn btn-outline-secondary btn-sm" id="at-parar"><i class="bi bi-pause-fill"></i> Pausar</button>
+          </div>` : `
+          <div class="at-vazio"><i class="bi bi-cup-hot"></i>
+            <div><b>Você não está atendendo nenhum chamado agora.</b>
+              <div class="small text-muted">Escolha abaixo o que vai atender. A equipe vê no Painel o que cada um está fazendo.</div></div></div>`}
+      </div>
+
+      <div class="card panel-card">
+        <div class="dp-bloco-cab"><span><i class="bi bi-list-task"></i> ${a ? 'Seus outros chamados' : 'Seus chamados em aberto'}</span>
+          <span class="small text-muted">do mais urgente para o menos urgente</span></div>
+        ${porUrg.length ? porUrg.map(([p, lista]) => `
+          <div class="at-grupo ${TOM[p]}"><i></i>${URG[p]} <b>${lista.length}</b></div>
+          ${lista.map((t) => `
+            <div class="at-item ${TOM[t.priority] || 'u-req'}">
+              <div class="at-item-tx">
+                <a href="#/tickets/${t.id}" class="at-item-tit"><span class="at-num">#${t.id}</span> ${esc(t.title)}</a>
+                <div class="at-item-meta">${badgeStatus(t.status)}
+                  ${t.location_name ? `<span><i class="bi bi-geo-alt"></i>${esc(t.location_name)}</span>` : ''}
+                  ${precisa(t) ? `<span class="${atrasado(t) ? 'text-danger fw-semibold' : ''}">${precisa(t)}</span>` : ''}</div>
+              </div>
+              <button class="btn btn-sm btn-outline-success at-atender" data-id="${t.id}"><i class="bi bi-play-fill"></i> Atender agora</button>
+            </div>`).join('')}`).join('')
+    : `<div class="dp-vazio">${a ? 'Nenhum outro chamado com você.' : 'Nenhum chamado com você agora. Os chamados atribuídos a você aparecem aqui.'}</div>`}
+      </div>
+      <p class="small text-muted mt-2"><i class="bi bi-info-circle"></i> Começar a atender um chamado <b>Novo</b> ou <b>Atribuído</b> muda a situação para <b>Em andamento</b>.
+        Quando você resolve, fecha ou passa o chamado para outro técnico, ele sai daqui sozinho.</p>
+    </div>`;
+
+  el.querySelector('#at-parar')?.addEventListener('click', async () => {
+    try { await Atendimento.parar(); toast('Atendimento pausado.', 'info'); Views.atendimento(el); } catch (e) { showError(e); }
+  });
+  el.querySelectorAll('.at-atender').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await Atendimento.atender(b.dataset.id); toast(`Agora você está atendendo o #${b.dataset.id}.`, 'success'); Views.atendimento(el); }
+    catch (e) { b.disabled = false; showError(e); }
+  }));
+};
 
 // Chamados meus (abertos por mim ou comigo) com notificacao nao lida
 let novidades = [];

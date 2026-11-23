@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
   if (active !== undefined) add('l.active = ?', active === 'true');
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const { rows } = await query(
-    `SELECT l.*, e.name AS entity_name,
+    `SELECT l.*, e.name AS entity_name, e.logo AS entity_logo,
             (SELECT count(*)::int FROM users u WHERE u.location_id = l.id) AS users_count,
             (SELECT u.username FROM users u WHERE u.location_id = l.id AND u.role = 'client' AND u.name = l.name
               ORDER BY u.id LIMIT 1) AS posto_username,
@@ -42,11 +42,23 @@ router.get('/', async (req, res) => {
 function readBody(body) {
   const b = body || {};
   const clean = (v) => (v === undefined ? undefined : (v === null || String(v).trim() === '' ? null : String(v).trim()));
+  // coordenadas: vazio = sem; aceita vírgula decimal ("-23,55")
+  const coord = (v, lim) => {
+    if (v === undefined) return undefined;
+    if (v === null || String(v).trim() === '') return null;
+    const n = Number(String(v).trim().replace(',', '.'));
+    return Number.isFinite(n) && Math.abs(n) <= lim ? Math.round(n * 1e6) / 1e6 : NaN;
+  };
   return {
     name: clean(b.name), code: clean(b.code), address: clean(b.address),
     city: clean(b.city), state: clean(b.state), active: b.active,
+    latitude: coord(b.latitude, 90), longitude: coord(b.longitude, 180),
   };
 }
+const coordErro = (b) => (Number.isNaN(b.latitude) ? 'Latitude inválida (de -90 a 90, ex.: -23.550520).'
+  : Number.isNaN(b.longitude) ? 'Longitude inválida (de -180 a 180, ex.: -46.633308).'
+    : ((b.latitude == null) !== (b.longitude == null) && b.latitude !== undefined && b.longitude !== undefined)
+      ? 'Informe a latitude e a longitude juntas (ou deixe as duas vazias).' : null);
 
 // Posto = localização + usuário: o próprio posto entra no sistema para abrir chamados.
 // O usuário do posto tem o perfil "Usuário" da empresa, o nome do posto e fica ligado a ele.
@@ -75,14 +87,16 @@ router.post('/', async (req, res) => {
   if (!canAdmin(user, entityId)) return res.status(403).json({ error: 'Sem permissão para criar localizações nesta empresa.' });
   const b = readBody(req.body);
   if (!b.name) return res.status(422).json({ error: 'Informe o nome da localização.' });
+  const cErr = coordErro(b);
+  if (cErr) return res.status(422).json({ error: cErr });
   const puErr = await validarUsuarioPosto(req.body?.posto_user);
   if (puErr) return res.status(422).json({ error: puErr });
   try {
     const { rows } = await query(
-      `INSERT INTO locations (entity_id, name, code, address, city, state, active)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE)) RETURNING *`,
+      `INSERT INTO locations (entity_id, name, code, address, city, state, active, latitude, longitude)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), $8, $9) RETURNING *`,
       [entityId, b.name, b.code || null, b.address || null, b.city || null, b.state || null,
-       b.active === undefined ? true : !!b.active]);
+       b.active === undefined ? true : !!b.active, b.latitude ?? null, b.longitude ?? null]);
     if (req.body?.posto_user) await criarUsuarioPosto(req.body.posto_user, rows[0]);
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -106,6 +120,9 @@ router.patch('/:id', async (req, res) => {
     add('name = ?', b.name);
   }
   ['code', 'address', 'city', 'state'].forEach((k) => { if (b[k] !== undefined) add(`${k} = ?`, b[k]); });
+  const cErr = coordErro(b);
+  if (cErr) return res.status(422).json({ error: cErr });
+  ['latitude', 'longitude'].forEach((k) => { if (b[k] !== undefined) add(`${k} = ?`, b[k]); });
   if (b.active !== undefined) add('active = ?', !!b.active);
   const pu = req.body?.posto_user;
   if (pu) {

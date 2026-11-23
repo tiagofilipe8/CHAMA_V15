@@ -31,6 +31,13 @@ Views.ticketDetail = function ticketDetail(id) {
 
     // ---------------- Barra de acoes ----------------
     const actions = [];
+    // Em atendimento: o técnico do chamado marca que está atendendo este agora (ou pausa)
+    const comigo = String(t.assigned_user_id || '') === String(user.id) && ![5, 6, 7].includes(t.status);
+    if (comigo && window.Atendimento && Atendimento.pode(user)) {
+      actions.push(String(Atendimento.atualId || '') === String(t.id)
+        ? `<button class="btn btn-sm btn-atendendo" id="act-parar" title="Você está atendendo este chamado. Clique para pausar."><i class="dp-pulso"></i> Atendendo agora · pausar</button>`
+        : `<button class="btn btn-sm btn-outline-success" id="act-atender" title="Marca este como o chamado que você está atendendo agora"><i class="bi bi-play-fill"></i> Atender agora</button>`);
+    }
     if (can.take) {
       actions.push(`<button class="btn btn-outline-success btn-sm" id="act-take"><i class="bi bi-person-check"></i> Assumir chamado</button>`);
     }
@@ -327,6 +334,15 @@ Views.ticketDetail = function ticketDetail(id) {
         try { await API.del(`/tickets/${t.id}/attachments/${b.dataset.att}`); toast('Anexo removido.', 'warning'); afterReload(); }
         catch (e) { showError(e); }
       }));
+
+      el.querySelector('#act-atender')?.addEventListener('click', async () => {
+        try { await Atendimento.atender(t.id); toast('Agora você está atendendo este chamado.', 'success'); afterReload(); }
+        catch (e) { showError(e); }
+      });
+      el.querySelector('#act-parar')?.addEventListener('click', async () => {
+        try { await Atendimento.parar(); toast('Atendimento pausado.', 'info'); afterReload(); }
+        catch (e) { showError(e); }
+      });
 
       el.querySelector('#act-take')?.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Assumir chamado', body: `Deseja assumir o chamado ${t.number}?`, confirmText: 'Assumir' });

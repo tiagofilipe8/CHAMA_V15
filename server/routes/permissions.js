@@ -3,7 +3,9 @@ const { query, pool, previewPool, closePreviewPool, isPreview } = require('../db
 const {
   requireAuth, requireRoles, signToken, publicUser, USER_SELECT, isMaster,
 } = require('../middleware/auth');
-const { ROLE_KEYS, PERMISSIONS, MASTER_ONLY, DEFAULTS, ALL_KEYS } = require('../permissions');
+const {
+  ROLE_KEYS, PERMISSIONS, MASTER_ONLY, DEFAULTS, ALL_KEYS, DEPENDENCIAS, normalizarPerfil,
+} = require('../permissions');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -16,7 +18,7 @@ router.get('/', requireRoles('admin'), async (req, res) => {
   const matrix = {};
   ROLE_KEYS.forEach((r) => { matrix[r.key] = {}; });
   rows.forEach((r) => { if (matrix[r.role_key]) matrix[r.role_key][r.permission] = r.allowed; });
-  res.json({ roles: ROLE_KEYS, permissions: PERMISSIONS, master_only: MASTER_ONLY, defaults: DEFAULTS, matrix });
+  res.json({ roles: ROLE_KEYS, permissions: PERMISSIONS, master_only: MASTER_ONLY, defaults: DEFAULTS, dependencias: DEPENDENCIAS, matrix });
 });
 
 // Salva a matriz inteira: { matrix: { technician: { 'ticket.create': true, ... }, ... } }
@@ -26,6 +28,7 @@ router.put('/', requireRoles('admin'), async (req, res) => {
   for (const r of ROLE_KEYS) {
     const perms = matrix[r.key];
     if (!perms) continue;
+    normalizarPerfil(perms); // permissão que depende de outra leva a outra junto
     for (const key of ALL_KEYS) {
       if (perms[key] === undefined) continue;
       const { rowCount } = await query(

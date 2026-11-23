@@ -110,12 +110,16 @@ router.get('/noc', async (req, res) => {
        ) sub WHERE sub.first_resp IS NOT NULL`, baseParams);
     const qRadar = await query(
       `SELECT t.id, t.number, t.title, t.priority, t.status, t.due_at, e.name AS entity_name, u.name AS assigned_name,
+              il.name AS impact_name, l.name AS location_name,
               EXTRACT(EPOCH FROM (t.due_at - now()))/60 AS minutes_left
        FROM tickets t
        JOIN entities e ON e.id=t.entity_id
        LEFT JOIN users u ON u.id=t.assigned_user_id
-       WHERE t.status NOT IN (6,7) AND t.due_at IS NOT NULL ${scope.sql ? 'AND ' + scope.sql : ''}
-       ORDER BY t.due_at ASC LIMIT 12`, baseParams);
+       LEFT JOIN impact_levels il ON il.id = t.impact_id
+       LEFT JOIN locations l ON l.id = t.location_id
+       WHERE t.status NOT IN (5,6,7) AND t.due_at IS NOT NULL AND t.due_at < now() + interval '24 hours'
+         ${scope.sql ? 'AND ' + scope.sql : ''}
+       ORDER BY t.due_at ASC LIMIT 40`, baseParams);
     const qByStatus = await query(
       `SELECT t.status, count(*)::int AS total FROM tickets t WHERE 1=1 ${scope.sql ? 'AND ' + scope.sql : ''} GROUP BY t.status ORDER BY t.status`, baseParams);
     const qByCategory = await query(
@@ -173,6 +177,43 @@ router.get('/noc', async (req, res) => {
        FROM users u LEFT JOIN tickets t ON t.assigned_user_id=u.id AND t.status NOT IN (6,7)
        WHERE u.role='technician' AND u.active=true
        GROUP BY u.id ORDER BY open_count DESC`, []);
+    // Equipe: quem atende (técnicos e Administrador Mestre com chamados), quantos chamados de cada
+    // urgência tem em aberto, o que está atendendo agora e o mais urgente da fila dele.
+    const qEquipe = await query(
+      `SELECT u.id, u.name, u.role, u.working_since,
+              count(t.id)::int AS total,
+              count(t.id) FILTER (WHERE t.priority = 4)::int AS p4,
+              count(t.id) FILTER (WHERE t.priority = 3)::int AS p3,
+              count(t.id) FILTER (WHERE t.priority = 2)::int AS p2,
+              count(t.id) FILTER (WHERE t.priority = 1)::int AS p1,
+              count(t.id) FILTER (WHERE t.due_at IS NOT NULL AND t.due_at < now())::int AS atrasados,
+              (SELECT json_build_object('id', w.id, 'number', w.number, 'title', w.title, 'priority', w.priority)
+                 FROM tickets w WHERE w.id = u.working_ticket_id AND w.status NOT IN (5,6,7)) AS atendendo,
+              (SELECT json_build_object('id', p.id, 'number', p.number, 'title', p.title, 'priority', p.priority)
+                 FROM tickets p WHERE p.assigned_user_id = u.id AND p.status NOT IN (5,6,7)
+                 ORDER BY p.priority DESC, p.needed_by NULLS LAST, p.created_at LIMIT 1) AS prioritario
+       FROM users u
+       LEFT JOIN tickets t ON t.assigned_user_id = u.id AND t.status NOT IN (5,6,7) ${scope.sql ? 'AND ' + scope.sql : ''}
+       WHERE u.active AND (u.role = 'technician'
+             OR (u.role = 'admin' AND EXISTS (SELECT 1 FROM tickets x WHERE x.assigned_user_id = u.id AND x.status NOT IN (5,6,7))))
+       GROUP BY u.id
+       ORDER BY (u.working_ticket_id IS NOT NULL) DESC, count(t.id) FILTER (WHERE t.priority = 4) DESC, count(t.id) DESC, u.name`,
+      baseParams);
+    // Chamados novos ainda sem técnico (com o que precisa para decidir quem pega)
+    const qNovos = await query(
+      `SELECT t.id, t.number, t.title, t.priority, t.status, t.created_at, t.needed_by,
+              il.name AS impact_name, l.name AS location_name, e.name AS entity_name, rq.name AS requester_name,
+              COALESCE(sc.name, c.name) AS category_name
+       FROM tickets t
+       JOIN entities e ON e.id = t.entity_id
+       LEFT JOIN impact_levels il ON il.id = t.impact_id
+       LEFT JOIN locations l ON l.id = t.location_id
+       LEFT JOIN users rq ON rq.id = t.requester_id
+       LEFT JOIN categories c ON c.id = t.category_id
+       LEFT JOIN categories sc ON sc.id = t.simple_category_id
+       WHERE t.assigned_user_id IS NULL AND t.status NOT IN (5,6,7) ${scope.sql ? 'AND ' + scope.sql : ''}
+       ORDER BY t.priority DESC, t.created_at
+       LIMIT 8`, baseParams);
     const volumes = qVolume.rows[0] || {};
     const due = qDue.rows[0] || {};
     const comp = qCompliance.rows[0] || {};
@@ -192,6 +233,8 @@ router.get('/noc', async (req, res) => {
       },
       distribution: { by_status: qByStatus.rows, by_category: qByCategory.rows, by_priority: qByPriority.rows },
       team: { workload, productivity: qProductivity.rows, unassigned: qUnassigned.rows[0]?.total || 0, analyst_status: qAnalystStatus.rows },
+      equipe: qEquipe.rows,
+      novos_sem_tecnico: qNovos.rows,
       maintenance: { overdue_count: qMaintCount.rows[0]?.c || 0, items: qMaint.rows }
     });
   } catch (e) {

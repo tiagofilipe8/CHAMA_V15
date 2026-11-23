@@ -658,3 +658,26 @@ SELECT 'Sem problema / aberto por engano',
                     WHERE rc.name = 'Sem problema / aberto por engano' AND COALESCE(rc.profile_id, 0) = COALESCE(p.id, 0));
 UPDATE resolution_causes SET neutral = TRUE
  WHERE name = 'Sem problema / aberto por engano' AND NOT neutral;
+
+-- Localização: latitude e longitude (para mapa e rotas)
+ALTER TABLE locations ADD COLUMN IF NOT EXISTS latitude NUMERIC(9,6);
+ALTER TABLE locations ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6);
+
+-- Em atendimento (2026-11-23): o chamado que cada técnico está atendendo agora
+ALTER TABLE users ADD COLUMN IF NOT EXISTS working_ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS working_since TIMESTAMPTZ;
+-- resolveu, fechou, cancelou ou trocou o técnico: quem estava atendendo deixa de estar
+CREATE OR REPLACE FUNCTION chama_limpa_atendimento() RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status IN (5, 6, 7) THEN
+    UPDATE users SET working_ticket_id = NULL, working_since = NULL WHERE working_ticket_id = NEW.id;
+  ELSIF NEW.assigned_user_id IS DISTINCT FROM OLD.assigned_user_id THEN
+    UPDATE users SET working_ticket_id = NULL, working_since = NULL
+     WHERE working_ticket_id = NEW.id AND id IS DISTINCT FROM NEW.assigned_user_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_chama_limpa_atendimento ON tickets;
+CREATE TRIGGER trg_chama_limpa_atendimento AFTER UPDATE OF status, assigned_user_id ON tickets
+  FOR EACH ROW EXECUTE FUNCTION chama_limpa_atendimento();

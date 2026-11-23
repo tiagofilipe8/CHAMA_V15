@@ -1,13 +1,14 @@
 const express = require('express');
 const { query } = require('../db');
-const { requireAuth, isMaster, isLocalAdmin } = require('../middleware/auth');
+const { requireAuth, isMaster, has } = require('../middleware/auth');
 
 // Materiais que podem ser pedidos num chamado ("Pedido de material").
-//  - leitura: todos os usuários logados (só os ativos; ?all=true para o administrador)
-//  - criar/editar/desativar: Administrador Mestre e Gestor
+//  - leitura: todos os usuários logados (só os ativos; ?all=true para quem edita)
+//  - criar/editar/desativar: quem tem a permissão "Editar a lista de materiais"
+//    (Perfis e permissões; o Administrador Mestre sempre pode)
 const router = express.Router();
 router.use(requireAuth);
-const podeEditar = (u) => isMaster(u) || isLocalAdmin(u);
+const podeEditar = (u) => isMaster(u) || has(u, 'materials.manage');
 
 router.get('/', async (req, res) => {
   const todos = req.query.all === 'true' && podeEditar(req.user);
