@@ -1338,3 +1338,5 @@ a.dp-ind:hover { background: var(--surface-2); }
 .perm-table .perm-lado.empresa { color: #7c3aed; }
 .perm-table .perm-div { border-left: 2px solid var(--muted) !important; }
 [data-bs-theme="dark"] .perm-table .perm-lado.empresa { color: #c4b5fd; }
+.perm-table .perm-cargo { display: block; font-size: .66rem; font-weight: 400; color: var(--muted); line-height: 1.25; margin: 2px auto 0; max-width: 120px; white-space: normal; }
+.perm-table thead .perm-col { vertical-align: top; }

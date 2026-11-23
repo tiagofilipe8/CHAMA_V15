@@ -2,6 +2,15 @@
 // Views administrativas + perfil
 // ---------------------------------------------------------------
 
+// O que cada cargo faz (aparece no cadastro de usuário e em Perfis e permissões)
+const CARGO_DESC = {
+  admin: 'Governa tudo.',
+  moderator: 'Auxilia a manutenção do sistema.',
+  technician: 'Atende os chamados do sistema.',
+  manager: 'Acompanha os usuários da empresa da qual faz parte e os chamados deles.',
+  user: 'Abre chamados.',
+};
+
 // ---------------- Usuarios ----------------
 // Perfil com a cor do módulo: gestão = violeta, equipe Orcim = azul, posto = verde-água, usuário = cinza
 function tagPerfil(u) {
@@ -134,11 +143,11 @@ Views.adminUsers = async function adminUsers(el) {
     const isMgrModal = _isManager;
     // perfil = papel + nivel (Usuario e Gestor sao "client" com nivel 1 ou 2)
     const ALL_PROFILES = [
-      { value: 'client:1', label: 'Usuário', help: 'Abre e acompanha os próprios chamados.' },
-      { value: 'client:2', label: 'Gestor', help: 'Chefe da empresa: acompanha e distribui os chamados, aprova soluções e cuida de usuários e localizações.' },
-      { value: 'technician', label: 'Técnico', help: 'Atende os chamados atribuídos a ele.' },
-      { value: 'moderator', label: 'Moderador', help: 'Faz a triagem: atribui técnico, ajusta categoria/urgência e previsão.' },
-      { value: 'admin', label: 'Administrador Mestre', help: 'Acesso total a todas as empresas.' },
+      { value: 'client:1', label: 'Usuário', help: `Por empresa · ${CARGO_DESC.user}` },
+      { value: 'client:2', label: 'Gestor', help: `Por empresa · ${CARGO_DESC.manager}` },
+      { value: 'technician', label: 'Técnico', help: `Orcim · ${CARGO_DESC.technician}` },
+      { value: 'moderator', label: 'Moderador', help: `Orcim · ${CARGO_DESC.moderator}` },
+      { value: 'admin', label: 'Administrador Mestre', help: `Orcim · ${CARGO_DESC.admin}` },
     ];
     const allowed = Roles.isMaster(_u) ? ALL_PROFILES.map((p) => p.value)
       : ['client:1', 'client:2'];
@@ -1648,11 +1657,13 @@ Views.adminRoles = async function adminRoles(el) {
             <thead>
               <tr>
                 <th class="perm-name">Função</th>
-                <th class="perm-col master" title="Sempre pode tudo">Admin Mestre<small class="perm-lado orcim">Orcim</small></th>
+                <th class="perm-col master" title="Sempre pode tudo">Admin Mestre<small class="perm-lado orcim">Orcim</small>
+                  <small class="perm-cargo">${esc(CARGO_DESC.admin)}</small></th>
                 ${roles.map((r) => `
                   <th class="perm-col${divisa(r) ? ' perm-div' : ''}">
                     <div>${esc(r.label)}</div>
                     <small class="perm-lado ${LADO[r.key] || 'empresa'}">${LADO[r.key] === 'orcim' ? 'Orcim' : 'por empresa'}</small>
+                    <small class="perm-cargo">${esc(CARGO_DESC[r.key] || '')}</small>
                     <div class="perm-col-tools">
                       <span class="perm-count" data-count="${r.key}"></span>
                       <button class="btn btn-link btn-sm p-0 rp-preview" data-role="${r.key}" title="Ver a plataforma como ${esc(r.label)}"><i class="bi bi-eye"></i></button>
