@@ -147,7 +147,7 @@ async function addHistory(ticketId, userId, action, oldValue = null, newValue = 
 
 function emitUpdate(ticket, s) {
   realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);
-  realtime.emitToUsers([ticket.requester_id, ticket.assigned_user_id, ...(ticket.watcher_ids || [])]
+  realtime.emitToUsers([ticket.requester_id, ticket.assigned_user_id]
     .filter(Boolean), 'ticket:update', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
@@ -290,9 +290,7 @@ router.get('/', async (req, res) => {
   else if (requester && /^\d+$/.test(requester)) frag(`t.requester_id = ?`, parseInt(requester, 10));
   // "Meus chamados": os que eu abri e os que estao comigo (tecnico)
   if (req.query.mine === 'me') frag(`(t.requester_id = ? OR t.assigned_user_id = ?)`, [req.user.id, req.user.id]);
-  if (watching === 'me') {
-    frag(`EXISTS (SELECT 1 FROM ticket_watchers w2 WHERE w2.ticket_id = t.id AND w2.user_id = ?)`, req.user.id);
-  }
+  if (watching === 'me') frag('FALSE', []); // observadores foram tirados do sistema
   if (q) frag(`(t.title ILIKE ? OR t.description ILIKE ? OR t.number ILIKE ?)`,
     [`%${q}%`, `%${q}%`, `%${q}%`]);
 
@@ -629,7 +627,7 @@ router.get('/:id', async (req, res) => {
     messages: messages.rows,
     status_history: history.rows,
     history: events.rows,
-    watchers: watchers.rows,
+    watchers: [], // observadores foram tirados do sistema
     materials: mats.rows,
     attachments: atts.rows,
     can: ticketAbilities(req.user, ticket),
@@ -867,78 +865,6 @@ router.post('/:id/assign', async (req, res) => {
   const updated = await loadTicket(req.params.id);
   await notify.ticketAssigned(updated);
   res.json(decorate(updated, user));
-});
-
-// ---------------------------------------------------------------------
-// Observadores
-// ---------------------------------------------------------------------
-// Sugestoes de observadores: pessoas da mesma empresa (mesmo posto primeiro) e equipe
-router.get('/:id/watcher-candidates', async (req, res) => {
-  const ticket = await loadTicket(req.params.id);
-  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
-  if (!canManageWatchers(req.user, ticket)) return res.status(403).json({ error: 'Seu perfil não pode gerenciar observadores.' });
-  const { rows } = await query(
-    `SELECT u.id, u.name, u.role, u.client_level, l.name AS location_name,
-            (u.location_id IS NOT DISTINCT FROM $2::bigint AND $2::bigint IS NOT NULL) AS same_location
-     FROM users u LEFT JOIN locations l ON l.id = u.location_id
-     WHERE u.active
-       AND u.id <> $3
-       AND u.id NOT IN (SELECT user_id FROM ticket_watchers WHERE ticket_id = $4)
-       AND (u.entity_id = $1
-            OR u.id IN (SELECT user_id FROM user_entities WHERE entity_id = $1)
-            OR u.role IN ('admin', 'moderator', 'technician'))
-     ORDER BY same_location DESC, (u.entity_id = $1) DESC, u.name
-     LIMIT 300`,
-    [ticket.entity_id, ticket.location_id, ticket.requester_id, ticket.id]);
-  res.json(rows);
-});
-
-router.post('/:id/watchers', async (req, res) => {
-  const ticket = await loadTicket(req.params.id);
-  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
-  const user = req.user;
-  if (!canManageWatchers(user, ticket)) return res.status(403).json({ error: 'Seu perfil não pode gerenciar observadores.' });
-  const watcherId = req.body?.user_id;
-  if (!watcherId) return res.status(422).json({ error: 'Escolha a pessoa.' });
-  const { rows } = await query(
-    `SELECT u.id, u.name, u.role FROM users u
-     WHERE u.id = $1 AND u.active
-       AND (u.entity_id = $2
-            OR u.id IN (SELECT user_id FROM user_entities WHERE entity_id = $2)
-            OR u.role IN ('admin', 'moderator', 'technician'))`, [watcherId, ticket.entity_id]);
-  if (!rows.length) return res.status(422).json({ error: 'Usuário inválido para observar este chamado.' });
-  const ins = await query(
-    `INSERT INTO ticket_watchers (ticket_id, user_id, added_by) VALUES ($1, $2, $3)
-     ON CONFLICT (ticket_id, user_id) DO NOTHING RETURNING id`, [ticket.id, watcherId, user.id]);
-  if (ins.rows.length) {
-    await addHistory(ticket.id, user.id, 'watcher_added', null, rows[0].name);
-    await query(
-      `INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`,
-      [ticket.id, user.id, `${user.name} adicionou ${rows[0].name} como observador(a).`]);
-    await claimModerator(ticket, user);
-    const updated = await loadTicket(ticket.id);
-    await notify.watcherAdded(updated, rows[0], user);
-    emitUpdate(updated, await notify.summary(updated));
-  }
-  res.status(201).json({ ok: true });
-});
-
-router.delete('/:id/watchers/:userId', async (req, res) => {
-  const ticket = await loadTicket(req.params.id);
-  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
-  const user = req.user;
-  if (!canManageWatchers(user, ticket)) return res.status(403).json({ error: 'Seu perfil não pode gerenciar observadores.' });
-  const { rows } = await query(
-    `DELETE FROM ticket_watchers w USING users u
-     WHERE w.ticket_id = $1 AND w.user_id = $2 AND u.id = w.user_id RETURNING u.name`,
-    [ticket.id, req.params.userId]);
-  if (!rows.length) return res.status(404).json({ error: 'Observador não encontrado.' });
-  await addHistory(ticket.id, user.id, 'watcher_removed', rows[0].name, null);
-  await query(
-    `INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`,
-    [ticket.id, user.id, `${user.name} removeu ${rows[0].name} dos observadores.`]);
-  emitUpdate(ticket, await notify.summary(ticket));
-  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------

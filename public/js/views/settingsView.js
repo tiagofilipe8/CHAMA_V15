@@ -137,7 +137,7 @@ Views.adminUsers = async function adminUsers(el) {
       { value: 'client:1', label: 'Usuário', help: 'Abre e acompanha os próprios chamados.' },
       { value: 'client:2', label: 'Gestor', help: 'Chefe da empresa: acompanha e distribui os chamados, aprova soluções e cuida de usuários e localizações.' },
       { value: 'technician', label: 'Técnico', help: 'Atende os chamados atribuídos a ele.' },
-      { value: 'moderator', label: 'Moderador', help: 'Faz a triagem: atribui técnico, ajusta categoria/urgência, previsão e observadores.' },
+      { value: 'moderator', label: 'Moderador', help: 'Faz a triagem: atribui técnico, ajusta categoria/urgência e previsão.' },
       { value: 'admin', label: 'Administrador Mestre', help: 'Acesso total a todas as empresas.' },
     ];
     const allowed = Roles.isMaster(_u) ? ALL_PROFILES.map((p) => p.value)
@@ -1658,7 +1658,7 @@ Views.adminRoles = async function adminRoles(el) {
                 <tr class="perm-group"><td colspan="${roles.length + 2}">${esc(g)}</td></tr>
                 ${permissions.filter((p) => p.group === g).map((p) => `
                   <tr>
-                    <td class="perm-name">${esc(p.label)}</td>
+                    <td class="perm-name">${esc(p.label)}${p.help ? `<small class="perm-help">${esc(p.help)}</small>` : ''}</td>
                     <td class="perm-col master"><input type="checkbox" class="form-check-input" checked disabled aria-label="Admin Mestre: sempre"></td>
                     ${roles.map((r) => `
                       <td class="perm-col"><input type="checkbox" class="form-check-input rp-box" data-role="${r.key}" data-perm="${p.key}"

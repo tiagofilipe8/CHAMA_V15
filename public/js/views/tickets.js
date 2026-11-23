@@ -275,7 +275,7 @@ Views.tickets = async function tickets(el, opts = {}) {
     if (prefs.view === 'calendar') return renderCalendar(list, body);
     const cols = columns(list);
     if (!all.length) {
-      body.innerHTML = emptyState('Nenhum chamado por aqui', opts.watching ? 'Quando alguém adicionar você como observador(a), o chamado aparece aqui.' : 'Abra um chamado em "Novo chamado".', 'bi-kanban');
+      body.innerHTML = emptyState('Nenhum chamado por aqui', 'Abra um chamado em "Novo chamado".', 'bi-kanban');
       return;
     }
     // guarda onde a pessoa estava no quadro (coluna e rolagem) para não voltar ao começo

@@ -60,22 +60,22 @@ function inScope(user, ticket) {
   return has(user, 'ticket.view_company') && canAccessEntity(user, ticket.entity_id);
 }
 
-const isWatcher = (user, ticket) => !!ticket && Array.isArray(ticket.watcher_ids)
-  && ticket.watcher_ids.map(String).includes(String(user.id));
+// Observadores foram tirados do sistema (2026-11-23): ninguém vê um chamado por ser "observador".
+const isWatcher = () => false;
 const isRequester = (user, ticket) => !!ticket && String(ticket.requester_id) === String(user.id);
 const isAssigned = (user, ticket) => !!ticket && ticket.assigned_user_id != null
   && String(ticket.assigned_user_id) === String(user.id);
 
 function canViewTicket(user, ticket) {
   if (!ticket) return false;
-  return inScope(user, ticket) || isRequester(user, ticket) || isWatcher(user, ticket) || isAssigned(user, ticket);
+  return inScope(user, ticket) || isRequester(user, ticket) || isAssigned(user, ticket);
 }
 
 // Acoes sobre um chamado
 const canTriage = (u, t) => isMaster(u) || (has(u, 'ticket.triage') && inScope(u, t));
 const canAssign = (u, t) => isMaster(u) || (has(u, 'ticket.assign') && inScope(u, t));
 const canTake = (u, t) => has(u, 'ticket.take') && canViewTicket(u, t) && (!t.assigned_user_id || isAssigned(u, t));
-const canManageWatchers = (u, t) => isMaster(u) || (has(u, 'ticket.watchers') && inScope(u, t));
+const canManageWatchers = () => false; // observadores tirados do sistema
 const canWork = (u, t) => has(u, 'ticket.work') && isAssigned(u, t);
 const canStatusAny = (u, t) => isMaster(u) || (has(u, 'ticket.status_any') && inScope(u, t));
 const canResolve = (u, t) => canStatusAny(u, t) || canWork(u, t);
@@ -93,7 +93,6 @@ function ticketAbilities(u, t) {
     triage: canTriage(u, t),
     assign: canAssign(u, t),
     take: canTake(u, t) && !t.assigned_user_id,
-    watchers: canManageWatchers(u, t),
     edit: canEditTicket(u, t),
     status: canStatusAny(u, t) || canWork(u, t),
     resolve: canResolve(u, t),
@@ -244,8 +243,7 @@ function requireClientLevel(minLevel) {
 function scopeConditions(user, baseIdx = 1) {
   if (seesAll(user)) return { sql: '', params: [], next: baseIdx };
   const idx = baseIdx;
-  const mine = `(t.requester_id = $${idx} OR t.assigned_user_id = $${idx}
-    OR EXISTS (SELECT 1 FROM ticket_watchers w WHERE w.ticket_id = t.id AND w.user_id = $${idx}))`;
+  const mine = `(t.requester_id = $${idx} OR t.assigned_user_id = $${idx})`;
   if (has(user, 'ticket.view_company')) {
     return {
       sql: `(t.entity_id::text = ANY($${idx + 1}::text[]) OR ${mine})`,

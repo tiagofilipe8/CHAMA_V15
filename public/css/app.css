@@ -1302,3 +1302,32 @@ a.dp-tec-l2:hover { color: var(--primary); }
   .cg-corpo { grid-template-columns: 1fr; }
   .cg-lado { position: static; max-height: none; }
 }
+.perm-table .perm-help { display: block; font-size: .74rem; color: var(--muted); font-weight: 400; margin-top: 1px; line-height: 1.3; }
+
+/* Painel: faixa fina de indicadores acima do calendário */
+.dp-faixa { display: flex; flex-wrap: wrap; align-items: stretch; background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.dp-ind { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-left: 1px solid var(--border);
+  color: inherit; text-decoration: none; min-height: 52px; }
+.dp-ind:first-child { border-left: 0; }
+a.dp-ind:hover { background: var(--surface-2); }
+.dp-ind > b { font-size: 1.45rem; font-weight: 800; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
+.dp-ind > span { font-size: .8rem; font-weight: 600; color: var(--text); line-height: 1.15; }
+.dp-ind > span small { display: block; font-size: .7rem; font-weight: 400; color: var(--muted); }
+.dp-ind-urg { gap: 4px; }
+.dp-ind-urg > span:last-child { margin-left: 4px; }
+.dp-ind-urg .dp-pill { min-width: 24px; height: 22px; font-size: .8rem; }
+.dp-tx-azul { color: #2563eb !important; } .dp-tx-verde { color: #16a34a !important; }
+.dp-tx-vermelho { color: #d7263d; } .dp-tx-laranja { color: #ec7a1c; } .dp-tx-amarelo { color: #b78900; }
+.dp-faixa .dp-radar { margin-left: auto; gap: 12px; cursor: pointer; }
+.dp-faixa .dp-radar > .bi { color: var(--muted); }
+.dp-faixa .dp-radar.alerta { background: rgba(215,38,61,.06); }
+.dp-rad { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.dp-rad b { font-size: 1.05rem; font-weight: 800; }
+@media (max-width: 767px) {
+  .dp-ind { flex: 1 1 45%; border-left: 0; border-top: 1px solid var(--border); }
+  .dp-faixa .dp-radar { flex-basis: 100%; margin-left: 0; }
+}
+.dp-ind-tempo { gap: 8px; }
+.dp-vivo { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dp-vivo .bi { color: #16a34a; font-size: .5rem; }

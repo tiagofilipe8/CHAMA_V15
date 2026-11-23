@@ -14,31 +14,34 @@ const ROLE_KEYS = [
   { key: 'user', label: 'Usuário', role: 'client', client_level: 1 },
 ];
 
+// Agrupadas pelo que a pessoa faz. 'help' aparece em letra pequena embaixo, na tela.
 const PERMISSIONS = [
-  // Chamados
-  { key: 'ticket.create', group: 'Chamados', label: 'Abrir chamados' },
-  { key: 'ticket.view_company', group: 'Chamados', label: 'Ver todos os chamados da própria empresa (e das que acompanha)' },
-  { key: 'ticket.view_all', group: 'Chamados', label: 'Ver chamados de todas as empresas' },
-  { key: 'ticket.triage', group: 'Chamados', label: 'Fazer triagem: categoria, urgência, localidade, previsão e equipamento' },
-  { key: 'ticket.assign', group: 'Chamados', label: 'Atribuir ou trocar o técnico' },
-  { key: 'ticket.take', group: 'Chamados', label: 'Assumir chamados sem técnico' },
-  { key: 'ticket.watchers', group: 'Chamados', label: 'Adicionar e remover observadores' },
-  { key: 'ticket.work', group: 'Chamados', label: 'Atender os chamados atribuídos a si (status, edição, solução)' },
-  { key: 'ticket.status_any', group: 'Chamados', label: 'Mudar o status de qualquer chamado que vê' },
-  { key: 'ticket.resolve_direct', group: 'Chamados', label: 'Resolver sem precisar da aprovação do solicitante' },
-  { key: 'ticket.approve', group: 'Chamados', label: 'Aprovar ou reprovar a solução' },
-  { key: 'ticket.cancel', group: 'Chamados', label: 'Cancelar e reabrir os próprios chamados' },
-  { key: 'ticket.manager_note', group: 'Chamados', label: 'Enviar instruções para a equipe (destaque de gestor)' },
-  { key: 'ticket.internal', group: 'Chamados', label: 'Ver e escrever notas internas' },
-  { key: 'ticket.rating', group: 'Chamados', label: 'Ver a causa e a nota do encerramento' },
-  // Painel e inventario
-  { key: 'dashboard.view', group: 'Painel e inventário', label: 'Ver o painel' },
-  { key: 'inventory.view', group: 'Painel e inventário', label: 'Ver o inventário de equipamentos' },
-  { key: 'inventory.manage', group: 'Painel e inventário', label: 'Cadastrar e editar equipamentos' },
-  // Administracao
-  { key: 'users.manage', group: 'Administração', label: 'Gerenciar usuários da própria empresa' },
-  { key: 'locations.manage', group: 'Administração', label: 'Gerenciar localizações da própria empresa' },
-  { key: 'materials.manage', group: 'Administração', label: 'Editar a lista de materiais (chamado "Pedido de material")' },
+  // O que a pessoa enxerga
+  { key: 'ticket.view_company', group: 'Ver chamados', label: 'Chamados da própria empresa', help: 'Todos os chamados da empresa dela (e das que acompanha), não só os que ela abriu.' },
+  { key: 'ticket.view_all', group: 'Ver chamados', label: 'Chamados de todas as empresas', help: 'Para a equipe de TI.' },
+  { key: 'ticket.internal', group: 'Ver chamados', label: 'Notas internas', help: 'Ver e escrever recados que o solicitante não vê.' },
+  { key: 'ticket.rating', group: 'Ver chamados', label: 'Causa e nota do encerramento', help: 'O que causou o problema e a nota dada ao usuário.' },
+  // Quem pede
+  { key: 'ticket.create', group: 'Pedir', label: 'Abrir chamados' },
+  { key: 'ticket.cancel', group: 'Pedir', label: 'Cancelar e reabrir os próprios chamados' },
+  { key: 'ticket.approve', group: 'Pedir', label: 'Aprovar ou reprovar a solução', help: 'Quando o técnico pede aprovação antes de fechar.' },
+  // Quem atende
+  { key: 'ticket.take', group: 'Atender', label: 'Assumir chamados sem técnico' },
+  { key: 'ticket.work', group: 'Atender', label: 'Atender os chamados que estão com ele', help: 'Mudar a situação, editar, marcar "Em atendimento" e registrar a solução.' },
+  { key: 'ticket.status_any', group: 'Atender', label: 'Mudar a situação de qualquer chamado que vê' },
+  { key: 'ticket.resolve_direct', group: 'Atender', label: 'Resolver sem pedir aprovação ao solicitante' },
+  // Quem coordena
+  { key: 'ticket.triage', group: 'Coordenar', label: 'Triagem', help: 'Ajustar categoria, urgência, local, previsão e equipamento.' },
+  { key: 'ticket.assign', group: 'Coordenar', label: 'Escolher ou trocar o técnico' },
+  { key: 'ticket.manager_note', group: 'Coordenar', label: 'Instruções de gestor', help: 'Mensagem destacada para a equipe dentro do chamado.' },
+  // Painel e equipamentos
+  { key: 'dashboard.view', group: 'Painel e equipamentos', label: 'Ver o painel' },
+  { key: 'inventory.view', group: 'Painel e equipamentos', label: 'Ver o inventário' },
+  { key: 'inventory.manage', group: 'Painel e equipamentos', label: 'Cadastrar e editar equipamentos' },
+  // Cadastros da própria empresa
+  { key: 'users.manage', group: 'Cadastros da empresa', label: 'Usuários' },
+  { key: 'locations.manage', group: 'Cadastros da empresa', label: 'Localizações' },
+  { key: 'materials.manage', group: 'Cadastros da empresa', label: 'Lista de materiais', help: 'Itens que podem ser pedidos no chamado "Pedido de material".' },
 ];
 
 // Permissões que só funcionam junto com outra. Ao salvar (e na tela) a dependência é ajustada:
@@ -48,7 +51,6 @@ const VER_CHAMADOS = ['ticket.view_company', 'ticket.view_all'];
 const DEPENDENCIAS = {
   'ticket.triage': VER_CHAMADOS,
   'ticket.assign': VER_CHAMADOS,
-  'ticket.watchers': VER_CHAMADOS,
   'ticket.status_any': VER_CHAMADOS,
   'ticket.manager_note': VER_CHAMADOS,
   'ticket.take': VER_CHAMADOS,
@@ -80,7 +82,7 @@ const MASTER_ONLY = [
 
 const DEFAULTS = {
   moderator: [
-    'ticket.create', 'ticket.view_all', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
+    'ticket.create', 'ticket.view_all', 'ticket.triage', 'ticket.assign',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.cancel', 'ticket.internal', 'ticket.rating',
     'dashboard.view', 'inventory.view', 'inventory.manage',
   ],
@@ -90,7 +92,7 @@ const DEFAULTS = {
   ],
   // Gestor = chefe da empresa cliente (absorveu o antigo Administrador Local)
   manager: [
-    'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign', 'ticket.watchers',
+    'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.approve', 'ticket.cancel', 'ticket.manager_note',
     'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
     'locations.manage', 'materials.manage',

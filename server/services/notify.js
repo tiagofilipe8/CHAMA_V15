@@ -143,7 +143,6 @@ async function getParticipants(ticketId, entityId, excludeUserId = null) {
        u.id IN (SELECT requester_id FROM tickets WHERE id = $1)
        OR u.id IN (SELECT assigned_user_id FROM tickets WHERE id = $1)
        OR u.id IN (SELECT assigned_moderator_id FROM tickets WHERE id = $1)
-       OR u.id IN (SELECT user_id FROM ticket_watchers WHERE ticket_id = $1)
        OR (u.entity_id = $2 AND u.role = 'client' AND u.client_level >= 2)
        OR (u.role = 'client' AND u.client_level >= 2
            AND u.id IN (SELECT user_id FROM user_entities WHERE entity_id = $2))

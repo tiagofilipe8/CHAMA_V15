@@ -232,28 +232,6 @@ Views.ticketDetail = function ticketDetail(id) {
           </div>
 
           <div class="card panel-card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span><i class="bi bi-eye me-1"></i> Observadores <span class="badge text-bg-secondary">${(t.watchers || []).length}</span></span>
-            </div>
-            <ul class="list-group list-group-flush">
-              ${(t.watchers || []).map((w) => `
-                <li class="list-group-item d-flex align-items-center gap-2 small">
-                  <i class="bi bi-person"></i>
-                  <span class="flex-grow-1">${esc(w.name)}${w.location_name ? `<br><small class="text-muted">${esc(w.location_name)}</small>` : ''}</span>
-                  ${can.watchers ? `<button class="btn btn-sm btn-link text-danger p-0 td-rm-watcher" data-id="${w.id}" title="Remover"><i class="bi bi-x-lg"></i></button>` : ''}
-                </li>`).join('') || '<li class="list-group-item small text-muted">Ninguém acompanhando.</li>'}
-            </ul>
-            ${can.watchers ? `
-            <div class="card-body border-top">
-              <div class="input-group input-group-sm">
-                <select class="form-select" id="td-watcher-sel"><option value="">Carregando...</option></select>
-                <button class="btn btn-outline-primary" id="td-add-watcher"><i class="bi bi-plus-lg"></i> Adicionar</button>
-              </div>
-              <div class="form-text">Pessoas da mesma localização aparecem primeiro.</div>
-            </div>` : ''}
-          </div>
-
-          <div class="card panel-card mb-3">
             <div class="card-header"><i class="bi bi-list-check me-1"></i> Histórico</div>
             <ul class="list-group list-group-flush small" style="max-height:360px;overflow:auto">
               ${(t.history || []).slice().reverse().map((h) => `
@@ -291,23 +269,6 @@ Views.ticketDetail = function ticketDetail(id) {
     function afterReload() { renderDetail(el, { silent: true }); }
 
     function wireActions() {
-      el.querySelectorAll('.td-rm-watcher').forEach((b) => b.addEventListener('click', async () => {
-        try { await API.del(`/tickets/${t.id}/watchers/${b.dataset.id}`); toast('Observador removido.', 'warning'); afterReload(); }
-        catch (e) { showError(e); }
-      }));
-      const wSel = el.querySelector('#td-watcher-sel');
-      if (wSel) {
-        API.get(`/tickets/${t.id}/watcher-candidates`).then((list) => {
-          wSel.innerHTML = '<option value="">— escolha a pessoa —</option>' + list.map((u) =>
-            `<option value="${u.id}">${u.same_location ? '★ ' : ''}${esc(u.name)}${u.location_name ? ` (${esc(u.location_name)})` : ''}${['admin', 'moderator', 'technician'].includes(u.role) ? ' — equipe' : ''}</option>`).join('');
-        }).catch(() => { wSel.innerHTML = '<option value="">—</option>'; });
-        el.querySelector('#td-add-watcher').addEventListener('click', async () => {
-          if (!wSel.value) { toast('Escolha a pessoa.', 'warning'); return; }
-          try { await API.post(`/tickets/${t.id}/watchers`, { user_id: parseInt(wSel.value, 10) }); toast('Observador adicionado.', 'success'); afterReload(); }
-          catch (e) { showError(e); }
-        });
-      }
-
       const attInput = el.querySelector('#td-att-input');
       const photoInput = el.querySelector('#td-photo-input');
       el.querySelector('#td-add-att')?.addEventListener('click', () => attInput?.click());
@@ -492,7 +453,7 @@ Views.ticketDetail = function ticketDetail(id) {
             <div class="row">
               <div class="col-md-6 mb-2"><label class="form-label small">Previsão de atendimento</label>
                 <input class="form-control" type="datetime-local" id="e-estimated" value="${toLocalInput(t.estimated_at)}">
-                <div class="form-text">O solicitante e os observadores são avisados.</div></div>
+                <div class="form-text">O solicitante é avisado.</div></div>
               <div class="col-md-6 mb-2"><label class="form-label small">Prazo (SLA)</label>
                 <input class="form-control" type="datetime-local" id="e-due" value="${toLocalInput(t.due_at)}"></div>
             </div>` : ''}

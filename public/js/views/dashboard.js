@@ -41,29 +41,28 @@ Views.dashboard = async function dashboard(el, opts = {}) {
   const em1h = radar.filter((t) => t.min >= 0 && t.min <= 60);
   const hoje24 = radar.filter((t) => t.min > 60);
 
+  // Faixa fina de indicadores (uma linha só, acima do calendário): o calendário é o que a
+  // pessoa bate o olho; os números ficam logo em cima, sem empurrar ele para baixo.
   const resumo = `
-    <div class="dp-resumo">
-      <a class="dp-card dp-abertos" href="#/tickets">
-        <div class="dp-tit"><i class="bi bi-journal-text"></i> Abertos</div>
-        <div class="dp-big">${totalAbertos}</div>
-        <div class="dp-sub">${num(v.open_today ?? c.open_today)} abertos hoje · ${num(team.unassigned)} sem técnico</div>
-      </a>
-      <div class="dp-card">
-        <div class="dp-tit" title="Chamados ainda não resolvidos, separados pela urgência"><i class="bi bi-bar-chart-steps"></i> Abertos por urgência</div>
-        <div class="dp-urgs">${[4, 3, 2, 1].map((p) => `
-          <div class="dp-urg ${TOM[p]}"><i></i><span>${URG[p]}</span><b>${num(porPrio[p])}</b></div>`).join('')}
-        </div>
+    <div class="dp-faixa">
+      <a class="dp-ind" href="#/tickets" title="Chamados ainda não resolvidos">
+        <b>${totalAbertos}</b><span>abertos<small>${num(v.open_today ?? c.open_today)} hoje · ${num(team.unassigned)} sem técnico</small></span></a>
+      <div class="dp-ind dp-ind-urg" title="Abertos por urgência">
+        ${[4, 3, 2, 1].map((p) => `<span class="dp-pill ${TOM[p]}" title="${URG[p]}">${num(porPrio[p])}</span>`).join('')}
+        <span>por urgência</span></div>
+      <a class="dp-ind" href="${isClient ? '#/team-tickets' : '#/mine'}" title="${isClient ? 'Chamados em aberto da sua empresa' : 'Chamados atribuídos a você'}">
+        <b class="dp-tx-azul">${num(data.my_open)}</b><span>${isClient ? 'da empresa' : 'comigo'}</span></a>
+      <div class="dp-ind" title="Resolvidos e fechados">
+        <b class="dp-tx-verde">${num(v.closed_total)}</b><span>fechados<small>${num(v.closed_today)} hoje</small></span></div>
+      <div class="dp-ind dp-radar ${vencidos.length ? 'alerta' : ''}" id="dp-radar" tabindex="0" title="Passe o mouse para ver os chamados">
+        <i class="bi bi-radar"></i>
+        <span class="dp-rad" data-grupo="vencidos"><b class="dp-tx-vermelho">${vencidos.length}</b> vencidos</span>
+        <span class="dp-rad" data-grupo="em1h"><b class="dp-tx-laranja">${em1h.length}</b> em 1h</span>
+        <span class="dp-rad" data-grupo="hoje24"><b class="dp-tx-amarelo">${hoje24.length}</b> em 24h</span>
       </div>
-      <div class="dp-card">
-        <div class="dp-tit"><i class="bi bi-person-check"></i> ${isClient ? 'Da sua empresa' : 'Comigo e fechados'}</div>
-        <a class="dp-linha dp-azul" href="${isClient ? '#/team-tickets' : '#/mine'}"><span>${isClient ? 'Em aberto' : 'Atribuídos a mim'}</span><b>${num(data.my_open)}</b></a>
-        <div class="dp-linha dp-verde"><span>Fechados</span><b>${num(v.closed_total)}</b><small>${num(v.closed_today)} hoje</small></div>
-      </div>
-      <div class="dp-card dp-radar ${vencidos.length ? 'alerta' : ''}" id="dp-radar" tabindex="0">
-        <div class="dp-tit"><i class="bi bi-radar"></i> Radar de prazo <i class="bi bi-info-circle dp-info" title="Passe o mouse para ver os chamados"></i></div>
-        <div class="dp-linha dp-vermelho" data-grupo="vencidos"><span>Prazo vencido</span><b>${vencidos.length}</b></div>
-        <div class="dp-linha dp-laranja" data-grupo="em1h"><span>Vence em até 1h</span><b>${em1h.length}</b></div>
-        <div class="dp-linha dp-amarelo" data-grupo="hoje24"><span>Vence nas próximas 24h</span><b>${hoje24.length}</b></div>
+      <div class="dp-ind dp-ind-tempo">
+        <span class="dp-vivo" title="O painel se atualiza sozinho a cada 30 segundos"><i class="bi bi-circle-fill blink-dot"></i><span id="dash-clock"></span></span>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-refresh" title="Atualizar agora"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
     </div>`;
 
@@ -161,12 +160,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       </table></div>
     </div>`;
 
-  const header = `
-    <div class="dp-topo">
-      <span class="tg tg-teal"><i class="bi bi-circle-fill blink-dot"></i> Tempo real</span>
-      <span class="text-muted small" id="dash-clock"></span>
-      <button class="btn btn-sm btn-outline-secondary ms-auto" id="btn-refresh"><i class="bi bi-arrow-clockwise"></i> Atualizar</button>
-    </div>`;
+  const header = '';
 
   // Atualização sem piscar: na primeira vez monta tudo; depois troca só os blocos que mudaram
   // (o calendário fica no lugar, sem perder o mês nem o dia escolhido).

@@ -681,3 +681,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_chama_limpa_atendimento ON tickets;
 CREATE TRIGGER trg_chama_limpa_atendimento AFTER UPDATE OF status, assigned_user_id ON tickets
   FOR EACH ROW EXECUTE FUNCTION chama_limpa_atendimento();
+
+-- Observadores tirados do sistema (2026-11-23): some a permissão. A tabela ticket_watchers
+-- fica guardada (histórico), mas não dá mais acesso nem avisos.
+DELETE FROM role_permissions WHERE permission = 'ticket.watchers';
