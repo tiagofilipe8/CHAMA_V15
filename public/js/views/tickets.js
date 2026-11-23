@@ -51,8 +51,9 @@ Views.tickets = async function tickets(el, opts = {}) {
   const prefKey = opts.watching ? 'watching' : opts.team ? 'team' : opts.mine ? 'mine' : 'main';
   const prefs = Object.assign({
     view: 'board', group: 'status', sort: 'urgency', q: '',
-    locations: [], impacts: [], assigned: '', entity: '', showClosed: false,
+    locations: [], impacts: [], entities: [], assigned: '', showClosed: false, filtrosAbertos: false,
   }, loadBoardPrefs(prefKey));
+  if (!Array.isArray(prefs.entities)) prefs.entities = [];
   const save = () => saveBoardPrefs(prefKey, prefs);
 
   let all = [];
@@ -65,7 +66,7 @@ Views.tickets = async function tickets(el, opts = {}) {
             <i class="bi ${opts.team ? 'bi-ticket-detailed' : 'bi-people'}"></i> ${opts.team ? 'Meus chamados' : 'Chamados da equipe'}</a>
         </div>` : ''}
 
-    <div class="board-toolbar">
+    <div class="board-toolbar ${prefs.filtrosAbertos ? 'show-adv' : ''}">
       <div class="tb-row">
         <div class="seg" role="group" aria-label="Modo de exibição">
           <button type="button" data-view="board" title="Quadro"><i class="bi bi-kanban"></i><span> Quadro</span></button>
@@ -76,32 +77,33 @@ Views.tickets = async function tickets(el, opts = {}) {
           <i class="bi bi-search"></i>
           <input class="form-control form-control-sm" id="f-q" placeholder="Buscar por título ou número" value="${esc(prefs.q)}">
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary tb-toggle" id="tb-toggle"><i class="bi bi-sliders"></i> Filtros</button>
-        <select class="form-select form-select-sm tb-select tb-adv" id="f-group" title="Organizar colunas por">
-          <option value="status">Colunas: status</option>
-          <option value="impact">Colunas: urgência</option>
-          <option value="location">Colunas: localização</option>
-        </select>
-        <select class="form-select form-select-sm tb-select tb-adv" id="f-sort" title="Ordenar">
-          ${Object.entries(SORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}
-        </select>
-        ${!isClient ? `
-        <select class="form-select form-select-sm tb-select tb-adv" id="f-assigned" title="Técnico">
-          <option value="">Todos os técnicos</option>
-          <option value="me">Atribuídos a mim</option>
-          <option value="none">Sem técnico</option>
-        </select>` : ''}
-        <select class="form-select form-select-sm tb-select tb-adv" id="f-entity" title="Empresa" style="display:none"></select>
-        <label class="tb-check tb-adv"><input type="checkbox" id="f-closed"> Mostrar encerrados</label>
-        <a class="btn btn-primary btn-sm ms-auto" href="#/new"><i class="bi bi-plus-lg"></i> Abrir chamado</a>
+        <button type="button" class="btn btn-sm btn-outline-secondary tb-toggle" id="tb-toggle" aria-expanded="${!!prefs.filtrosAbertos}">
+          <i class="bi bi-sliders"></i> Filtros <span class="tb-n" id="tb-n"></span><i class="bi bi-chevron-down tb-seta"></i></button>
+        <div class="tb-ativos" id="tb-ativos"></div>
+        <a class="btn btn-primary btn-sm ms-auto" href="#/new"><i class="bi bi-plus-lg"></i><span class="tb-novo-tx"> Abrir chamado</span></a>
       </div>
-      <div class="tb-row tb-chips tb-adv">
-        <span class="tb-label">Urgência</span>
-        <div id="f-impacts" class="chip-row"></div>
-      </div>
-      <div class="tb-row tb-chips tb-adv" id="f-locations-row">
-        <span class="tb-label">Localização</span>
-        <div id="f-locations" class="chip-row"></div>
+      <div class="tb-painel tb-adv">
+        <div class="tb-linha">
+          <span class="tb-label">Mostrar</span>
+          <select class="form-select form-select-sm tb-select" id="f-group" title="Organizar colunas por">
+            <option value="status">Colunas: situação</option>
+            <option value="impact">Colunas: urgência</option>
+            <option value="location">Colunas: localização</option>
+          </select>
+          <select class="form-select form-select-sm tb-select" id="f-sort" title="Ordenar">
+            ${Object.entries(SORTS).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}
+          </select>
+          ${!isClient ? `
+          <select class="form-select form-select-sm tb-select" id="f-assigned" title="Técnico">
+            <option value="">Todos os técnicos</option>
+            <option value="me">Atribuídos a mim</option>
+            <option value="none">Sem técnico</option>
+          </select>` : ''}
+          <label class="tb-check"><input type="checkbox" id="f-closed"> Encerrados</label>
+        </div>
+        <div class="tb-linha"><span class="tb-label">Urgência</span><div id="f-impacts" class="chip-row"></div></div>
+        <div class="tb-linha" id="f-entities-row"><span class="tb-label">Empresa</span><div id="f-entities" class="chip-row"></div></div>
+        <div class="tb-linha" id="f-locations-row"><span class="tb-label">Localização</span><div id="f-locations" class="chip-row"></div></div>
       </div>
     </div>
 
@@ -114,7 +116,11 @@ Views.tickets = async function tickets(el, opts = {}) {
   if ($('#f-assigned')) $('#f-assigned').value = prefs.assigned;
   $('#f-closed').checked = !!prefs.showClosed;
 
-  $('#tb-toggle').addEventListener('click', () => el.querySelector('.board-toolbar').classList.toggle('show-adv'));
+  $('#tb-toggle').addEventListener('click', () => {
+    prefs.filtrosAbertos = el.querySelector('.board-toolbar').classList.toggle('show-adv');
+    $('#tb-toggle').setAttribute('aria-expanded', String(prefs.filtrosAbertos));
+    save();
+  });
   const paintView = () => el.querySelectorAll('.seg button').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === prefs.view));
   paintView();
@@ -125,27 +131,11 @@ Views.tickets = async function tickets(el, opts = {}) {
   $('#f-sort').addEventListener('change', (e) => { prefs.sort = e.target.value; save(); render(); });
   $('#f-assigned')?.addEventListener('change', (e) => { prefs.assigned = e.target.value; save(); load(); });
   $('#f-closed').addEventListener('change', (e) => { prefs.showClosed = e.target.checked; save(); load(); });
-  $('#f-entity').addEventListener('change', (e) => { prefs.entity = e.target.value; save(); load(); });
   let qTimer;
   $('#f-q').addEventListener('input', (e) => {
     clearTimeout(qTimer);
     qTimer = setTimeout(() => { prefs.q = e.target.value.trim(); save(); render(); }, 200);
   });
-
-  // empresas (equipe, ou gestor com mais de uma)
-  const mine = new Set([user.entity_id, ...(user.extra_entity_ids || [])].filter(Boolean).map(String));
-  if (Roles.isStaff(user) || (isManager && mine.size > 1)) {
-    API.get('/entities').then((ents) => {
-      const sel = $('#f-entity');
-      if (!sel) return;
-      const list = ents.filter((e) => e.active && (Roles.isStaff(user) || mine.has(String(e.id))));
-      if (list.length < 2) return;
-      sel.innerHTML = '<option value="">Todas as empresas</option>' +
-        list.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
-      sel.value = prefs.entity;
-      sel.style.display = '';
-    }).catch(() => {});
-  }
 
   function chip(active, label, attrs, tone) {
     return `<button type="button" class="f-chip ${tone || ''} ${active ? 'on' : ''}" ${attrs}>${label}</button>`;
@@ -163,8 +153,18 @@ Views.tickets = async function tickets(el, opts = {}) {
       chip(prefs.impacts.includes(String(l.id)),
         `<span class="dot"></span>${esc(nomeUrg(l))} <b>${byImpact[l.id] || 0}</b>`,
         `data-impact="${l.id}"`, URGENCY_TONE[l.priority])).join('');
+    // Empresa: as que têm chamado na lista (ou estão escolhidas); só aparece se houver mais de uma
+    const byEnt = counts('entity_id');
+    const empresas = new Map();
+    all.forEach((t) => { if (t.entity_id) empresas.set(String(t.entity_id), t.entity_name || 'Empresa'); });
+    prefs.entities.forEach((id) => { if (!empresas.has(id)) empresas.set(id, (locs.find((l) => String(l.entity_id) === id) || {}).entity_name || 'Empresa'); });
+    $('#f-entities-row').style.display = empresas.size > 1 || prefs.entities.length ? '' : 'none';
+    $('#f-entities').innerHTML = [...empresas.entries()].sort((x, y) => x[1].localeCompare(y[1], 'pt-BR')).map(([id, nome]) =>
+      chip(prefs.entities.includes(id), `<i class="bi bi-building"></i>${esc(nome)} <b>${byEnt[id] || 0}</b>`, `data-ent="${id}"`)).join('');
     const byLoc = counts('location_id');
-    const usedLocs = locs.filter((l) => byLoc[l.id] || prefs.locations.includes(String(l.id)));
+    // Localização: só as das empresas escolhidas (se escolheu alguma)
+    const usedLocs = locs.filter((l) => (byLoc[l.id] || prefs.locations.includes(String(l.id)))
+      && (!prefs.entities.length || prefs.entities.includes(String(l.entity_id))));
     $('#f-locations-row').style.display = usedLocs.length ? '' : 'none';
     const multiEnt = new Set(usedLocs.map((l) => l.entity_id)).size > 1;
     $('#f-locations').innerHTML = usedLocs.map((l) =>
@@ -178,6 +178,51 @@ Views.tickets = async function tickets(el, opts = {}) {
     el.querySelectorAll('[data-loc]').forEach((b) => b.addEventListener('click', () => {
       toggle(prefs.locations, b.dataset.loc); save(); paintChips(); render();
     }));
+    el.querySelectorAll('[data-ent]').forEach((b) => b.addEventListener('click', () => {
+      toggle(prefs.entities, b.dataset.ent);
+      // localização escolhida de empresa que saiu do filtro não vale mais
+      if (prefs.entities.length) {
+        prefs.locations = prefs.locations.filter((id) => id === 'none'
+          || prefs.entities.includes(String((locs.find((l) => String(l.id) === id) || {}).entity_id)));
+      }
+      save(); paintChips(); render();
+    }));
+    pintarAtivos();
+  }
+
+  // Filtros ativos em chips pequenos ao lado do botão Filtros (clicar no × tira)
+  function pintarAtivos() {
+    const nomeLv = (id) => { const l = levels.find((x) => String(x.id) === id); return l ? nomeUrg(l) : 'Urgência'; };
+    const nomeLoc = (id) => (id === 'none' ? 'Sem localização' : (locs.find((x) => String(x.id) === id) || {}).name || 'Localização');
+    const nomeEnt = (id) => ((all.find((t) => String(t.entity_id) === id) || {}).entity_name
+      || (locs.find((l) => String(l.entity_id) === id) || {}).entity_name || 'Empresa');
+    const ativos = [
+      ...prefs.impacts.map((id) => ({ tipo: 'impact', id, txt: nomeLv(id) })),
+      ...prefs.entities.map((id) => ({ tipo: 'ent', id, txt: nomeEnt(id) })),
+      ...prefs.locations.map((id) => ({ tipo: 'loc', id, txt: nomeLoc(id) })),
+      ...(prefs.assigned ? [{ tipo: 'assigned', id: '', txt: prefs.assigned === 'me' ? 'Atribuídos a mim' : 'Sem técnico' }] : []),
+      ...(prefs.showClosed ? [{ tipo: 'closed', id: '', txt: 'Com encerrados' }] : []),
+    ];
+    $('#tb-n').textContent = ativos.length ? String(ativos.length) : '';
+    $('#tb-ativos').innerHTML = ativos.map((a) => `<button type="button" class="tb-ativo" data-tipo="${a.tipo}" data-id="${esc(a.id)}" title="Tirar este filtro">${esc(a.txt)} <i class="bi bi-x"></i></button>`).join('')
+      + (ativos.length > 1 ? '<button type="button" class="tb-limpar" id="tb-limpar">limpar</button>' : '');
+    el.querySelectorAll('.tb-ativo').forEach((b) => b.addEventListener('click', () => {
+      const { tipo, id } = b.dataset;
+      if (tipo === 'impact') toggle(prefs.impacts, id);
+      if (tipo === 'ent') toggle(prefs.entities, id);
+      if (tipo === 'loc') toggle(prefs.locations, id);
+      if (tipo === 'assigned') { prefs.assigned = ''; if ($('#f-assigned')) $('#f-assigned').value = ''; save(); load(); return; }
+      if (tipo === 'closed') { prefs.showClosed = false; $('#f-closed').checked = false; save(); load(); return; }
+      save(); paintChips(); render();
+    }));
+    $('#tb-limpar')?.addEventListener('click', () => {
+      const recarrega = !!prefs.assigned || prefs.showClosed;
+      prefs.impacts = []; prefs.entities = []; prefs.locations = []; prefs.assigned = ''; prefs.showClosed = false;
+      if ($('#f-assigned')) $('#f-assigned').value = '';
+      $('#f-closed').checked = false;
+      save();
+      if (recarrega) load(); else { paintChips(); render(); }
+    });
   }
   const toggle = (arr, v) => { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); };
 
@@ -190,7 +235,6 @@ Views.tickets = async function tickets(el, opts = {}) {
     else if (opts.mine) p.set('mine', 'me');
     else if (isClient && !opts.team) p.set('requester', 'me');
     if (prefs.assigned) p.set('assigned', prefs.assigned);
-    if (prefs.entity) p.set('entity_id', prefs.entity);
     try {
       all = await API.get('/tickets?' + p.toString());
       paintChips();
@@ -205,6 +249,7 @@ Views.tickets = async function tickets(el, opts = {}) {
     return all.filter((t) =>
       (!q || `${t.number} ${t.title} ${t.requester_name || ''}`.toLowerCase().includes(q))
       && (!prefs.impacts.length || prefs.impacts.includes(String(t.impact_id)))
+      && (!prefs.entities.length || prefs.entities.includes(String(t.entity_id)))
       && (!prefs.locations.length || prefs.locations.includes(t.location_id ? String(t.location_id) : 'none')))
       .sort(SORTS[prefs.sort]?.fn || SORTS.urgency.fn);
   }

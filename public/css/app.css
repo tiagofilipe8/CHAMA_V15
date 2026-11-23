@@ -526,11 +526,28 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
 .progress { --bs-progress-bar-bg: var(--primary); }
 .app-main { min-width: 0; } /* deixa o quadro rolar dentro da tela */
 
-/* filtros recolhidos no celular */
-.tb-toggle { display: none; }
-@media (max-width: 992px) {
-  .tb-toggle { display: inline-flex; align-items: center; gap: 4px; }
-  .board-toolbar:not(.show-adv) .tb-adv { display: none !important; }
+/* Filtros dos chamados: uma linha só; o resto fica num painel que abre no botão "Filtros" */
+.board-toolbar { padding: 8px 10px; gap: 6px; margin-bottom: 10px; }
+.tb-toggle { display: inline-flex; align-items: center; gap: 5px; }
+.tb-toggle .tb-seta { font-size: .7rem; transition: transform .15s; }
+.board-toolbar.show-adv .tb-toggle .tb-seta { transform: rotate(180deg); }
+.board-toolbar:not(.show-adv) .tb-adv { display: none !important; }
+.tb-n:empty { display: none; }
+.tb-n { background: var(--primary); color: #fff; border-radius: 999px; min-width: 18px; height: 18px; padding: 0 5px;
+  font-size: .7rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.tb-ativos { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.tb-ativo { border: 1px solid var(--primary); background: var(--primary-soft); color: var(--primary-2); border-radius: 999px;
+  padding: 1px 4px 1px 9px; font-size: .74rem; font-weight: 600; display: inline-flex; align-items: center; gap: 2px; }
+.tb-ativo:hover { background: var(--primary); color: #fff; }
+.tb-limpar { border: 0; background: none; color: var(--muted); font-size: .74rem; text-decoration: underline; padding: 0 4px; }
+.tb-painel { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.tb-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tb-linha .tb-label { min-width: 84px; font-weight: 600; font-size: .76rem; }
+.tb-linha .f-chip { padding: 2px 9px; font-size: .76rem; }
+.tb-linha .tb-select { max-width: 190px; }
+@media (max-width: 600px) {
+  .tb-novo-tx { display: none; }
+  .tb-linha .tb-label { min-width: 0; width: 100%; }
 }
 @media (max-width: 600px) {
   .board.readonly .kcol.is-empty { display: none; }
