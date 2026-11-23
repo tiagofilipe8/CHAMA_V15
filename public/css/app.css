@@ -1331,3 +1331,10 @@ a.dp-ind:hover { background: var(--surface-2); }
 .dp-ind-tempo { gap: 8px; }
 .dp-vivo { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .dp-vivo .bi { color: #16a34a; font-size: .5rem; }
+
+/* Perfis e permissões: lado Orcim x por empresa, separados por uma linha */
+.perm-table .perm-lado { display: block; font-size: .66rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-top: 1px; }
+.perm-table .perm-lado.orcim { color: var(--primary); }
+.perm-table .perm-lado.empresa { color: #7c3aed; }
+.perm-table .perm-div { border-left: 2px solid var(--muted) !important; }
+[data-bs-theme="dark"] .perm-table .perm-lado.empresa { color: #c4b5fd; }

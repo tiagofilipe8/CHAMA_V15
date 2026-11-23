@@ -1587,12 +1587,19 @@ Views.adminRoles = async function adminRoles(el) {
 
   const isDirty = () => roles.some((r) => permissions.some((p) => !!matrix[r.key][p.key] !== !!saved[r.key][p.key]));
   const countOn = (rk) => permissions.filter((p) => matrix[rk][p.key]).length;
+  // Quem trabalha na Orcim (atende todas as empresas) x quem é de cada empresa cliente.
+  // Uma linha separa os dois lados na tabela.
+  const LADO = { moderator: 'orcim', technician: 'orcim', manager: 'empresa', user: 'empresa' };
+  const primeiroEmpresa = roles.find((r) => LADO[r.key] !== 'orcim');
+  const divisa = (r) => primeiroEmpresa && r.key === primeiroEmpresa.key;
 
   el.innerHTML = `
     <div class="roles-page">
       <div class="roles-intro">
         <p>Marque o que cada perfil pode fazer. O <b>Administrador Mestre</b> sempre pode tudo e é o único que mexe nesta tela.
           As mudanças valem para todos os usuários do perfil assim que você salvar (eles veem na próxima página que abrirem).</p>
+        <p class="small text-muted mb-0"><b>Orcim</b>: Admin Mestre, Moderador e Técnico trabalham na Orcim e atendem as empresas.
+          <b>Por empresa</b>: Gestor e Usuário são pessoas de cada empresa cliente e só veem a própria empresa.</p>
       </div>
 
       <div class="card panel-card mb-3 preview-card">
@@ -1641,10 +1648,11 @@ Views.adminRoles = async function adminRoles(el) {
             <thead>
               <tr>
                 <th class="perm-name">Função</th>
-                <th class="perm-col master" title="Sempre pode tudo">Admin Mestre</th>
+                <th class="perm-col master" title="Sempre pode tudo">Admin Mestre<small class="perm-lado orcim">Orcim</small></th>
                 ${roles.map((r) => `
-                  <th class="perm-col">
+                  <th class="perm-col${divisa(r) ? ' perm-div' : ''}">
                     <div>${esc(r.label)}</div>
+                    <small class="perm-lado ${LADO[r.key] || 'empresa'}">${LADO[r.key] === 'orcim' ? 'Orcim' : 'por empresa'}</small>
                     <div class="perm-col-tools">
                       <span class="perm-count" data-count="${r.key}"></span>
                       <button class="btn btn-link btn-sm p-0 rp-preview" data-role="${r.key}" title="Ver a plataforma como ${esc(r.label)}"><i class="bi bi-eye"></i></button>
@@ -1661,7 +1669,7 @@ Views.adminRoles = async function adminRoles(el) {
                     <td class="perm-name">${esc(p.label)}${p.help ? `<small class="perm-help">${esc(p.help)}</small>` : ''}</td>
                     <td class="perm-col master"><input type="checkbox" class="form-check-input" checked disabled aria-label="Admin Mestre: sempre"></td>
                     ${roles.map((r) => `
-                      <td class="perm-col"><input type="checkbox" class="form-check-input rp-box" data-role="${r.key}" data-perm="${p.key}"
+                      <td class="perm-col${divisa(r) ? ' perm-div' : ''}"><input type="checkbox" class="form-check-input rp-box" data-role="${r.key}" data-perm="${p.key}"
                         aria-label="${esc(r.label)}: ${esc(p.label)}"></td>`).join('')}
                   </tr>`).join('')}`).join('')}
               <tr class="perm-group"><td colspan="${roles.length + 2}">Somente Administrador Mestre</td></tr>
@@ -1669,7 +1677,7 @@ Views.adminRoles = async function adminRoles(el) {
                 <tr class="perm-locked">
                   <td class="perm-name">${esc(label)}</td>
                   <td class="perm-col master"><input type="checkbox" class="form-check-input" checked disabled></td>
-                  ${roles.map(() => '<td class="perm-col"><i class="bi bi-lock text-muted" title="Exclusivo do Administrador Mestre"></i></td>').join('')}
+                  ${roles.map((r) => `<td class="perm-col${divisa(r) ? ' perm-div' : ''}"><i class="bi bi-lock text-muted" title="Exclusivo do Administrador Mestre"></i></td>`).join('')}
                 </tr>`).join('')}
             </tbody>
           </table>
