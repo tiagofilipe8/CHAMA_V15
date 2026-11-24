@@ -144,6 +144,24 @@ function pageDescFromPath() {
   return map[path] || '';
 }
 
+// Ícone do Score de urgência pega fogo quando há chamado de operação parada em aberto
+let alertaParada = 0;
+function pintarAlertaUrgencia() {
+  const a = document.querySelector('#side-nav a[href="#/urgencia"]');
+  if (!a) return;
+  a.classList.toggle('nav-em-chamas', alertaParada > 0);
+  a.title = alertaParada ? `${alertaParada} chamado(s) de operação parada em aberto` : '';
+}
+let esperaAlerta = null;
+function carregarAlertaUrgencia() {
+  if (!Roles.can(currentUser(), 'dashboard.view')) return;
+  clearTimeout(esperaAlerta);
+  esperaAlerta = setTimeout(async () => {
+    try { alertaParada = (await API.get('/dashboard/urgencia/alerta')).parada || 0; } catch { alertaParada = 0; }
+    pintarAlertaUrgencia();
+  }, 400);
+}
+
 function renderNav() {
   const user = currentUser();
   const nav = document.getElementById('side-nav');
@@ -180,6 +198,7 @@ function renderNav() {
   pintarNovidades();
   Atendimento.carregar();
   Chat.pintarBolinha();
+  pintarAlertaUrgencia();
 
   // identities
   const name = user.name || user.username;
@@ -343,6 +362,8 @@ function connectSocket() {
       if (location.hash === '#/dashboard') Views.dashboard(document.getElementById('view'), { silent: true });
     }, 1500);
   };
+  socket.on('ticket:new', () => carregarAlertaUrgencia());
+  socket.on('ticket:update', () => carregarAlertaUrgencia());
   socket.on('ticket:new', (tk) => {
     if (location.hash === '#/dashboard') {
       Voice.announceNewTicket(tk);
@@ -602,6 +623,7 @@ async function boot() {
   connectSocket();
   loadBell();
   if (window.CHAT_LIGADO) Chat.carregarBolinha();
+  carregarAlertaUrgencia();
 
   // eventos do shell
   document.getElementById('btn-logout').onclick = logout;

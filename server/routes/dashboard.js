@@ -345,6 +345,17 @@ router.get('/causas', async (req, res) => {
 // Score de urgência por local (e base da sugestão de rotas). Ver services/scoreUrgencia.js.
 //   ?entity_id=  · só chamados em aberto, dentro do que a pessoa pode ver
 // ---------------------------------------------------------------------
+// Alerta do menu: quantos chamados de operação parada estão em aberto (o ícone do Score de urgência pega fogo)
+router.get('/urgencia/alerta', async (req, res) => {
+  const user = req.user;
+  if (!canSeeDashboard(user)) return res.json({ parada: 0 });
+  const scope = scopeConditions(user, 1);
+  const { rows } = await query(
+    `SELECT count(*)::int AS n FROM tickets t
+     WHERE t.priority = 4 AND t.status NOT IN (4,5,6,7) ${scope.sql ? `AND ${scope.sql}` : ''}`, scope.params);
+  res.json({ parada: rows[0].n });
+});
+
 router.get('/urgencia', async (req, res) => {
   const user = req.user;
   if (!canSeeDashboard(user)) return res.status(403).json({ error: 'Seu perfil não vê o score de urgência.' });
