@@ -915,6 +915,33 @@
     <div class="small-muted mt-2">Números do período escolhido; "agora" é a situação neste momento. Inclui gestores, para quem também faz visitas.</div>`;
   }
 
+  // Causas de encerramento (vêm da Orcim). Laranja = causado por pessoas (mau uso, acidente, erro do usuário).
+  const CAUSA_HUMANA = /mau uso|neglig|acidente|erro do usu|cliente|gerente|funcion/i;
+  function blocoCausas(d) {
+    const o = d.orcim;
+    if (!o.causas_ok || (!o.causas.length && !o.sem_causa)) {
+      return blocoPg('Por que os chamados aconteceram', `<div class="small-muted py-1">${o.causas_ok
+        ? 'Nenhum chamado resolvido com causa no período.'
+        : 'A causa ainda não chega: aparece quando o sistema da Orcim tiver o encerramento com causa e o envio de dados estiver ligado.'}</div>`, emBreveApi);
+    }
+    const nota = `resolvidos no período${o.sem_causa ? ` · ${o.sem_causa} sem causa informada` : ''}`;
+    const tabela = o.causas_por_posto.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
+      <thead><tr><th>Posto</th><th>Causa</th><th class="text-end">Chamados</th></tr></thead>
+      <tbody>${o.causas_por_posto.map((x) => `<tr><td>${esc(x.posto)}</td>
+        <td>${CAUSA_HUMANA.test(x.causa) ? '<span class="causa-hum" title="causado por pessoas"></span>' : ''}${esc(x.causa)}</td>
+        <td class="text-end"><b>${x.total}</b></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="small-muted py-1">Os chamados com causa ainda não têm posto informado.</div>';
+    return `<div class="pg-duas">
+        ${blocoPg('Por que os chamados aconteceram', listaBarras(o.causas, {
+    max: 10, texto: (x) => `${x.total} · ${x.pct}%${x.anterior ? ` (antes ${x.anterior})` : ''}`,
+    cor: (x) => (x.neutra ? '#94a3b8' : CAUSA_HUMANA.test(x.nome) ? '#ec7a1c' : ''),
+  }), nota)}
+        ${blocoPg('O que aconteceu com os equipamentos', listaBarras(o.acoes_equip, { max: 7, vazio: 'Nenhum equipamento envolvido.' }), 'nos mesmos chamados')}
+      </div>
+      <div class="small-muted mb-2 causa-leg"><span class="causa-hum"></span> laranja = causado por pessoas (mau uso, acidente, erro do usuário) · cinza = aberto por engano · "antes" = período anterior</div>
+      ${blocoPg('Causas por posto', tabela, 'as combinações que mais aparecem')}`;
+  }
+
   function abaOrcim(d) {
     const k = d.orcim.kpis; const a = d.orcim.anterior || {};
     const corUrg = { 4: '#d7263d', 3: '#ec7a1c', 2: '#d9a400', 1: '#4c7dd9' };
@@ -928,6 +955,7 @@
     { l: 'Em aberto agora', v: k.abertas_agora, sub: k.atrasadas_agora ? `${k.atrasadas_agora} atrasado(s)` : '', href: '#/demandas?situacao=abertas' },
   ])}
       ${cartaoGrafico('Chamados abertos × resolvidos', graficoLinhas(d.orcim.serie, CORES_ORCIM, { escala: d.periodo.escala, altura: 190, largura: 900 }), nomeEscala(d.periodo.escala))}
+      ${blocoCausas(d)}
       <div class="pg-duas">
         ${blocoPg('Problemas mais recorrentes', listaBarras(d.orcim.por_categoria, { vazio: 'Nenhum chamado no período.' }), `${emBreveApi} hoje: categorias da Central`)}
         ${blocoPg('Equipamentos mais solicitados', d.orcim.equipamentos ? listaBarras(d.orcim.equipamentos)
@@ -963,10 +991,10 @@
       ${cartaoGrafico('Itens com problema por posto', listaBarras(porNome('nao_ok'), { max: 10, cor: '#ef4444', vazio: 'Nenhum item NÃO OK no período.' }))}
       </div>
       ${semChamados ? '' : cartaoGrafico('Chamados da Orcim por posto', listaBarras(porNome('chamados'), { max: 10, cor: '#534AB7', vazio: 'Nenhum chamado no período.' }))}` + blocoPg('Postos', d.postos.length ? `<div class="table-responsive"><table class="table table-sm pg-tabela mb-0">
-      <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th></tr></thead>
+      <thead><tr><th>Posto</th><th>Chamados</th><th>Mais repete ${emBreveApi}</th><th>Causa mais comum</th><th>Tempo médio</th><th>NÃO OK</th><th>Visitas</th><th>Última visita</th><th>Atividades abertas</th></tr></thead>
       <tbody>${d.postos.map((p) => `<tr data-href="#/postos/${p.id}" class="clicavel">
         <td class="text-nowrap"><span class="ac-dot ${cor[p.situacao]} d-inline-block me-2"></span>${esc(p.nome)}${p.dias_atraso ? ` <span class="small text-danger">${p.dias_atraso} d</span>` : ''}</td>
-        <td>${p.chamados ?? '—'}</td><td>${p.mais_repete ? `${esc(p.mais_repete.nome)} (${p.mais_repete.total})` : '—'}</td><td>${dur(p.tempo_medio)}</td>
+        <td>${p.chamados ?? '—'}</td><td>${p.mais_repete ? `${esc(p.mais_repete.nome)} (${p.mais_repete.total})` : '—'}</td><td>${p.causa_top ? `${CAUSA_HUMANA.test(p.causa_top.nome) ? '<span class="causa-hum"></span>' : ''}${esc(p.causa_top.nome)} (${p.causa_top.total})` : '—'}</td><td>${dur(p.tempo_medio)}</td>
         <td>${p.nao_ok || '—'}</td><td>${p.visitas}</td><td>${p.ultima_visita ? fmtDia(p.ultima_visita) : '—'}</td>
         <td>${p.atividades_abertas || '—'}</td></tr>`).join('')}</tbody></table></div>
       <div class="small-muted mt-2">Bolinha: vermelho = visita atrasada · amarelo = item NÃO OK sem atividade · verde = em dia · cinza = sem próxima visita.
@@ -3951,6 +3979,7 @@ function itemHistorico(e) {
         { alvo: '.ti-tres', titulo: 'Visitas, Atividades e Pedidos', texto: 'Três cartões, cada um na cor da sua linha no gráfico: Visitas (idas aos postos), Atividades (tarefas do quadro) e Pedidos de visita (o que os gestores pediram). O número pequeno compara com o período anterior; clique no cartão para abrir a lista.' },
         { alvo: () => $('.pg-card'), titulo: 'Gráficos de linha', texto: 'Passe o mouse (ou toque) num ponto para ver o valor.' },
         { alvo: blocoComTitulo('Problemas encontrados'), titulo: 'Problemas encontrados', texto: 'Cada item marcado NÃO OK nas visitas, com o comentário do técnico. Clique para abrir a visita.' },
+        { rota: '#/painel?aba=orcim', alvo: () => blocoComTitulo('Por que os chamados aconteceram')() || $('.pg-faixa'), titulo: 'Causas dos chamados', texto: 'Quando o técnico da Orcim resolve um chamado, ele informa a causa (mau uso, acidente, falha do equipamento...). Aqui aparece quantos chamados teve cada causa, o que aconteceu com os equipamentos e as causas por posto. Laranja = causado por pessoas.' },
         { rota: '#/painel?aba=funcionarios', alvo: '.fn-grade', titulo: 'Por funcionário', texto: 'Um cartão por pessoa: visitas, atividades, no prazo, em aberto, atrasadas e problemas achados. Inclui quem é gestor e técnico ao mesmo tempo.' },
         { rota: '#/painel?aba=ti', alvo: '#pg-pdf', titulo: 'Relatório em PDF', texto: 'Gera o relatório do período escolhido para guardar ou enviar.' },
       ],

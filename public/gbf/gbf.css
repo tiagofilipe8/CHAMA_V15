@@ -1079,3 +1079,7 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 #cal-pop.fixo .cal-lista li { margin: 0 -6px; padding: 5px 6px; }
 #cal-pop .cal-pop-cab span { font-size: .7rem; }
 #cal-pop .cal-acoes .btn { pointer-events: auto; }
+
+/* Causas de encerramento (Orcim) */
+.causa-hum { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ec7a1c; margin-right: 6px; vertical-align: middle; }
+.causa-leg { font-size: .72rem; margin-top: -6px; }

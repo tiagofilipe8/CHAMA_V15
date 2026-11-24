@@ -17,7 +17,7 @@ const { query, pool } = require('../db');
 const { ah, getSetting, setSetting } = require('./common');
 
 // Tabelas que o painel lê no formato da Central. Ordem: pais antes dos filhos.
-const TIPADAS = ['entities', 'categories', 'users', 'assets', 'tickets', 'ticket_status_history',
+const TIPADAS = ['entities', 'categories', 'resolution_causes', 'locations', 'users', 'assets', 'tickets', 'ticket_status_history',
   'ticket_messages', 'ticket_attachments', 'asset_maintenances'];
 const TIPO = 'application/x-gbf-sync+json'; // fora do express.json global (limite de 1 MB da Central)
 const NOME_VALIDO = /^[a-z_][a-z0-9_]{0,62}$/;

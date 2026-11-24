@@ -14,6 +14,13 @@ const { query } = require('../db');
 const { queryCentral } = require('./fonte');
 const { ah, escopoTickets, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA } = require('./common');
 const { requireGestor } = require('./auth');
+
+// O que o técnico da Orcim fez com o equipamento ao encerrar (mesmos nomes do sistema da Orcim)
+const ACOES_EQUIP = {
+  repaired: 'Reparado / consertado no local', adjusted: 'Configurado / ajustado', part_replaced: 'Peça trocada',
+  replaced: 'Equipamento substituído', sent_external: 'Enviado para manutenção externa', no_change: 'Nenhuma alteração',
+  discarded: 'Descartado / sem conserto', no_equipment: 'Não envolveu equipamento',
+};
 const { DEMANDA_SELECT, enriquecer } = require('./demandas');
 
 const router = express.Router();
@@ -305,6 +312,52 @@ router.get('/', requireGestor, ah(async (req, res) => {
     .sort((a, b) => b.resolvidos - a.resolvidos || b.em_aberto - a.em_aberto);
   orcim.equipamentos = null; // chega com a API da Orcim
 
+  // Causa do encerramento: o técnico da Orcim escolhe ao resolver o chamado (ex.: "Mau uso / negligência").
+  // Conta os resolvidos no período por causa, por ação no equipamento e por posto. Versão da Central
+  // sem essas colunas: causas_ok = false (a tela explica que ainda não chega).
+  orcim.causas = []; orcim.acoes_equip = []; orcim.causas_por_posto = []; orcim.sem_causa = 0; orcim.causas_ok = true;
+  const causaPorPosto = new Map();
+  try {
+    const idsAtual = resolvidas.map((d) => String(d.id));
+    const idsAnt = resolvidasAnt.map((d) => String(d.id));
+    const { rows } = idsAtual.length + idsAnt.length ? await queryCentral(
+      `SELECT t.id, rc.name AS causa, COALESCE(rc.neutral, FALSE) AS neutra, t.equipment_action, t.location_id, l.name AS local
+       FROM tickets t LEFT JOIN resolution_causes rc ON rc.id = t.resolution_cause_id LEFT JOIN locations l ON l.id = t.location_id
+       WHERE t.id = ANY($1::bigint[])`, [[...idsAtual, ...idsAnt]]) : { rows: [] };
+    const doAtual = new Set(idsAtual);
+    const atual = rows.filter((r) => doAtual.has(String(r.id)));
+    const ant = rows.filter((r) => !doAtual.has(String(r.id)));
+    const contar = (lst, chave) => {
+      const m = new Map();
+      for (const r of lst) { const k = chave(r); if (k) m.set(k, (m.get(k) || 0) + 1); }
+      return m;
+    };
+    const comCausa = atual.filter((r) => r.causa);
+    orcim.sem_causa = atual.length - comCausa.length;
+    const antPorCausa = contar(ant, (r) => r.causa);
+    orcim.causas = [...contar(comCausa, (r) => r.causa).entries()]
+      .map(([nome, total]) => ({ nome, total, pct: pctDe(total, comCausa.length), anterior: antPorCausa.get(nome) || 0,
+        neutra: comCausa.some((r) => r.causa === nome && r.neutra) }))
+      .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+    orcim.acoes_equip = [...contar(comCausa.filter((r) => r.equipment_action && r.equipment_action !== 'no_equipment'),
+      (r) => ACOES_EQUIP[r.equipment_action] || r.equipment_action).entries()]
+      .map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
+    const porPosto = new Map();
+    for (const r of comCausa.filter((x) => !x.neutra)) {
+      const k = `${r.location_id || ''}|${r.causa}`;
+      if (!porPosto.has(k)) porPosto.set(k, { posto: r.local || 'Sem posto informado', location_id: r.location_id, causa: r.causa, total: 0 });
+      porPosto.get(k).total += 1;
+    }
+    const linhas = [...porPosto.values()].sort((a, b) => b.total - a.total || a.posto.localeCompare(b.posto));
+    orcim.causas_por_posto = linhas.slice(0, 15);
+    for (const x of linhas) {
+      if (x.location_id && !causaPorPosto.has(String(x.location_id))) causaPorPosto.set(String(x.location_id), { nome: x.causa, total: x.total });
+    }
+  } catch (e) {
+    orcim.causas_ok = false;
+    console.error('[gbf] causas de encerramento:', e.message);
+  }
+
   // Chamados por posto (posto do Dia a dia = localização da Central). Se a Central não tiver
   // a coluna de localização (versão antiga da Orcim), a coluna fica vazia na tela.
   let chamadosPorPosto = new Map();
@@ -447,6 +500,7 @@ router.get('/', requireGestor, ah(async (req, res) => {
       mais_repete: topo ? { nome: topo[0], total: topo[1] } : null,
       tempo_medio: c ? media(c.tempos) : null,
       nao_ok: l.nao_ok, nao_ok_pendente: l.nao_ok_pendente, visitas: l.visitas, ultima_visita: l.ultima_visita,
+      causa_top: l.central_location_id ? (causaPorPosto.get(String(l.central_location_id)) || null) : null,
       atividades_abertas: l.atividades_abertas, solicitacoes: l.solicitacoes,
     };
   }).sort((a, b) => (b.chamados || 0) - (a.chamados || 0) || b.nao_ok - a.nao_ok || a.nome.localeCompare(b.nome));

@@ -264,3 +264,14 @@ ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS start_date DATE;
 
 -- Atividade "Aguardando": o que está esperando (peça, resposta, aprovação...)
 ALTER TABLE gbf_tasks ADD COLUMN IF NOT EXISTS waiting_for TEXT;
+
+-- Causas de encerramento vindas da Orcim: lá cada empresa pode ter a sua lista (nomes repetem
+-- entre perfis) e existe a causa "neutra" (aberto por engano). Aqui só guardamos para contar.
+DO $$
+BEGIN
+  IF to_regclass('public.resolution_causes') IS NOT NULL THEN
+    ALTER TABLE resolution_causes ADD COLUMN IF NOT EXISTS neutral BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE resolution_causes ADD COLUMN IF NOT EXISTS profile_id BIGINT;
+    ALTER TABLE resolution_causes DROP CONSTRAINT IF EXISTS resolution_causes_name_key;
+  END IF;
+END $$;
