@@ -143,7 +143,7 @@ const Urgencia = (() => {
   const linhaChamado = (c) => `
     <a class="ur-ch ${TOM[c.priority] || 'u-req'}" href="#/tickets/${c.id}">
       <span class="ur-ch-num">${esc(c.number)}</span>
-      <span class="ur-ch-tx"><b>${esc(c.title)}</b><small>${esc(c.impact_name || URG[c.priority] || '')}${c.category_name ? ` · ${esc(c.category_name)}` : ''} · ${c.assigned_name ? esc(c.assigned_name) : 'sem técnico'}</small></span>
+      <span class="ur-ch-tx"><b>${esc(c.title)}</b><small><span class="ur-tag-urg ${TOM[c.priority] || 'u-req'}"><i class="ur-dot ${TOM[c.priority] || 'u-req'}"></i>${esc(c.impact_name || URG[c.priority] || '')}</span>${c.category_name ? ` · ${esc(c.category_name)}` : ''} · ${c.assigned_name ? esc(c.assigned_name) : 'sem técnico'}</small></span>
       <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
       <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO, '', 0.9, Number(c.priority) === 4)}<small>${conta(c)}</small></span>
     </a>`;
