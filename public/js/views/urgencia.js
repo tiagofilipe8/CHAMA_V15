@@ -17,8 +17,14 @@ const Urgencia = (() => {
       : c.dias_para_prazo !== null ? `<span class="tg tg-gray">vence ${fmtDia(c.prazo)} (em ${c.dias_para_prazo} dia${c.dias_para_prazo > 1 ? 's' : ''})</span>`
         : '<span class="tg tg-gray">sem data</span>');
   const conta = (c) => `1 × ${n1(c.peso)} × ${n1(c.fator_atraso)} × ${n1(c.fator_prazo)}`;
-  // cor pelo score: começa verde e vai ficando vermelho (alvo = score a partir do qual já é vermelho)
-  const cor = (score, alvo) => `hsl(${Math.round(135 * (1 - Math.min(Number(score) / alvo, 1)))} 68% 40%)`;
+  // cor pelo score, em degradê: verde -> amarelo -> laranja -> vermelho (alvo = score em que fica vermelho)
+  const DEGRADE = [[22, 163, 74], [234, 179, 8], [249, 115, 22], [220, 38, 38]]; // verde, amarelo, laranja, vermelho
+  const cor = (score, alvo) => {
+    const t = Math.max(0, Math.min(Number(score) / alvo, 1)) * (DEGRADE.length - 1);
+    const i = Math.min(Math.floor(t), DEGRADE.length - 2); const f = t - i;
+    const [a, b] = [DEGRADE[i], DEGRADE[i + 1]];
+    return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(' ')})`;
+  };
   // o número vai do verde (0) ao vermelho (18); de 18 para cima ele pega fogo
   const ALVO_LOCAL = 18; const ALVO_CHAMADO = 18;
 

@@ -45,7 +45,7 @@ function buildNav(u) {
   const equip = [];
   if (can('inventory.view')) equip.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
   if (can('stock.withdraw') || can('inventory.view')) equip.push({ href: '#/estoque', icon: 'bi-box-seam', label: 'Estoque de T.I.', sub: can('inventory.view') });
-  if (can('stock.report')) equip.push({ href: '#/inventario/relatorio', icon: 'bi-graph-up', label: 'Relatório de inventário', sub: can('inventory.view') });
+  if (can('stock.report')) equip.push({ href: '#/inventario/relatorio', icon: 'bi-graph-up', label: 'Relatório de inventário' }); // item próprio, no mesmo nível do Inventário
   grupo('Equipamentos', 'g-equip', equip);
 
   // Locais: Empresas e, logo abaixo (ligada por um "L"), as Localizações de cada empresa
