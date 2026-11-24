@@ -1746,3 +1746,9 @@ a.dp-ind:hover { background: var(--surface-2); }
 .conversa-card #msg-content { font-size: .84rem; padding: 5px 10px; }
 .conversa-card #btn-send-msg { font-size: .82rem; padding: 4px 12px; }
 .conversa-card .d-flex.mt-3 { margin-top: 10px !important; }
+.ur-regua { display: inline-flex; align-items: flex-end; gap: 12px; font-size: .95rem; }
+.ur-regua .ur-em-chamas.mini > b { font-size: .8rem; }
+.ur-em-chamas.regua { min-width: 30px; padding-top: 8px; }
+.ur-em-chamas.regua .ur-fogo { width: 24px; height: 30px; margin-left: -12px; background-size: 48px 30px; animation-name: ur-fogo-quadros-regua, ur-fogo-tremer; }
+.ur-em-chamas.regua > b { font-size: .8rem; }
+@keyframes ur-fogo-quadros-regua { from { background-position: 0 0; } to { background-position: -48px 0; } }

@@ -19,7 +19,8 @@ const Urgencia = (() => {
   const conta = (c) => `1 × ${n1(c.peso)} × ${n1(c.fator_atraso)} × ${n1(c.fator_prazo)}`;
   // cor pelo score: começa verde e vai ficando vermelho (alvo = score a partir do qual já é vermelho)
   const cor = (score, alvo) => `hsl(${Math.round(135 * (1 - Math.min(Number(score) / alvo, 1)))} 68% 40%)`;
-  const ALVO_LOCAL = 12; const ALVO_CHAMADO = 6;
+  // o número vai do verde (0) ao vermelho (18); de 18 para cima ele pega fogo
+  const ALVO_LOCAL = 18; const ALVO_CHAMADO = 18;
 
   // Score 18 ou mais: foguinho em pixel art atrás do número (2 quadros, piscando)
   const FOGO = 18;
@@ -79,9 +80,9 @@ const Urgencia = (() => {
           <div><span>Operação prejudicada atrasada 3 dias</span><code>1 × 1,5 × 4 × 1</code><b>= 6</b></div>
           <div><span>Operação parada para daqui a 10 dias</span><code>1 × 3 × 1 × 0,25</code><b>= 0,75</b></div>
         </div>
-        <div class="ur-escala"><span>Cor do score:</span><i style="background:linear-gradient(90deg, ${cor(0, 1)}, ${cor(0.5, 1)}, ${cor(1, 1)})"></i>
-          <small>verde = pouco urgente · vermelho = local com ${ALVO_LOCAL} pontos ou mais (chamado com ${ALVO_CHAMADO} ou mais) ·
-            com ${FOGO} ou mais o número pega fogo <span class="ur-em-chamas mini"><span class="ur-fogo" aria-hidden="true"></span><b>${FOGO}</b></span></small></div>
+        <div class="ur-escala"><span>Cor do score:</span>
+          <span class="ur-regua">${[0, 3, 6, 9, 12, 15].map((n) => `<b style="color:${cor(n, ALVO_LOCAL)}">${n}</b>`).join('')}<span class="ur-em-chamas regua"><span class="ur-fogo" aria-hidden="true"></span><b>${FOGO}+</b></span></span>
+          <small>o número vai ficando mais vermelho conforme o score sobe; de ${FOGO} para cima ele pega fogo</small></div>
         <p class="text-muted mb-0 small">Prazo usado: o "Precisa até" do chamado; se não tiver, o prazo (SLA).</p>
       </div>
     </details>`;
