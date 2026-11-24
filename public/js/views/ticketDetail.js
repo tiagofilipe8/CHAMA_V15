@@ -35,7 +35,9 @@ Views.ticketDetail = function ticketDetail(id) {
     const actions = [];
     // quem pode fechar direto (o solicitante ainda reabre em até 3 dias) vê "Fechar chamado"
     const fechaDireto = !can.needs_approval;
-    if (can.resolve && (![5, 6, 7].includes(t.status) || (t.status === 5 && t.awaiting_evaluation))) {
+    // quem abriu o chamado usa só o "Resolvi / não preciso mais" (sem o "Fechar chamado" ao lado, que seria repetido)
+    const mostraEncerrarUsuario = isRequester && can.cancel && [1, 2, 3, 4].includes(t.status);
+    if (can.resolve && !mostraEncerrarUsuario && (![5, 6, 7].includes(t.status) || (t.status === 5 && t.awaiting_evaluation))) {
       actions.push(t.awaiting_evaluation
         ? '<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-clipboard-check"></i> Avaliar e fechar</button>'
         : `<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-check2-circle"></i> ${fechaDireto ? 'Fechar chamado' : 'Resolver chamado'}</button>`);
@@ -44,7 +46,7 @@ Views.ticketDetail = function ticketDetail(id) {
       actions.push('<button class="btn btn-outline-warning btn-sm" id="act-pause"><i class="bi bi-pause-circle"></i> Pausar</button>');
     }
     // quem abriu: "Resolvi / não preciso mais" (com motivo)
-    if (isRequester && can.cancel && [1, 2, 3, 4].includes(t.status)) {
+    if (mostraEncerrarUsuario) {
       actions.push('<button class="btn btn-outline-success btn-sm" id="act-encerrar-usuario"><i class="bi bi-check2-square"></i> Resolvi / não preciso mais</button>');
     }
     if (canEdit) {
