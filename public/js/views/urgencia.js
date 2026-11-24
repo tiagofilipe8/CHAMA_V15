@@ -16,32 +16,55 @@ const Urgencia = (() => {
     : c.dias_para_prazo === 0 ? '<span class="tg tg-amber">vence hoje</span>'
       : c.dias_para_prazo !== null ? `<span class="tg tg-gray">vence ${fmtDia(c.prazo)} (em ${c.dias_para_prazo} dia${c.dias_para_prazo > 1 ? 's' : ''})</span>`
         : '<span class="tg tg-gray">sem data</span>');
-  const conta = (c) => `${n1(c.peso)} × ${n1(c.fator_atraso)} × ${n1(c.fator_prazo)}`;
+  const conta = (c) => `1 × ${n1(c.peso)} × ${n1(c.fator_atraso)} × ${n1(c.fator_prazo)}`;
+  // cor pelo score: começa verde e vai ficando vermelho (alvo = score a partir do qual já é vermelho)
+  const cor = (score, alvo) => `hsl(${Math.round(135 * (1 - Math.min(Number(score) / alvo, 1)))} 68% 40%)`;
+  const ALVO_LOCAL = 12; const ALVO_CHAMADO = 6;
 
   // como o score é calculado (aparece nas duas páginas)
-  const regrasHtml = (r) => `
+  const regrasHtml = (r) => {
+    const faixas = r.faixas_prazo.slice(1).map((f, i) => [`vence em ${r.faixas_prazo[i].ate + 1}${f.ate ? ` a ${f.ate}` : ' ou mais'} dias`, f.fator]);
+    return `
     <details class="ur-regras">
-      <summary><i class="bi bi-calculator"></i> Como o score é calculado</summary>
+      <summary><i class="bi bi-calculator"></i> <span>Como o score é calculado</span>
+        <small class="ur-regras-dica">clique para ver</small><i class="bi bi-chevron-down ur-seta"></i></summary>
       <div class="ur-regras-corpo">
-        <p><b>Score do chamado = peso da urgência × fator de atraso × fator de prazo.</b> O score do local é a soma dos chamados abertos dele.</p>
+        <p class="ur-regras-base"><b>Todo chamado aberto começa valendo 1 ponto.</b> Esse ponto é multiplicado por 3 fatores:
+          a urgência, o atraso e o prazo. O <b>score do local</b> é a soma dos pontos dos chamados abertos dele
+          (chamado em pausa não conta).</p>
+        <div class="ur-formula"><span>1 ponto</span>×<span>urgência</span>×<span>atraso</span>×<span>prazo</span>=<b>score do chamado</b></div>
         <div class="ur-regras-grade">
-          <div><b>Peso da urgência</b>${[1, 2, 3, 4].map((p) => `<div><i class="ur-dot ${TOM[p]}"></i>${URG[p]} <b>×${n1(r.peso_urgencia[p])}</b></div>`).join('')}</div>
-          <div><b>Fator de atraso</b><div>1 + 1 por dia de atraso</div><div class="text-muted">1 dia atrasado ×2 · 3 dias ×4 · conta até ${r.atraso_max} dias</div></div>
-          <div><b>Fator de prazo</b> <span class="text-muted">(balanceamento)</span>
-            <div>atrasado ou vence hoje/amanhã ×1</div>${r.faixas_prazo.slice(1).map((f, i) => `<div>vence em ${r.faixas_prazo[i].ate + 1}${f.ate ? `–${f.ate}` : '+'} dias ×${n1(f.fator)}</div>`).join('')}
-            <div>sem data ×${n1(r.fator_sem_prazo)}</div></div>
+          <div><b>1. Urgência</b><small>quanto o problema atrapalha</small>
+            ${[1, 2, 3, 4].map((p) => `<div class="ur-linha"><span><i class="ur-dot ${TOM[p]}"></i>${URG[p]}</span><b>×${n1(r.peso_urgencia[p])}</b></div>`).join('')}</div>
+          <div><b>2. Atraso</b><small>sobe 1 a cada dia depois do prazo</small>
+            <div class="ur-linha"><span>no prazo</span><b>×1</b></div>
+            <div class="ur-linha"><span>1 dia atrasado</span><b>×2</b></div>
+            <div class="ur-linha"><span>3 dias atrasado</span><b>×4</b></div>
+            <div class="ur-linha"><span>${r.atraso_max} dias ou mais</span><b>×${r.atraso_max + 1}</b></div></div>
+          <div><b>3. Prazo</b><small>o que é para depois pesa menos</small>
+            <div class="ur-linha"><span>atrasado, hoje ou amanhã</span><b>×1</b></div>
+            ${faixas.map(([txt, f]) => `<div class="ur-linha"><span>${txt}</span><b>×${n1(f)}</b></div>`).join('')}
+            <div class="ur-linha"><span>sem data</span><b>×${n1(r.fator_sem_prazo)}</b></div></div>
         </div>
-        <p class="text-muted mb-0">Prazo usado: o "Precisa até" do chamado; se não tiver, o prazo (SLA). Chamados para daqui a alguns dias pesam menos,
-          para a rota priorizar o que é para agora.</p>
+        <div class="ur-exemplos"><b>Exemplos</b>
+          <div><span>Requisição atrasada 1 dia</span><code>1 × 1 × 2 × 1</code><b>= 2</b></div>
+          <div><span>Operação parada que vence hoje</span><code>1 × 3 × 1 × 1</code><b>= 3</b></div>
+          <div><span>Operação prejudicada atrasada 3 dias</span><code>1 × 1,5 × 4 × 1</code><b>= 6</b></div>
+          <div><span>Operação parada para daqui a 10 dias</span><code>1 × 3 × 1 × 0,25</code><b>= 0,75</b></div>
+        </div>
+        <div class="ur-escala"><span>Cor do score:</span><i style="background:linear-gradient(90deg, ${cor(0, 1)}, ${cor(0.5, 1)}, ${cor(1, 1)})"></i>
+          <small>verde = pouco urgente · vermelho = local com ${ALVO_LOCAL} pontos ou mais (chamado com ${ALVO_CHAMADO} ou mais)</small></div>
+        <p class="text-muted mb-0 small">Prazo usado: o "Precisa até" do chamado; se não tiver, o prazo (SLA).</p>
       </div>
     </details>`;
+  };
 
   const linhaChamado = (c) => `
     <a class="ur-ch ${TOM[c.priority] || 'u-req'}" href="#/tickets/${c.id}">
       <span class="ur-ch-num">${esc(c.number)}</span>
       <span class="ur-ch-tx"><b>${esc(c.title)}</b><small>${esc(c.impact_name || URG[c.priority] || '')}${c.category_name ? ` · ${esc(c.category_name)}` : ''} · ${c.assigned_name ? esc(c.assigned_name) : 'sem técnico'}</small></span>
       <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
-      <span class="ur-ch-score" title="${conta(c)}"><b>${n1(c.score)}</b><small>${conta(c)}</small></span>
+      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo"><b style="color:${cor(c.score, ALVO_CHAMADO)}">${n1(c.score)}</b><small>${conta(c)}</small></span>
     </a>`;
 
   // ---------------- Score de urgência ----------------
@@ -57,11 +80,12 @@ const Urgencia = (() => {
         <div class="dp-bloco-cab"><span><i class="bi bi-sort-down"></i> Locais por urgência</span>
           <a class="btn btn-sm btn-primary" href="#/rotas"><i class="bi bi-signpost-split"></i> Sugerir rota</a></div>
         ${d.locais.length ? d.locais.map((l, i) => `
-          <details class="ur-loc">
+          <details class="ur-loc" style="--cor:${cor(l.score, ALVO_LOCAL)}">
             <summary>
+              <i class="bi bi-chevron-right ur-seta"></i>
               <span class="ur-pos">${i + 1}º</span>
               <span class="ur-loc-tx"><b>${esc(l.location_name)}</b><small>${esc(l.entity_name)}${l.city ? ` · ${esc(l.city)}` : ''}${l.latitude === null ? ' · <span class="text-warning-emphasis">sem coordenadas</span>' : ''}</small></span>
-              <span class="ur-barra"><i style="--w:${Math.round((l.score / max) * 100)}%"></i></span>
+              <span class="ur-barra" title="quanto maior e mais vermelha, mais urgente"><i style="--w:${Math.max(4, Math.round((l.score / max) * 100))}%"></i></span>
               <span class="ur-loc-n">${l.chamados.length} chamado(s)${l.atrasados ? ` · <b class="text-danger">${l.atrasados} atrasado(s)</b>` : ''}</span>
               <span class="ur-loc-score"><b>${n1(l.score)}</b><small>score</small></span>
             </summary>

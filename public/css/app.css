@@ -1678,3 +1678,35 @@ a.dp-ind:hover { background: var(--surface-2); }
 .dp-bloco-cab .er-ajuda-tx { right: auto; left: -8px; }
 .er-ajuda:hover .er-ajuda-tx, .er-ajuda:focus .er-ajuda-tx { display: block; }
 .er-kpi small { padding-right: 20px; }
+
+/* ---------- Score de urgência: sanfona clara, explicação e cores verde -> vermelho ---------- */
+.ur-regras > summary { display: flex; align-items: center; gap: 8px; user-select: none; }
+.ur-regras > summary:hover { background: rgba(127,127,127,.06); border-radius: 10px; }
+.ur-regras-dica { color: var(--muted); font-weight: 400; margin-left: auto; font-size: .76rem; }
+.ur-regras[open] .ur-regras-dica { display: none; }
+.ur-regras[open] > summary .ur-regras-dica + .ur-seta, .ur-regras > summary .ur-seta { transition: transform .2s; }
+.ur-regras[open] > summary .ur-seta { transform: rotate(180deg); margin-left: auto; }
+.ur-regras[open] > summary { border-bottom: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+.ur-regras-corpo { padding-top: 12px; }
+.ur-regras-base { margin-bottom: 8px; }
+.ur-formula { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 12px; font-weight: 700; color: var(--muted); }
+.ur-formula span { background: var(--primary-soft); color: var(--primary); border-radius: 6px; padding: 2px 8px; }
+.ur-formula b { color: var(--ink); }
+.ur-regras-grade > div > b { display: block; }
+.ur-regras-grade > div > small { display: block; color: var(--muted); margin-bottom: 4px; }
+.ur-linha { display: flex; justify-content: space-between; gap: 8px; border-top: 1px dashed rgba(127,127,127,.2); padding: 2px 0; }
+.ur-linha b { white-space: nowrap; }
+.ur-exemplos { background: rgba(127,127,127,.06); border-radius: 8px; padding: 8px 10px; margin: 10px 0; }
+.ur-exemplos > div { display: grid; grid-template-columns: 1fr auto 60px; gap: 10px; align-items: center; padding: 2px 0; }
+.ur-exemplos code { color: var(--muted); background: none; }
+.ur-exemplos > div > b { text-align: right; }
+.ur-escala { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.ur-escala i { display: inline-block; width: 140px; height: 8px; border-radius: 4px; }
+.ur-escala small { color: var(--muted); }
+/* cada local: cor do score (verde -> vermelho) na barra, no número e na borda */
+.ur-loc { border-left: 4px solid var(--cor, transparent); }
+.ur-loc .ur-barra i { background: var(--cor, var(--c-red)); }
+.ur-loc .ur-loc-score b { color: var(--cor, inherit); }
+.ur-loc > summary .ur-seta { color: var(--muted); transition: transform .2s; flex: none; }
+.ur-loc[open] > summary .ur-seta { transform: rotate(90deg); }
+@media (max-width: 575px) { .ur-exemplos > div { grid-template-columns: 1fr auto; } .ur-exemplos code { display: none; } }
