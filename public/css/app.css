@@ -1791,3 +1791,14 @@ a.dp-ind:hover { background: var(--surface-2); }
 .ur-em-chamas, .ur-em-chamas.regua { --fw: 1.7em; --fh: 2.55em; min-width: 1.9em; padding-top: 1.05em; }
 .ur-em-chamas.mini { --fw: 1.4em; --fh: 2.1em; }
 .ur-loc-score .ur-em-chamas, .ur-ch-score .ur-em-chamas { margin-top: -.5em; }
+
+/* operação parada abaixo de 18: foguinho menor atrás do número (que mantém a cor do score) */
+.ur-em-chamas.pequeno { --fw: 1.25em; --fh: 1.9em; min-width: 1.6em; padding-top: .7em; }
+.ur-em-chamas.pequeno .ur-fogo { opacity: .9; animation-duration: 1s; }
+.ur-em-chamas > b.ur-num-parada { position: relative; z-index: 1; font-weight: 900; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; }
+[data-bs-theme="dark"] .ur-em-chamas > b.ur-num-parada { text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000; }
+/* foguinho menor: ao lado do número (o número fica legível) */
+.ur-em-chamas.pequeno { --fw: .85em; --fh: 1.28em; flex-direction: row; align-items: flex-end; gap: 3px; padding-top: 0; min-width: 0; margin-top: 0 !important; }
+.ur-em-chamas.pequeno .ur-fogo { position: static; margin: 0 0 .05em; flex: none; }
+.ur-em-chamas.pequeno > b.ur-num-parada { text-shadow: none; }
+.ur-em-chamas.pequeno > b.ur-num-parada { color: var(--c) !important; }

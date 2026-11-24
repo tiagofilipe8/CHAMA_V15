@@ -81,7 +81,12 @@ const Urgencia = (() => {
   const faixaEmoji = (score) => FAIXAS_EMOJI.find(([ate]) => Number(score) < ate);
   // tamanho do número: cresce com o score até 18 (depois disso fica do tamanho do 18)
   const tamanho = (score, base) => `${(base + 0.45 * Math.min(Math.max(Number(score), 0), FOGO) / FOGO).toFixed(2)}rem`;
-  const numScore = (score, alvo, cls = '', base = 1.05) => {
+  // operação parada é perigoso: ganha um foguinho menor mesmo com score abaixo de 18
+  const temParada = (lista) => (lista || []).some((c) => Number(c.priority) === 4);
+  const numScore = (score, alvo, cls = '', base = 1.05, parada = false) => {
+    if (Number(score) < FOGO && parada) {
+      return `<span class="ur-em-chamas pequeno ${cls}" title="Score ${n1(score)}: tem chamado de operação parada" style="font-size:${tamanho(score, base)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-parada" style="--c:${cor(score, alvo)}">${n1(score)}</b></span>`;
+    }
     if (Number(score) >= FOGO) {
       return `<span class="ur-em-chamas ${cls}" title="Score ${n1(score)}: pegando fogo" style="font-size:${tamanho(score, base)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-fogo">${n1(score)}</b></span>`;
     }
@@ -128,7 +133,8 @@ const Urgencia = (() => {
         </div>
         <div class="ur-escala"><span>Cor do score:</span>
           <span class="ur-regua">${[0, 3, 6, 9, 12, 15].map((n) => `<span class="ur-regua-it" title="${faixaEmoji(n)[2]}"><i>${faixaEmoji(n)[1]}</i><b style="color:${cor(n, ALVO_LOCAL)};font-size:${tamanho(n, 0.85)}">${n}</b></span>`).join('')}<span class="ur-em-chamas regua" title="pegando fogo" style="font-size:${tamanho(FOGO, 0.85)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-fogo">${FOGO}</b></span></span>
-          <small>o número vai do verde ao vermelho conforme o score sobe; a partir de ${FOGO} ele pega fogo</small></div>
+          <small>o número vai do verde ao vermelho conforme o score sobe; a partir de ${FOGO} ele pega fogo.
+            Local ou chamado com <b>operação parada</b> ganha um foguinho menor mesmo abaixo de ${FOGO}, porque é perigoso.</small></div>
         <p class="text-muted mb-0 small">Prazo usado: o "Precisa até" do chamado; se não tiver, o prazo (SLA).</p>
       </div>
     </details>`;
@@ -139,7 +145,7 @@ const Urgencia = (() => {
       <span class="ur-ch-num">${esc(c.number)}</span>
       <span class="ur-ch-tx"><b>${esc(c.title)}</b><small>${esc(c.impact_name || URG[c.priority] || '')}${c.category_name ? ` · ${esc(c.category_name)}` : ''} · ${c.assigned_name ? esc(c.assigned_name) : 'sem técnico'}</small></span>
       <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
-      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO, '', 0.9)}<small>${conta(c)}</small></span>
+      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO, '', 0.9, Number(c.priority) === 4)}<small>${conta(c)}</small></span>
     </a>`;
 
   // ---------------- Score de urgência ----------------
@@ -162,7 +168,7 @@ const Urgencia = (() => {
               <span class="ur-loc-tx"><b>${esc(l.location_name)}</b><small>${esc(l.entity_name)}${l.city ? ` · ${esc(l.city)}` : ''}${l.latitude === null ? ' · <span class="text-warning-emphasis">sem coordenadas</span>' : ''}</small></span>
               <span class="ur-barra" title="quanto maior e mais vermelha, mais urgente"><i style="--w:${Math.max(4, Math.round((l.score / max) * 100))}%"></i></span>
               <span class="ur-loc-n">${l.chamados.length} chamado(s)${l.atrasados ? ` · <b class="text-danger">${l.atrasados} atrasado(s)</b>` : ''}</span>
-              <span class="ur-loc-score">${numScore(l.score, ALVO_LOCAL)}<small>score</small></span>
+              <span class="ur-loc-score">${numScore(l.score, ALVO_LOCAL, '', 1.05, temParada(l.chamados))}<small>score</small></span>
             </summary>
             <div class="ur-chs">${l.chamados.map(linhaChamado).join('')}</div>
           </details>`).join('') : '<div class="dp-vazio"><i class="bi bi-check2-circle text-success"></i> Nenhum chamado em aberto.</div>'}
@@ -247,7 +253,7 @@ const Urgencia = (() => {
           <input type="checkbox" data-loc="${l.location_id}" ${escolhidos.has(String(l.location_id)) ? 'checked' : ''}>
           <span class="ur-pos">${i + 1}º</span>
           <span class="ur-loc-tx"><b>${esc(l.location_name)}</b><small>${l.chamados.length} chamado(s)${l.atrasados ? ` · ${l.atrasados} atrasado(s)` : ''}${l.city ? ` · ${esc(l.city)}` : ''}</small></span>
-          <span class="ur-loc-score">${numScore(l.score, ALVO_LOCAL)}</span>
+          <span class="ur-loc-score">${numScore(l.score, ALVO_LOCAL, '', 1.05, temParada(l.chamados))}</span>
         </label>`).join('') : '<div class="dp-vazio">Nenhum local com chamados em aberto e coordenadas.</div>';
       el.querySelectorAll('#rt-cands [data-loc]').forEach((c) => c.addEventListener('change', () => {
         if (c.checked) escolhidos.add(c.dataset.loc); else escolhidos.delete(c.dataset.loc);
@@ -288,7 +294,7 @@ const Urgencia = (() => {
           ${ordem.map((p, i) => `
             <li class="ur-parada">
               <div class="ur-parada-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b>
-                <span class="ur-loc-score">${numScore(p.score, ALVO_LOCAL)}<small>score</small></span></div>
+                <span class="ur-loc-score">${numScore(p.score, ALVO_LOCAL, '', 1.05, temParada(p.chamados))}<small>score</small></span></div>
               <div class="ur-parada-sub">${esc([p.address, p.city].filter(Boolean).join(' · '))}${trechos[i] ? ` · ~${n1(Math.round(trechos[i]))} km do ponto anterior` : ''}</div>
               <div class="ur-chs">${p.chamados.map(linhaChamado).join('')}</div>
             </li>`).join('')}
