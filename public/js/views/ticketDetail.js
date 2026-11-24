@@ -231,7 +231,7 @@ Views.ticketDetail = function ticketDetail(id) {
             <input type="file" id="td-photo-input" accept="image/*" capture="environment" hidden>
           </div>
 
-          <div class="card panel-card">
+          <div class="card panel-card conversa-card">
             <div class="card-header"><i class="bi bi-chat-dots me-1"></i> Conversa</div>
             <div class="card-body">
               <ul class="timeline mb-0">${timeline}</ul>

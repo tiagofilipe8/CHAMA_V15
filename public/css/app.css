@@ -1730,3 +1730,19 @@ a.dp-ind:hover { background: var(--surface-2); }
 .ur-base-num { flex: none; width: 58px; height: 58px; border-radius: 12px; background: var(--primary); color: #fff; font-size: 1.8rem; font-weight: 800; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
 .ur-base-num small { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .ur-base > div:last-child > div { color: var(--ink); }
+
+/* ---------- Conversa do chamado: mais compacta, letra menor ---------- */
+.conversa-card .card-body { padding: 10px 12px; }
+.conversa-card .timeline-item { gap: 8px; padding-bottom: 8px; }
+.conversa-card .timeline-item::before { left: 12px; top: 28px; width: 1px; }
+.conversa-card .tl-badge { width: 26px; height: 26px; font-size: .75rem; }
+.conversa-card .tl-head { gap: 4px; font-size: .78rem; line-height: 1.3; }
+.conversa-card .tl-head .badge { font-size: .62rem; padding: 2px 5px; }
+.conversa-card .tl-head .small { font-size: .7rem; }
+.conversa-card .tl-content { font-size: .8rem; line-height: 1.4; padding: 5px 9px; margin-top: 3px; border-radius: 8px; }
+.conversa-card .timeline-item.system { padding-bottom: 4px; }
+.conversa-card .timeline-item.system .tl-content { padding: 3px 0; font-size: .74rem; }
+.conversa-card .timeline-item.tl-internal .tl-body { padding: 4px 8px; }
+.conversa-card #msg-content { font-size: .84rem; padding: 5px 10px; }
+.conversa-card #btn-send-msg { font-size: .82rem; padding: 4px 12px; }
+.conversa-card .d-flex.mt-3 { margin-top: 10px !important; }
