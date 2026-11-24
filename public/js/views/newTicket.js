@@ -73,7 +73,7 @@ Views.newTicket = async function newTicket(el) {
                      <i class="bi bi-camera me-1"></i> Tirar foto
                    </button>
                  </div>
-                 <div class="form-text">PDF ou fotos, até 15 MB cada.</div>
+                 <div class="form-text">Fotos, PDF, Word ou Excel, até 15 MB cada.</div>
                  <input type="file" id="nt-files" multiple hidden accept="${ANEXO_ACCEPT}">
                  <input type="file" id="nt-photo" accept="image/*" capture="environment" hidden>
                  <ul class="list-group list-group-flush mt-2" id="nt-file-list" style="display:none"></ul>`)}

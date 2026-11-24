@@ -70,7 +70,7 @@ const attStorage = multer.diskStorage({
 const attUpload = multer({
   storage: attStorage,
   limits: { fileSize: 15 * 1024 * 1024, files: 10 },
-  // so PDF e fotos (ver server/uploadRules.js)
+  // so fotos, PDF, Word e Excel sem macro (ver server/uploadRules.js)
   fileFilter: regrasArquivo.fileFilter,
 
 });
@@ -1221,7 +1221,7 @@ router.post('/:id/attachments', async (req, res, next) => {
         const { rows } = await query(
           `INSERT INTO ticket_attachments (ticket_id, file_name, storage_path, mime_type, file_size, uploaded_by)
            VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [ticket.id, f.originalname, storagePath, f.mimetype, f.size, req.user.id]);
+          [ticket.id, f.originalname, storagePath, regrasArquivo.tipoCanonico(f.originalname), f.size, req.user.id]);
         inserted.push(rows[0]);
       }
       await query(
@@ -1250,7 +1250,7 @@ router.get('/:id/attachments/:attId/file', async (req, res, next) => {
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado no servidor.' });
     const inline = req.query.inline === '1' && /^image\/(png|jpeg|webp|gif)$/.test(rows[0].mime_type || '');
     // arquivo antigo de tipo nao permitido: so baixa, nunca abre no navegador
-    const tipoSeguro = /^(image\/(png|jpeg|webp|gif|heic|heif)|application\/pdf)$/.test(rows[0].mime_type || '');
+    const tipoSeguro = /^(image\/(png|jpeg|webp|gif|heic|heif)|application\/pdf|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet))$/.test(rows[0].mime_type || '');
     res.type(tipoSeguro ? rows[0].mime_type : 'application/octet-stream');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");

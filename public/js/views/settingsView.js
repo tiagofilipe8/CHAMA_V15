@@ -1264,7 +1264,11 @@ Views.adminSettings = async function adminSettings(el) {
               <code>pg_dump</code>. Os arquivos ficam armazenados na pasta <code>backups/</code> do servidor.</p>
             <div class="d-flex gap-2 mb-3">
               <button class="btn btn-primary btn-sm" id="btn-backup-now"><i class="bi bi-download"></i> Gerar backup agora</button>
+              <button class="btn btn-outline-danger btn-sm" id="btn-backup-import"><i class="bi bi-database-up"></i> Importar banco (.sql)</button>
+              <input type="file" id="in-backup-import" accept=".sql" hidden>
             </div>
+            <p class="small text-muted mb-3"><b>Importar</b> troca <b>todo</b> o banco pelo do arquivo (chamados, usuários, empresas e configurações).
+              Antes, o sistema guarda um backup do banco atual aqui na lista. Se algo der errado no meio, nada é alterado.</p>
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="s-backup-auto" ${s['backup.auto_enabled'] ? 'checked' : ''}>
               <label class="form-check-label">Backup automático diário</label>
@@ -1412,6 +1416,7 @@ Views.adminSettings = async function adminSettings(el) {
             <td class="small text-muted">${esc(fmt.bytes(b.size))}</td>
             <td class="text-end">
               <button class="btn btn-sm btn-outline-primary bk-dl" data-name="${esc(b.name)}" title="Baixar"><i class="bi bi-box-arrow-down"></i></button>
+              <button class="btn btn-sm btn-outline-warning bk-restore" data-name="${esc(b.name)}" title="Voltar o banco para este backup"><i class="bi bi-arrow-counterclockwise"></i></button>
               <button class="btn btn-sm btn-outline-danger bk-del" data-name="${esc(b.name)}" title="Excluir"><i class="bi bi-trash"></i></button>
             </td>
           </tr>`).join('')}
@@ -1420,6 +1425,78 @@ Views.adminSettings = async function adminSettings(el) {
       : emptyState('Nenhum backup ainda', 'Clique em "Gerar backup agora" para criar o primeiro.', 'bi-database-down');
     backupListEl.querySelectorAll('.bk-dl').forEach((b) => b.addEventListener('click', () => downloadBackup(b.dataset.name)));
     backupListEl.querySelectorAll('.bk-del').forEach((b) => b.addEventListener('click', () => removeBackup(b.dataset.name)));
+    backupListEl.querySelectorAll('.bk-restore').forEach((b) => b.addEventListener('click', () => importarBanco({ nome: b.dataset.name })));
+  };
+
+  // Importar / restaurar: pede para digitar IMPORTAR, mostra o andamento e, no fim, pede para entrar de novo
+  async function importarBanco({ arquivo, nome }) {
+    const qual = arquivo ? `o arquivo <code>${esc(arquivo.name)}</code> (${esc(fmt.bytes(arquivo.size))})` : `o backup <code>${esc(nome)}</code>`;
+    const confirmacao = await new Promise((resolve) => {
+      const m = document.createElement('div');
+      m.className = 'modal fade';
+      m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle"></i> Trocar todo o banco de dados</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body small">
+          <p>O banco atual será <b>substituído</b> por ${qual}. Tudo o que foi feito depois desse backup some
+            (chamados, mensagens, usuários, configurações).</p>
+          <p>Antes de trocar, o sistema guarda uma cópia do banco atual na lista de backups, para você poder voltar.</p>
+          <p class="mb-1">Os anexos (arquivos) ficam na pasta <code>uploads</code> e não vêm no backup.</p>
+          <label class="form-label mt-2 mb-1">Para confirmar, digite <b>IMPORTAR</b>:</label>
+          <input class="form-control" id="imp-conf" autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-danger btn-sm" id="imp-ok" disabled><i class="bi bi-database-up"></i> Trocar o banco</button>
+        </div></div></div>`;
+      document.body.appendChild(m);
+      const modal = new bootstrap.Modal(m);
+      let valor = null;
+      const inp = m.querySelector('#imp-conf'); const ok = m.querySelector('#imp-ok');
+      inp.addEventListener('input', () => { ok.disabled = inp.value.trim().toUpperCase() !== 'IMPORTAR'; });
+      ok.addEventListener('click', () => { valor = inp.value.trim(); modal.hide(); });
+      m.addEventListener('shown.bs.modal', () => inp.focus());
+      m.addEventListener('hidden.bs.modal', () => { m.remove(); resolve(valor); });
+      modal.show();
+    });
+    if (!confirmacao) return;
+    const aviso = document.createElement('div');
+    aviso.className = 'imp-andamento';
+    aviso.innerHTML = '<div class="imp-caixa"><div class="spinner-border text-primary"></div><b>Importando o banco de dados...</b><small>Não feche esta página. Pode levar alguns minutos.</small></div>';
+    document.body.appendChild(aviso);
+    try {
+      let r;
+      if (arquivo) {
+        const fd = new FormData();
+        fd.append('confirmacao', confirmacao);
+        fd.append('file', arquivo);
+        r = await API.request('POST', '/backup/import', fd, true);
+      } else {
+        r = await API.post('/backup/restore/' + encodeURIComponent(nome), { confirmacao });
+      }
+      aviso.remove();
+      await confirmDialog({
+        title: 'Banco importado',
+        body: `<p>O banco foi trocado. A cópia do banco anterior ficou guardada como <code>${esc(r.seguranca)}</code>.</p>
+          ${r.aviso ? `<p class="text-danger">${esc(r.aviso)}</p>` : ''}
+          <p class="mb-0">Agora entre de novo com um usuário do banco importado.</p>`,
+        confirmText: 'Entrar de novo',
+      });
+      API.logout();
+      window.location.href = '/';
+    } catch (e) {
+      aviso.remove();
+      showError(e);
+      loadBackups();
+    }
+  }
+  document.getElementById('btn-backup-import').onclick = () => document.getElementById('in-backup-import').click();
+  document.getElementById('in-backup-import').onchange = (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    if (!/\.sql$/i.test(f.name)) { toast('Escolha o arquivo .sql do backup.', 'warning'); return; }
+    importarBanco({ arquivo: f });
   };
 
   async function loadBackups() {

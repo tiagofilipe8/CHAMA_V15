@@ -65,11 +65,11 @@ const STATUS_BADGE = { 1: 'new', 2: 'assigned', 3: 'progress', 4: 'pending', 5: 
 const Views = {};
 const PRIO_BADGE = { 1: 'prio-low', 2: 'prio-med', 3: 'prio-high', 4: 'prio-urgent' };
 
-// Anexos: so PDF e fotos (o servidor confere de novo)
-const ANEXO_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif';
-const ANEXO_MSG = 'Só é possível anexar PDF ou fotos (PNG, JPG, JPEG, WEBP, GIF ou HEIC).';
+// Anexos: fotos, PDF, Word e Excel sem macro (o servidor confere de novo)
+const ANEXO_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.docx,.xlsx';
+const ANEXO_MSG = 'Só é possível anexar fotos, PDF, Word (.docx) ou Excel (.xlsx). Word e Excel com macro (.docm, .xlsm) ou antigos (.doc, .xls) não entram.';
 function anexoPermitido(f) {
-  return /\.(pdf|png|jpe?g|webp|gif|heic|heif)$/i.test(f?.name || '');
+  return /\.(pdf|png|jpe?g|webp|gif|heic|heif|docx|xlsx)$/i.test(f?.name || '');
 }
 // Separa os arquivos aceitos; avisa sobre os recusados
 function filtrarAnexos(files) {

@@ -1499,3 +1499,8 @@ a.dp-ind:hover { background: var(--surface-2); }
   body.imprimindo-rota .ur-rota-grade { display: block; }
   body.imprimindo-rota .ur-ch { break-inside: avoid; }
 }
+
+/* ---------- Importar banco: aviso de andamento ---------- */
+.imp-andamento { position: fixed; inset: 0; z-index: 3000; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; }
+.imp-caixa { background: var(--bs-body-bg, #fff); border-radius: 12px; padding: 22px 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.imp-caixa small { color: var(--muted); }
