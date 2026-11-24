@@ -1760,3 +1760,34 @@ a.dp-ind:hover { background: var(--surface-2); }
 .ur-regua-it i { font-style: normal; font-size: .9rem; line-height: 1; }
 .ur-regua { align-items: flex-end; }
 .ur-escala .ur-regua-it i { width: auto; height: auto; border-radius: 0; display: inline; }
+
+/* ---------- Fogo v2: 8 quadros 12x18, número com letra em chamas ---------- */
+.ur-em-chamas { --fw: 30px; --fh: 45px; position: relative; display: inline-flex; align-items: flex-end; justify-content: center;
+  min-width: calc(var(--fw) + 4px); padding-top: calc(var(--fh) * .45); line-height: 1; }
+.ur-em-chamas.regua { --fw: 22px; --fh: 33px; min-width: 26px; padding-top: 14px; }
+.ur-em-chamas.mini { --fw: 16px; --fh: 24px; }
+.ur-fogo { width: var(--fw); height: var(--fh); margin-left: calc(var(--fw) / -2); bottom: -.1em;
+  background-size: calc(var(--fw) * 8) var(--fh); image-rendering: pixelated;
+  animation: ur-fogo-8 .8s steps(8) infinite; transform-origin: 50% 100%; }
+.ur-em-chamas.mini .ur-fogo, .ur-em-chamas.regua .ur-fogo { background-size: calc(var(--fw) * 8) var(--fh); animation: ur-fogo-8 .8s steps(8) infinite; }
+@keyframes ur-fogo-8 { from { background-position: 0 0; } to { background-position: calc(var(--fw) * -8) 0; } }
+/* letra em chamas: degradê de fogo, contorno escuro e brilho que pulsa */
+.ur-em-chamas > b.ur-num-fogo, .ur-em-chamas.mini > b.ur-num-fogo, .ur-em-chamas.regua > b.ur-num-fogo {
+  font-size: 1em; font-weight: 900; letter-spacing: .01em; color: transparent !important; text-shadow: none;
+  background: linear-gradient(0deg, #b3170b 0%, #f0450f 30%, #ff9a1a 58%, #ffe066 82%, #fff7c2 100%);
+  background-size: 100% 220%; -webkit-background-clip: text; background-clip: text;
+  -webkit-text-stroke: .6px #3d0700;
+  filter: drop-shadow(0 0 2px rgba(255, 110, 0, .9)) drop-shadow(0 -1px 4px rgba(255, 190, 40, .6));
+  animation: ur-letra-fogo 1.2s ease-in-out infinite alternate; }
+@keyframes ur-letra-fogo {
+  0% { background-position: 50% 100%; filter: drop-shadow(0 0 2px rgba(255,110,0,.9)) drop-shadow(0 -1px 3px rgba(255,190,40,.5)); }
+  50% { background-position: 50% 60%; filter: drop-shadow(0 0 3px rgba(255,80,0,1)) drop-shadow(0 -2px 6px rgba(255,200,60,.75)); }
+  100% { background-position: 50% 20%; filter: drop-shadow(0 0 2px rgba(255,130,0,.85)) drop-shadow(0 -1px 4px rgba(255,170,30,.6)); }
+}
+.ur-loc-score .ur-em-chamas, .ur-ch-score .ur-em-chamas { margin-top: -6px; }
+@media (prefers-reduced-motion: reduce) { .ur-fogo, .ur-num-fogo { animation: none !important; } }
+.ur-em-chamas > b.ur-num-fogo { -webkit-text-stroke: 1.1px #2b0500; paint-order: stroke fill; }
+/* o fogo acompanha o tamanho do número */
+.ur-em-chamas, .ur-em-chamas.regua { --fw: 1.7em; --fh: 2.55em; min-width: 1.9em; padding-top: 1.05em; }
+.ur-em-chamas.mini { --fw: 1.4em; --fh: 2.1em; }
+.ur-loc-score .ur-em-chamas, .ur-ch-score .ur-em-chamas { margin-top: -.5em; }

@@ -28,34 +28,67 @@ const Urgencia = (() => {
   // o número vai do verde (0) ao vermelho (18); de 18 para cima ele pega fogo
   const ALVO_LOCAL = 18; const ALVO_CHAMADO = 18;
 
-  // Score 18 ou mais: foguinho em pixel art atrás do número (2 quadros, piscando)
+  // Score 18 ou mais: fogo em pixel art atrás do número.
+  //   8 quadros de 12x18 pixels, gerados aqui: a chama balança, as línguas sobem e somem,
+  //   o miolo é quase branco e as bordas vão do amarelo ao vermelho escuro; algumas faíscas sobem.
   const FOGO = 18;
-  const QUADROS_FOGO = [
-    ['...Y....', '...YY...', '..YOY...', '..YOOY.Y', '.YOOROY.', '.YORROY.', 'YORRDROY', 'YORDDROY', '.YORROY.', '..YOOY..'],
-    ['....Y...', '...YY...', 'Y..YOY..', '.YYOOY..', '.YOROOY.', 'YOORROY.', 'YORRDROY', 'YORDDROY', '.YORROY.', '..YOOY..'],
-  ];
-  const CORES_FOGO = { Y: '#ffd23f', O: '#ff8c1a', R: '#e63b1f', D: '#a3201a' };
+  const FOGO_L = 12; const FOGO_A = 18; const FOGO_Q = 8;
+  const PALETA_FOGO = ['#5c0f08', '#9e1c10', '#d9360f', '#f46b0d', '#ffa21a', '#ffd23f', '#fff3a8'];
   (function estiloFogo() {
     if (document.getElementById('estilo-fogo')) return;
-    // os dois quadros lado a lado num SVG (cada pixel um quadradinho, sem suavizar)
-    const rects = QUADROS_FOGO.flatMap((q, f) => q.flatMap((linha, y) => [...linha].map((c, x) => (CORES_FOGO[c]
-      ? `<rect x='${x + f * 8}' y='${y}' width='1' height='1' fill='${CORES_FOGO[c]}'/>` : '')))).join('');
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='16' height='10' shape-rendering='crispEdges'>${rects}</svg>`;
+    // números "aleatórios" fixos (o desenho sai sempre igual)
+    let semente = 7;
+    const rnd = () => { semente = (semente * 16807) % 2147483647; return semente / 2147483647; };
+    const pix = [];
+    for (let f = 0; f < FOGO_Q; f += 1) {
+      const fase = (f / FOGO_Q) * Math.PI * 2;
+      for (let y = 0; y < FOGO_A; y += 1) {
+        const v = y / (FOGO_A - 1);              // 0 = topo, 1 = base
+        const subida = 1 - v;
+        // centro balança mais em cima do que embaixo
+        const cx = FOGO_L / 2 + Math.sin(fase + y * 0.55) * 1.5 * subida ** 1.3 + Math.sin(fase * 2 + y) * 0.35 * subida;
+        // largura: base larga e arredondada, afinando até a ponta; respira um pouco a cada quadro
+        const forma = v < 0.86 ? Math.sin((v / 0.86) * Math.PI / 2) ** 1.15 : 1 - ((v - 0.86) / 0.14) ** 2 * 0.35;
+        const meia = (0.35 + 5.3 * forma) * (1 + 0.1 * Math.sin(fase * 1.5 + y * 0.9));
+        for (let x = 0; x < FOGO_L; x += 1) {
+          const dx = Math.abs(x + 0.5 - cx) / meia;
+          let calor = (1 - dx) * 0.75 + v * 0.55 - 0.18 + (rnd() - 0.5) * 0.18;
+          if (dx >= 1) {
+            // línguas soltas na borda de cima
+            if (v < 0.55 && dx < 1.35 && rnd() < 0.14) calor = 0.12; else continue;
+          }
+          const nivel = Math.max(0, Math.min(PALETA_FOGO.length - 1, Math.floor(calor * PALETA_FOGO.length)));
+          if (calor <= 0.04) continue;
+          pix.push([x + f * FOGO_L, y, PALETA_FOGO[nivel]]);
+        }
+      }
+      // faíscas subindo
+      for (let k = 0; k < 3; k += 1) {
+        const y = Math.floor(((f / FOGO_Q) * FOGO_A * 0.6 + k * 4) % (FOGO_A * 0.45));
+        const x = Math.round(FOGO_L / 2 + Math.sin(fase + k * 2.1) * 3.5);
+        if (x >= 0 && x < FOGO_L) pix.push([x + f * FOGO_L, y, k === 1 ? '#ffd23f' : '#f46b0d']);
+      }
+    }
+    const rects = pix.map(([x, y, c]) => `<rect x='${x}' y='${y}' width='1' height='1' fill='${c}'/>`).join('');
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${FOGO_L * FOGO_Q}' height='${FOGO_A}' shape-rendering='crispEdges'>${rects}</svg>`;
     const st = document.createElement('style');
     st.id = 'estilo-fogo';
     st.textContent = `.ur-fogo{background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")}`;
     document.head.appendChild(st);
   }());
-  // abaixo de 18: um emoji para cada faixa (de 18 para cima é o foguinho em pixel art)
+  // abaixo de 18: um emoji para cada faixa (de 18 para cima é o fogo em pixel art)
   const FAIXAS_EMOJI = [[3, '😌', 'tranquilo'], [6, '🙂', 'baixo'], [9, '😐', 'atenção'], [12, '😟', 'preocupante'], [15, '😰', 'alto'], [FOGO, '😱', 'quase pegando fogo']];
   const faixaEmoji = (score) => FAIXAS_EMOJI.find(([ate]) => Number(score) < ate);
-  const numScore = (score, alvo, cls = '') => {
+  // tamanho do número: cresce com o score até 18 (depois disso fica do tamanho do 18)
+  const tamanho = (score, base) => `${(base + 0.45 * Math.min(Math.max(Number(score), 0), FOGO) / FOGO).toFixed(2)}rem`;
+  const numScore = (score, alvo, cls = '', base = 1.05) => {
     if (Number(score) >= FOGO) {
-      return `<span class="ur-em-chamas ${cls}" title="Score ${n1(score)}: pegando fogo"><span class="ur-fogo" aria-hidden="true"></span><b style="color:${cor(score, alvo)}">${n1(score)}</b></span>`;
+      return `<span class="ur-em-chamas ${cls}" title="Score ${n1(score)}: pegando fogo" style="font-size:${tamanho(score, base)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-fogo">${n1(score)}</b></span>`;
     }
     const [, emoji, nome] = faixaEmoji(score);
-    return `<span class="ur-num-emoji" title="Score ${n1(score)}: ${nome}"><span class="ur-emoji" aria-hidden="true">${emoji}</span><b style="color:${cor(score, alvo)}">${n1(score)}</b></span>`;
+    return `<span class="ur-num-emoji" title="Score ${n1(score)}: ${nome}"><span class="ur-emoji" aria-hidden="true">${emoji}</span><b style="color:${cor(score, alvo)};font-size:${tamanho(score, base)}">${n1(score)}</b></span>`;
   };
+
 
   // como o score é calculado (aparece nas duas páginas)
   const regrasHtml = (r) => {
@@ -94,7 +127,7 @@ const Urgencia = (() => {
           <div><span>Operação parada para daqui a 10 dias</span><code>1 × 3 × 1 × 0,25</code><b>= 0,75</b></div>
         </div>
         <div class="ur-escala"><span>Cor do score:</span>
-          <span class="ur-regua">${[0, 3, 6, 9, 12, 15].map((n) => `<span class="ur-regua-it" title="${faixaEmoji(n)[2]}"><i>${faixaEmoji(n)[1]}</i><b style="color:${cor(n, ALVO_LOCAL)}">${n}</b></span>`).join('')}<span class="ur-em-chamas regua" title="pegando fogo"><span class="ur-fogo" aria-hidden="true"></span><b>${FOGO}</b></span></span>
+          <span class="ur-regua">${[0, 3, 6, 9, 12, 15].map((n) => `<span class="ur-regua-it" title="${faixaEmoji(n)[2]}"><i>${faixaEmoji(n)[1]}</i><b style="color:${cor(n, ALVO_LOCAL)};font-size:${tamanho(n, 0.85)}">${n}</b></span>`).join('')}<span class="ur-em-chamas regua" title="pegando fogo" style="font-size:${tamanho(FOGO, 0.85)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-fogo">${FOGO}</b></span></span>
           <small>o número vai do verde ao vermelho conforme o score sobe; a partir de ${FOGO} ele pega fogo</small></div>
         <p class="text-muted mb-0 small">Prazo usado: o "Precisa até" do chamado; se não tiver, o prazo (SLA).</p>
       </div>
@@ -106,7 +139,7 @@ const Urgencia = (() => {
       <span class="ur-ch-num">${esc(c.number)}</span>
       <span class="ur-ch-tx"><b>${esc(c.title)}</b><small>${esc(c.impact_name || URG[c.priority] || '')}${c.category_name ? ` · ${esc(c.category_name)}` : ''} · ${c.assigned_name ? esc(c.assigned_name) : 'sem técnico'}</small></span>
       <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
-      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO)}<small>${conta(c)}</small></span>
+      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO, '', 0.9)}<small>${conta(c)}</small></span>
     </a>`;
 
   // ---------------- Score de urgência ----------------
