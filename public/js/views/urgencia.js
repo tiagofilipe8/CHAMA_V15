@@ -85,7 +85,7 @@ const Urgencia = (() => {
   const temParada = (lista) => (lista || []).some((c) => Number(c.priority) === 4);
   const numScore = (score, alvo, cls = '', base = 1.05, parada = false) => {
     if (Number(score) < FOGO && parada) {
-      return `<span class="ur-em-chamas pequeno ${cls}" title="Score ${n1(score)}: tem chamado de operação parada" style="font-size:${tamanho(score, base)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-parada" style="--c:${cor(score, alvo)}">${n1(score)}</b></span>`;
+      return `<span class="ur-em-chamas pequeno ${cls}" title="Score ${n1(score)}: tem chamado de operação parada" style="font-size:${tamanho(score, base)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-parada" style="--c:${cor(FOGO, alvo)}">${n1(score)}</b></span>`;
     }
     if (Number(score) >= FOGO) {
       return `<span class="ur-em-chamas ${cls}" title="Score ${n1(score)}: pegando fogo" style="font-size:${tamanho(score, base)}"><span class="ur-fogo" aria-hidden="true"></span><b class="ur-num-fogo">${n1(score)}</b></span>`;
