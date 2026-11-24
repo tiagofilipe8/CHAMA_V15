@@ -29,6 +29,7 @@ function buildNav(u) {
 
   const atendimento = [];
   if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
+  if (can('dashboard.view') && can('ticket.rating')) atendimento.push({ href: '#/causas', icon: 'bi-clipboard-data', label: 'Causas e notas' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
   if (!listaJaEMinha) atendimento.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
   if (client && can('ticket.view_company')) atendimento.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da equipe' });
@@ -72,6 +73,7 @@ function pageTitleFromPath() {
     '/team-tickets': 'Chamados da Equipe',
     '/mine': 'Meus chamados',
     '/atendimento': 'Meu atendimento',
+    '/causas': 'Causas e notas',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
@@ -101,6 +103,7 @@ function pageDescFromPath() {
   const map = {
     '/dashboard': 'Resumo do atendimento: chamados abertos, urgências e o que precisa ficar pronto em cada dia.',
     '/atendimento': 'O chamado que você está atendendo agora e a sua fila, do mais urgente para o menos urgente.',
+    '/causas': 'Por que abrem e por que fecham os chamados, e a nota de cada local e usuário com a TI.',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
@@ -238,6 +241,7 @@ const routes = [
   { re: /^#\/watching$/, view: () => () => { location.replace('#/mine'); } }, // observadores saíram do sistema
   { re: /^#\/mine$/, view: () => (el) => Views.tickets(el, { mine: true }) },
   { re: /^#\/atendimento$/, view: () => Views.atendimento },
+  { re: /^#\/causas$/, view: () => Views.causas },
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },

@@ -243,4 +243,87 @@ router.get('/noc', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// Causas e notas: por que abrem chamados (categorias), por que fecham (causa que o técnico
+// escolhe ao resolver) e o score de cada local e de cada usuário (estrelas de 0 a 5 que o
+// técnico dá ao encerrar). Só para quem pode ver a causa e a nota ("ticket.rating").
+//   ?dias=30|90|365 (padrão 90; 0 = tudo) · ?entity_id=
+// ---------------------------------------------------------------------
+router.get('/causas', async (req, res) => {
+  const user = req.user;
+  if (!canSeeDashboard(user) || !has(user, 'ticket.rating')) {
+    return res.status(403).json({ error: 'Seu perfil não vê as causas e as notas dos chamados.' });
+  }
+  const dias = [0, 30, 90, 365].includes(Number(req.query.dias)) ? Number(req.query.dias) : 90;
+  const scope = scopeConditions(user, 1);
+  const params = [...scope.params];
+  const conds = [];
+  if (scope.sql) conds.push(scope.sql);
+  if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) {
+    params.push(req.query.entity_id); conds.push(`t.entity_id = $${params.length}`);
+  }
+  const base = conds.length ? `AND ${conds.join(' AND ')}` : '';
+  // abertura: chamados abertos no período; fechamento e notas: resolvidos no período
+  const periodoAbertura = dias ? `AND t.created_at >= now() - interval '${dias} days'` : '';
+  const periodoFech = dias ? `AND COALESCE(t.resolved_at, t.closed_at, t.updated_at) >= now() - interval '${dias} days'` : '';
+
+  const [abertura, fechamento, locais, usuarios] = await Promise.all([
+    query(
+      `SELECT COALESCE(sc.name, c.name, 'Sem categoria') AS nome, COALESCE(sc.icon, c.icon) AS icon,
+              count(*)::int AS total, count(*) FILTER (WHERE t.status NOT IN (5,6,7))::int AS abertos
+       FROM tickets t
+       LEFT JOIN categories sc ON sc.id = t.simple_category_id
+       LEFT JOIN categories c ON c.id = t.category_id
+       WHERE t.status <> 7 ${periodoAbertura} ${base}
+       GROUP BY 1, 2 ORDER BY total DESC, nome`, params),
+    query(
+      `SELECT COALESCE(rc.name, 'Sem causa informada') AS nome, count(*)::int AS total
+       FROM tickets t LEFT JOIN resolution_causes rc ON rc.id = t.resolution_cause_id
+       WHERE t.status IN (5,6) ${periodoFech} ${base}
+       GROUP BY 1 ORDER BY (min(rc.name) IS NULL), total DESC, nome`, params),
+    // score por local: média das notas dos chamados daquele local + a causa que mais aparece
+    query(
+      `SELECT e.id AS entity_id, e.name AS entity_name, l.id AS location_id, COALESCE(l.name, 'Sem localização') AS location_name,
+              round(avg(t.requester_rating)::numeric, 2) AS media,
+              count(t.requester_rating)::int AS avaliados,
+              count(*)::int AS chamados,
+              (SELECT rc2.name FROM tickets t2 JOIN resolution_causes rc2 ON rc2.id = t2.resolution_cause_id
+                WHERE t2.entity_id = e.id AND t2.location_id IS NOT DISTINCT FROM l.id AND t2.status IN (5,6)
+                GROUP BY rc2.name ORDER BY count(*) DESC LIMIT 1) AS causa_principal
+       FROM tickets t
+       JOIN entities e ON e.id = t.entity_id
+       LEFT JOIN locations l ON l.id = t.location_id
+       WHERE t.status IN (5,6) ${periodoFech} ${base}
+       GROUP BY e.id, e.name, l.id, l.name
+       ORDER BY e.name, (count(t.requester_rating) = 0), avg(t.requester_rating) NULLS LAST, location_name`, params),
+    // score individual: média das notas dadas ao solicitante
+    query(
+      `SELECT u.id, u.name, t.entity_id, t.location_id,
+              round(avg(t.requester_rating)::numeric, 2) AS media, count(t.requester_rating)::int AS avaliados
+       FROM tickets t JOIN users u ON u.id = t.requester_id
+       WHERE t.status IN (5,6) AND t.requester_rating IS NOT NULL ${periodoFech} ${base}
+       GROUP BY u.id, u.name, t.entity_id, t.location_id
+       ORDER BY avg(t.requester_rating), u.name`, params),
+  ]);
+
+  // empresas: média geral (só chamados com nota)
+  const empresas = new Map();
+  locais.rows.forEach((l) => {
+    const e = empresas.get(l.entity_id) || { entity_id: l.entity_id, entity_name: l.entity_name, soma: 0, avaliados: 0, chamados: 0 };
+    e.soma += Number(l.media || 0) * l.avaliados; e.avaliados += l.avaliados; e.chamados += l.chamados;
+    empresas.set(l.entity_id, e);
+  });
+  res.json({
+    dias,
+    abertura: abertura.rows,
+    fechamento: fechamento.rows,
+    empresas: [...empresas.values()].map((e) => ({
+      entity_id: e.entity_id, entity_name: e.entity_name, avaliados: e.avaliados, chamados: e.chamados,
+      media: e.avaliados ? Math.round((e.soma / e.avaliados) * 100) / 100 : null,
+    })),
+    locais: locais.rows.map((l) => ({ ...l, media: l.media === null ? null : Number(l.media) })),
+    usuarios: usuarios.rows.map((u) => ({ ...u, media: Number(u.media) })),
+  });
+});
+
 module.exports = router;
