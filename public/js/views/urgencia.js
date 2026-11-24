@@ -51,9 +51,14 @@ const Urgencia = (() => {
       <summary><i class="bi bi-calculator"></i> <span>Como o score é calculado</span>
         <small class="ur-regras-dica">clique para ver</small><i class="bi bi-chevron-down ur-seta"></i></summary>
       <div class="ur-regras-corpo">
-        <p class="ur-regras-base"><b>Todo chamado aberto começa valendo 1 ponto.</b> Esse ponto é multiplicado por 3 fatores:
-          a urgência, o atraso e o prazo. O <b>score do local</b> é a soma dos pontos dos chamados abertos dele
-          (chamado em pausa não conta).</p>
+        <div class="ur-base">
+          <div class="ur-base-num">1<small>ponto</small></div>
+          <div><b>A base: cada chamado aberto vale 1 ponto.</b>
+            <div>Não importa o tipo de problema: todo chamado começa com 1. Um local com 3 chamados abertos parte de 3 pontos.</div>
+            <div>Depois, o ponto de cada chamado é <b>multiplicado</b> por 3 fatores (urgência, atraso e prazo), que fazem ele
+              valer mais (×2, ×3...) ou menos (×0,5, ×0,25).</div>
+            <div>O <b>score do local</b> é a soma dos pontos de todos os chamados abertos dele. Chamado em pausa não conta.</div></div>
+        </div>
         <div class="ur-formula"><span>1 ponto</span>×<span>urgência</span>×<span>atraso</span>×<span>prazo</span>=<b>score do chamado</b></div>
         <div class="ur-regras-grade">
           <div><b>1. Urgência</b><small>quanto o problema atrapalha</small>

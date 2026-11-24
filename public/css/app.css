@@ -1724,3 +1724,9 @@ a.dp-ind:hover { background: var(--surface-2); }
 @keyframes ur-fogo-quadros-mini { from { background-position: 0 0; } to { background-position: -32px 0; } }
 @keyframes ur-fogo-tremer { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.08) translateY(-1px); } }
 @media (prefers-reduced-motion: reduce) { .ur-fogo { animation: none; } }
+
+/* Score de urgência: destaque da base (cada chamado = 1 ponto) */
+.ur-base { display: flex; gap: 14px; align-items: flex-start; background: var(--primary-soft); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; line-height: 1.5; }
+.ur-base-num { flex: none; width: 58px; height: 58px; border-radius: 12px; background: var(--primary); color: #fff; font-size: 1.8rem; font-weight: 800; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.ur-base-num small { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.ur-base > div:last-child > div { color: var(--ink); }
