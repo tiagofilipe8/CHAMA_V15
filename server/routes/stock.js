@@ -192,7 +192,7 @@ router.get('/movements', async (req, res) => {
 
 // Relatório (gestores e admin mestre): motivos, custos, categorias e postos
 router.get('/report', async (req, res) => {
-  if (!has(req.user, 'stock.report')) return res.status(403).json({ error: 'Seu perfil não vê o relatório de estoque.' });
+  if (!has(req.user, 'stock.report')) return res.status(403).json({ error: 'Seu perfil não vê o relatório de inventário.' });
   const dias = Math.min(Math.max(parseInt(req.query.dias, 10) || 90, 1), 3660);
   const pA = [];
   let fA = filtroEmpresas(req.user, pA);
@@ -202,6 +202,14 @@ router.get('/report', async (req, res) => {
   const ents = entityIdsOf(req.user);
   if (ents !== null) { pM.push(ents); fM += ` AND m.to_entity_id::text = ANY($${pM.length}::text[])`; }
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { pM.push(req.query.entity_id); fM += ` AND m.to_entity_id = $${pM.length}`; }
+  // ?escopo=estoque: só os itens do Estoque de T.I. (Em estoque, Pronto para entregar, Comprado)
+  const soEstoque = req.query.escopo === 'estoque';
+  if (soEstoque) fA += ` AND a.status IN ('STOCK','READY','ORDERED')`;
+  // ?location_id=: uma localidade (posto)
+  if (/^\d+$/.test(String(req.query.location_id || ''))) {
+    pA.push(req.query.location_id); fA += ` AND a.location_id = $${pA.length}`;
+    pM.push(req.query.location_id); fM += ` AND (m.to_location_id = $${pM.length} OR m.from_location_id = $${pM.length})`;
+  }
   const periodo = `m.created_at >= now() - ($1::int * interval '1 day')`;
   const [inv, porStatus, porCategoria, porMotivo, porPosto, porMes, totais, recentes] = await Promise.all([
     query(`SELECT count(*)::int AS itens, COALESCE(sum(a.price),0)::float AS valor, count(a.price)::int AS com_preco
@@ -232,6 +240,7 @@ router.get('/report', async (req, res) => {
   const semPreco = (lista, campos) => (ver ? lista : lista.map((r) => { const o = { ...r }; campos.forEach((c) => delete o[c]); return o; }));
   res.json({
     dias,
+    escopo: soEstoque ? 'estoque' : 'tudo',
     ve_valores: ver,
     inventario: semPreco([inv.rows[0]], ['valor'])[0],
     por_status: semPreco(porStatus.rows, ['valor']),

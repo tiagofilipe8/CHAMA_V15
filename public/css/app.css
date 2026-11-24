@@ -1666,3 +1666,15 @@ a.dp-ind:hover { background: var(--surface-2); }
 [data-bs-theme="dark"] .cz-falha { background: rgba(127,127,127,.18); }
 [data-bs-theme="dark"] .ck-auto.sim, [data-bs-theme="dark"] .ck-resumo li.sim { color: #86efac; }
 [data-bs-theme="dark"] .ck-auto.nao { color: #fcd34d; } [data-bs-theme="dark"] .ck-resumo li.nao { color: #fca5a5; }
+
+/* ---------- "?" com explicação nos cards do relatório ---------- */
+.er-kpi { position: relative; }
+.er-kpi > .er-ajuda { position: absolute; top: 8px; right: 10px; }
+.er-ajuda { position: relative; display: inline-flex; color: var(--muted); cursor: help; font-size: .85rem; font-weight: 400; vertical-align: middle; outline: none; }
+.er-ajuda:hover, .er-ajuda:focus { color: var(--primary); }
+.er-ajuda-tx { display: none; position: absolute; z-index: 40; top: calc(100% + 6px); right: -6px; width: min(280px, 80vw); background: #1f2937; color: #f9fafb;
+  font-size: .76rem; line-height: 1.45; font-weight: 400; text-transform: none; letter-spacing: 0; border-radius: 8px; padding: 8px 10px;
+  box-shadow: 0 8px 22px rgba(0,0,0,.25); white-space: normal; text-align: left; }
+.dp-bloco-cab .er-ajuda-tx { right: auto; left: -8px; }
+.er-ajuda:hover .er-ajuda-tx, .er-ajuda:focus .er-ajuda-tx { display: block; }
+.er-kpi small { padding-right: 20px; }

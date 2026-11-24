@@ -239,7 +239,7 @@ const Estoque = (() => {
 
   // ---------- Relatório ----------
   async function relatorio(el) {
-    let dias = 90; let ent = '';
+    let dias = 90; let ent = ''; let escopo = 'tudo'; let loc = '';
     let ents = [];
     try { ents = (await API.get('/entities')).filter((e) => e.active); } catch { /* sem filtro */ }
     el.innerHTML = `
@@ -248,14 +248,21 @@ const Estoque = (() => {
           <option value="30">Últimos 30 dias</option><option value="90" selected>Últimos 90 dias</option>
           <option value="365">Último ano</option><option value="3650">Tudo</option></select>
         <select class="form-select form-select-sm multi-empresa" id="er-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+        <div class="seg" role="group" aria-label="O que entra no relatório">
+          <button type="button" data-escopo="tudo" class="active">Todo o inventário</button>
+          <button type="button" data-escopo="estoque">Só o estoque de T.I.</button>
+        </div>
+        <select class="form-select form-select-sm" id="er-loc"><option value="">Todas as localidades</option></select>
       </div></div>
       <div id="er-corpo">${spinner()}</div>`;
     const barra = (v, max) => `<span class="ur-barra er-barra"><i style="--w:${max ? Math.max(3, Math.round((v / max) * 100)) : 0}%"></i></span>`;
+    // "?" no canto do card: explica o número ao passar o mouse (ou ao tocar, no celular)
+    const ajuda = (texto) => `<span class="er-ajuda" tabindex="0" aria-label="${esc(texto)}"><i class="bi bi-question-circle"></i><span class="er-ajuda-tx" role="tooltip">${esc(texto)}</span></span>`;
     async function carregar() {
       const corpo = el.querySelector('#er-corpo');
       corpo.innerHTML = spinner();
       let r;
-      try { r = await API.get(`/stock/report?dias=${dias}${ent ? `&entity_id=${ent}` : ''}`); } catch (e) { corpo.innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
+      try { r = await API.get(`/stock/report?dias=${dias}${ent ? `&entity_id=${ent}` : ''}&escopo=${escopo}${loc ? `&location_id=${loc}` : ''}`); } catch (e) { corpo.innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
       const v = r.ve_valores;
       const maxMot = Math.max(0, ...r.por_motivo.map((x) => (v ? x.custo : x.n)));
       const maxMes = Math.max(0, ...r.por_mes.map((x) => x.n));
@@ -263,33 +270,37 @@ const Estoque = (() => {
       const periodo = dias >= 3650 ? 'desde o início' : `nos últimos ${dias} dias`;
       corpo.innerHTML = `
         <div class="er-kpis">
-          ${v ? `<div class="er-kpi"><small>Valor do inventário</small><b>${invMoeda(r.inventario.valor)}</b><span>${r.inventario.com_preco} de ${r.inventario.itens} itens com preço</span></div>` : ''}
-          <div class="er-kpi"><small>Equipamentos no inventário</small><b>${r.inventario.itens}</b><span>sem os descartados e extraviados</span></div>
-          <div class="er-kpi"><small>Retiradas do estoque</small><b>${r.totais.retiradas}</b><span>${periodo}</span></div>
-          ${v ? `<div class="er-kpi destaque"><small>Custo das retiradas</small><b>${invMoeda(r.totais.custo_retiradas)}</b><span>${periodo}</span></div>` : ''}
-          <div class="er-kpi"><small>Transferências / entradas</small><b>${r.totais.transferencias} / ${r.totais.entradas}</b><span>${periodo}</span></div>
+          ${v ? `<div class="er-kpi">${ajuda(r.escopo === 'estoque'
+    ? 'Soma do preço dos itens guardados no estoque de T.I. (em estoque, prontos para entregar e comprados que ainda não chegaram). Itens sem preço cadastrado não entram na soma.'
+    : 'Soma do preço de todos os equipamentos cadastrados, menos os descartados e extraviados. Itens sem preço cadastrado não entram na soma: o texto embaixo mostra quantos têm preço.')}<small>${r.escopo === 'estoque' ? 'Valor do estoque de T.I.' : 'Valor do inventário'}</small><b>${invMoeda(r.inventario.valor)}</b><span>${r.inventario.com_preco} de ${r.inventario.itens} itens com preço</span></div>` : ''}
+          <div class="er-kpi">${ajuda(r.escopo === 'estoque'
+    ? 'Quantos itens estão no estoque de T.I. agora: em estoque, prontos para entregar e comprados que ainda não chegaram.'
+    : 'Quantos equipamentos estão cadastrados agora, de todas as categorias e estados, menos os descartados e extraviados.')}<small>${r.escopo === 'estoque' ? 'Itens no estoque de T.I.' : 'Equipamentos no inventário'}</small><b>${r.inventario.itens}</b><span>${r.escopo === 'estoque' ? 'em estoque, prontos ou a caminho' : 'sem os descartados e extraviados'}</span></div>
+          <div class="er-kpi">${ajuda('Quantas vezes alguém deu baixa (pegou um item) no estoque de T.I. no período escolhido. Cada baixa tem um motivo, que aparece em "Retiradas por motivo".')}<small>Retiradas do estoque</small><b>${r.totais.retiradas}</b><span>${periodo}</span></div>
+          ${v ? `<div class="er-kpi destaque">${ajuda('Soma do preço dos itens que saíram do estoque no período: é quanto em equipamento foi usado para substituir, repor ou atender pedidos. Veja em "Retiradas por motivo" e "por posto" para onde esse dinheiro está indo.')}<small>Custo das retiradas</small><b>${invMoeda(r.totais.custo_retiradas)}</b><span>${periodo}</span></div>` : ''}
+          <div class="er-kpi">${ajuda('Transferências: itens mandados de uma unidade para outra. Entradas: itens que entraram no estoque (cadastrados como "Em estoque" ou devolvidos depois de usados).')}<small>Transferências / entradas</small><b>${r.totais.transferencias} / ${r.totais.entradas}</b><span>${periodo}</span></div>
         </div>
         <div class="er-grade">
-          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-question-circle"></i> Retiradas por motivo</span><small class="text-muted">${periodo}</small></div>
+          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-signpost-2"></i> Retiradas por motivo ${ajuda('Por que as pessoas pegaram itens do estoque: o motivo escolhido ao dar baixa. A barra mostra o peso de cada motivo (pelo custo, quando há preço). Muitas retiradas por "estragou" ou "mau uso" num posto indicam equipamento velho ou falta de treinamento.')}</span><small class="text-muted">${periodo}</small></div>
             ${r.por_motivo.length ? `<table class="table table-sm align-middle mb-0 er-tab"><thead><tr><th>Motivo</th><th></th><th class="text-end">Retiradas</th>${v ? '<th class="text-end">Custo</th>' : ''}</tr></thead><tbody>
             ${r.por_motivo.map((x) => `<tr><td>${esc(x.motivo)}</td><td class="w-25">${barra(v ? x.custo : x.n, maxMot)}</td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap">${invMoeda(x.custo)}</td>` : ''}</tr>`).join('')}
             </tbody></table>` : '<div class="dp-vazio">Nenhuma retirada no período.</div>'}</div>
-          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-calendar3"></i> Retiradas por mês</span></div>
+          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-calendar3"></i> Retiradas por mês ${ajuda('Quantas retiradas houve em cada mês do período. Passe o mouse na coluna para ver o custo daquele mês.')}</span></div>
             ${r.por_mes.length ? `<div class="er-meses">${r.por_mes.map((x) => `<div class="er-mes" title="${x.n} retirada(s)${v ? ` · ${invMoeda(x.custo)}` : ''}">
               <span class="er-col"><i style="--h:${maxMes ? Math.max(4, Math.round((x.n / maxMes) * 100)) : 0}%"></i></span>
               <b>${x.n}</b><small>${x.mes.slice(5)}/${x.mes.slice(2, 4)}</small></div>`).join('')}</div>` : '<div class="dp-vazio">Nenhuma retirada no período.</div>'}</div>
-          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-diagram-3"></i> Equipamentos por categoria</span><small class="text-muted">hoje</small></div>
+          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-diagram-3"></i> Equipamentos por categoria ${ajuda('Situação de hoje: quantos equipamentos há de cada categoria, quantos estão guardados no estoque e quanto valem somados.')}</span><small class="text-muted">hoje</small></div>
             ${r.por_categoria.length ? `<table class="table table-sm align-middle mb-0 er-tab"><thead><tr><th>Categoria</th><th></th><th class="text-end">Itens</th><th class="text-end">No estoque</th>${v ? '<th class="text-end">Valor</th>' : ''}</tr></thead><tbody>
             ${r.por_categoria.map((x) => `<tr><td>${esc(tipoNome(x.type))}</td><td class="w-25">${barra(v ? x.valor : x.n, maxCat)}</td><td class="text-end">${x.n}</td><td class="text-end">${x.em_estoque}</td>${v ? `<td class="text-end text-nowrap">${invMoeda(x.valor)}</td>` : ''}</tr>`).join('')}
             </tbody></table>` : '<div class="dp-vazio">Nenhum equipamento cadastrado.</div>'}</div>
-          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-geo-alt"></i> Retiradas por posto</span><small class="text-muted">${periodo}</small></div>
+          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-geo-alt"></i> Retiradas por posto ${ajuda('Para qual localidade foram os itens retirados e quanto custaram. Um posto com muitas retiradas pode ter equipamento velho, mau uso ou precisar de treinamento.')}</span><small class="text-muted">${periodo}</small></div>
             ${r.por_posto.length ? `<table class="table table-sm align-middle mb-0 er-tab"><thead><tr><th>Posto</th><th class="text-end">Retiradas</th>${v ? '<th class="text-end">Custo</th>' : ''}</tr></thead><tbody>
             ${r.por_posto.map((x) => `<tr><td>${esc(x.posto)}<small class="text-muted multi-empresa"> · ${esc(x.empresa || '')}</small></td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap">${invMoeda(x.custo)}</td>` : ''}</tr>`).join('')}
             </tbody></table>` : '<div class="dp-vazio">Nenhuma retirada no período.</div>'}</div>
         </div>
-        <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-palette"></i> Equipamentos por estado</span><small class="text-muted">hoje</small></div>
+        <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-palette"></i> Equipamentos por estado ${ajuda('Quantos equipamentos estão em cada estado agora (operando, em conserto, estragado, comprado, pronto para entregar, em estoque...) e quanto valem.')}</span><small class="text-muted">hoje</small></div>
           <div class="er-estados">${r.por_status.map((x) => `<span>${invEstado(x.status)} <b>${x.n}</b>${v ? ` <small class="text-muted">${invMoeda(x.valor)}</small>` : ''}</span>`).join('') || '<div class="dp-vazio">—</div>'}</div></div>
-        <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-clock-history"></i> Últimas movimentações</span><a href="#/estoque" onclick="try{sessionStorage.setItem('estoque_aba','log')}catch(e){}">ver todas</a></div>
+        <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-clock-history"></i> Últimas movimentações ${ajuda('As últimas baixas, devoluções, transferências e entradas do período, com quem fez e para onde foi. O log completo fica em Estoque de T.I. > Movimentações.')}</span><a href="#/estoque" onclick="try{sessionStorage.setItem('estoque_aba','log')}catch(e){}">ver todas</a></div>
           ${r.recentes.length ? `<div class="er-recentes">${r.recentes.map((m) => {
     const [nome, cls, ic] = TIPO_MOV[m.kind] || [m.kind, '', 'bi-dot'];
     return `<div><span class="mv ${cls}"><i class="bi ${ic}"></i> ${nome}</span>
@@ -299,7 +310,22 @@ const Estoque = (() => {
   }).join('')}</div>` : '<div class="dp-vazio">Nenhuma movimentação no período.</div>'}</div>`;
     }
     el.querySelector('#er-dias').addEventListener('change', (e) => { dias = Number(e.target.value); carregar(); });
-    el.querySelector('#er-ent').addEventListener('change', (e) => { ent = e.target.value; carregar(); });
+    // localidades (postos) da empresa escolhida
+    const selLoc = el.querySelector('#er-loc');
+    const carregarLocais = async () => {
+      let locs = [];
+      try { locs = await API.get(`/locations?active=true${ent ? `&entity_id=${ent}` : ''}`); } catch { /* sem lista */ }
+      selLoc.innerHTML = '<option value="">Todas as localidades</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+      loc = '';
+    };
+    el.querySelector('#er-ent').addEventListener('change', async (e) => { ent = e.target.value; await carregarLocais(); carregar(); });
+    selLoc.addEventListener('change', () => { loc = selLoc.value; carregar(); });
+    el.querySelectorAll('[data-escopo]').forEach((b) => b.addEventListener('click', () => {
+      escopo = b.dataset.escopo;
+      el.querySelectorAll('[data-escopo]').forEach((x) => x.classList.toggle('active', x === b));
+      carregar();
+    }));
+    await carregarLocais();
     carregar();
   }
 

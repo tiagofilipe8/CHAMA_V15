@@ -41,7 +41,7 @@ const PERMISSIONS = [
   { key: 'inventory.secrets', group: 'Painel e equipamentos', label: 'Ver preço e senhas dos equipamentos', help: 'Preço, senha do AnyDesk e acesso mestre da Orcim. Quem vê uma senha fica registrado no histórico.' },
   // Estoque de T.I.
   { key: 'stock.withdraw', group: 'Estoque de T.I.', label: 'Ver o estoque e dar baixa nos itens', help: 'Pegar um item do estoque do posto, dizendo o motivo. Fica registrado no histórico do item.' },
-  { key: 'stock.report', group: 'Estoque de T.I.', label: 'Relatório de estoque e custos', help: 'Movimentações por motivo, custo dos equipamentos e das retiradas.' },
+  { key: 'stock.report', group: 'Estoque de T.I.', label: 'Relatório de inventário e custos', help: 'Valor do inventário, retiradas do estoque por motivo e custo dos equipamentos.' },
   // Cadastros da própria empresa
   { key: 'users.manage', group: 'Cadastros da empresa', label: 'Usuários' },
   { key: 'locations.manage', group: 'Cadastros da empresa', label: 'Localizações' },

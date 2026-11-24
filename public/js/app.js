@@ -45,7 +45,7 @@ function buildNav(u) {
   const equip = [];
   if (can('inventory.view')) equip.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
   if (can('stock.withdraw') || can('inventory.view')) equip.push({ href: '#/estoque', icon: 'bi-box-seam', label: 'Estoque de T.I.', sub: can('inventory.view') });
-  if (can('stock.report')) equip.push({ href: '#/estoque/relatorio', icon: 'bi-graph-up', label: 'Relatório de estoque', sub: can('inventory.view') });
+  if (can('stock.report')) equip.push({ href: '#/inventario/relatorio', icon: 'bi-graph-up', label: 'Relatório de inventário', sub: can('inventory.view') });
   grupo('Equipamentos', 'g-equip', equip);
 
   // Locais: Empresas e, logo abaixo (ligada por um "L"), as Localizações de cada empresa
@@ -86,7 +86,7 @@ function pageTitleFromPath() {
     '/rotas': 'Sugerir rotas',
     '/chat': 'Chat',
     '/estoque': 'Estoque de T.I.',
-    '/estoque/relatorio': 'Relatório de estoque',
+    '/inventario/relatorio': 'Relatório de inventário',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
@@ -127,7 +127,7 @@ function pageDescFromPath() {
     '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão, quanto custaram e em que estado estão.',
     '/chat': 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.',
     '/estoque': 'Itens guardados no estoque de cada posto. Quem pega um item dá baixa aqui, dizendo o motivo.',
-    '/estoque/relatorio': 'Por que os itens saem do estoque, quanto custam as retiradas e quanto vale o inventário.',
+    '/inventario/relatorio': 'Quanto vale o inventário, por que os itens saem do estoque e quanto custam as retiradas. Filtre por estoque de T.I. ou por localidade.',
     '/inventory/agents': 'Programas instalados nos computadores que enviam o inventário sozinhos.',
     '/admin/locations': 'Lugares atendidos (lojas, postos, setores). Cada chamado e equipamento fica ligado a um local.',
     '/admin/users': 'Quem acessa o sistema, de qual empresa e local, e com qual perfil.',
@@ -217,7 +217,7 @@ function renderNav() {
 // Selo do grupo ao lado do título (mesma cor do grupo no menu)
 function moduloAtual() {
   const p = location.hash.replace(/^#/, '') || '/dashboard';
-  if (p.startsWith('/inventory') || p.startsWith('/estoque')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
+  if (p.startsWith('/inventory') || p.startsWith('/inventario') || p.startsWith('/estoque')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
   if (p.startsWith('/chat')) return ['Chat', 'tg-teal', 'bi-chat-dots'];
   if (p.startsWith('/admin/locations')) return ['Locais', 'tg-teal', 'bi-geo-alt'];
   if (p.startsWith('/admin/roles') || p.startsWith('/admin/settings')) return ['Sistema', 'tg-gray', 'bi-gear'];
@@ -272,7 +272,8 @@ const routes = [
   { re: /^#\/chat$/, view: () => Views.chat },
   { re: /^#\/chat\/(\d+)$/, view: (m) => Views.chatConversa(m[1]) },
   { re: /^#\/estoque$/, view: () => Views.estoque },
-  { re: /^#\/estoque\/relatorio$/, view: () => Views.estoqueRelatorio },
+  { re: /^#\/inventario\/relatorio$/, view: () => Views.estoqueRelatorio },
+  { re: /^#\/estoque\/relatorio$/, view: () => () => { location.replace('#/inventario/relatorio'); } }, // endereço antigo
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },

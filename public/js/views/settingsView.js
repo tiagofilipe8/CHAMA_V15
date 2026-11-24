@@ -814,7 +814,7 @@ Views.adminCategories = async function adminCategories(el) {
     body.innerHTML = `
       <div class="alert alert-info small">
         <i class="bi bi-info-circle me-1"></i> Opções da pergunta <b>"Por que você está pegando este item?"</b> quando alguém dá baixa
-        no <b>Estoque de T.I.</b>. Aparecem no relatório de estoque (quantas retiradas e quanto custaram, por motivo).
+        no <b>Estoque de T.I.</b>. Aparecem no relatório de inventário (quantas retiradas e quanto custaram, por motivo).
       </div>
       <div class="d-flex justify-content-end mb-2">
         <button class="btn btn-primary btn-sm" id="btn-new-sr"><i class="bi bi-plus-lg"></i> Nova razão</button>
