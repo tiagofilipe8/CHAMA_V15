@@ -257,6 +257,7 @@ Views.newTicket = async function newTicket(el) {
     if ((!entName && !window.EMPRESA_UNICA) || (!locSel.disabled && !locSel.value)) showWhere();
   };
   document.getElementById('nt-location').addEventListener('change', updateWhere);
+  document.getElementById('nt-location').addEventListener('change', (e) => gravarUltimoPosto(currentEntity(), e.target.value));
 
   async function loadCategories(entityId) {
     const box = document.getElementById('nt-cat-box');
@@ -291,6 +292,13 @@ Views.newTicket = async function newTicket(el) {
     }
   }
 
+  // Último posto escolhido (fica guardado neste navegador, por usuário): vem marcado no próximo chamado
+  const CHAVE_POSTO = `ultimo_posto_${user.id}`;
+  const lerUltimoPosto = () => { try { return JSON.parse(localStorage.getItem(CHAVE_POSTO) || 'null') || {}; } catch { return {}; } };
+  const gravarUltimoPosto = (entityId, locationId) => {
+    try { if (locationId) localStorage.setItem(CHAVE_POSTO, JSON.stringify({ entity_id: String(entityId || ''), location_id: String(locationId) })); } catch { /* sem armazenamento */ }
+  };
+
   async function loadLocations(entityId) {
     const sel = document.getElementById('nt-location');
     if (!entityId) { sel.innerHTML = '<option value="">—</option>'; return; }
@@ -304,7 +312,10 @@ Views.newTicket = async function newTicket(el) {
       sel.disabled = false;
       sel.innerHTML = '<option value="">— escolha —</option>' +
         locs.map((l) => `<option value="${l.id}">${esc(l.name)}${l.code ? ` (${esc(l.code)})` : ''}${l.city ? ` — ${esc(l.city)}` : ''}</option>`).join('');
-      if (user.location_id && locs.some((l) => String(l.id) === String(user.location_id))) {
+      const ultimo = lerUltimoPosto();
+      if (ultimo.location_id && locs.some((l) => String(l.id) === ultimo.location_id)) {
+        sel.value = ultimo.location_id; // o último posto que a pessoa escolheu
+      } else if (user.location_id && locs.some((l) => String(l.id) === String(user.location_id))) {
         sel.value = String(user.location_id);
       } else if (locs.length === 1) {
         sel.value = String(locs[0].id);
@@ -336,7 +347,8 @@ Views.newTicket = async function newTicket(el) {
       const sel = document.getElementById('nt-entity');
       sel.innerHTML = '<option value="">— escolha a empresa —</option>' +
         list.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
-      const entToUse = preEntity || String(user.entity_id || '');
+      // empresa: a do link; senão a do último posto escolhido; senão a da pessoa
+      const entToUse = preEntity || lerUltimoPosto().entity_id || String(user.entity_id || '');
       if (entToUse && list.some((e) => String(e.id) === entToUse)) sel.value = entToUse;
       if (list.length === 1) { sel.value = String(list[0].id); sel.closest('.col-md-6').classList.add('multi-empresa'); }
       sel.addEventListener('change', onEntity);
@@ -433,6 +445,7 @@ Views.newTicket = async function newTicket(el) {
     btn.disabled = true;
     try {
       const t = await API.post('/tickets', payload);
+      gravarUltimoPosto(entityId, locSel.value);
       if (picked.length) {
         const fd = new FormData();
         picked.forEach((f) => fd.append('files', f));
