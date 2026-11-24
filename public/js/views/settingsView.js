@@ -507,6 +507,7 @@ Views.adminCategories = async function adminCategories(el) {
       <li class="nav-item"><a class="nav-link" href="#" data-tab="simple">Categorias</a></li>
       <li class="nav-item"><a class="nav-link" href="#" data-tab="impact">Urgência</a></li>
       <li class="nav-item"><a class="nav-link" href="#" data-tab="causes">Causas de encerramento</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="stock">Razões de retirada</a></li>
     </ul>
     <div id="cat-tab-body">${spinner()}</div>`;
 
@@ -614,7 +615,7 @@ Views.adminCategories = async function adminCategories(el) {
   // no Padrão (travado) some tudo que edita
   function aplicarTrava(body) {
     if (!travado()) return;
-    body.querySelectorAll('#btn-new-simple, #btn-new-impact, #btn-new-cause, .cat-edit, .cat-del, .imp-edit, .imp-del, .cause-edit, .cause-del')
+    body.querySelectorAll('#btn-new-simple, #btn-new-impact, #btn-new-cause, .cat-edit, .cat-del, .imp-edit, .imp-del, .cause-edit, .cause-del, #btn-new-sr, .sr-edit, .sr-del')
       .forEach((b) => b.remove());
     body.querySelectorAll('th.text-end').forEach((th) => { th.textContent = ''; });
   }
@@ -626,6 +627,7 @@ Views.adminCategories = async function adminCategories(el) {
     try {
       if (tab === 'impact') await renderImpact(body);
       else if (tab === 'causes') await renderCauses(body);
+      else if (tab === 'stock') await renderStockReasons(body);
       else renderSimple(body, await API.get('/categories' + qsPerfil()));
       aplicarTrava(body);
     } catch (e) { body.innerHTML = emptyState('Erro ao carregar', e.message, 'bi-exclamation-triangle'); }
@@ -803,6 +805,72 @@ Views.adminCategories = async function adminCategories(el) {
       const ok = await confirmDialog({ title: 'Desativar opção', body: 'Chamados antigos mantêm o registro. Ela só deixa de aparecer para novos chamados.', confirmText: 'Desativar', danger: true });
       if (!ok) return;
       try { await API.del('/impact-levels/' + b.dataset.id); render(); } catch (e) { showError(e); }
+    }));
+  }
+
+  // Razões de retirada do Estoque de T.I. (mesmo modelo das causas)
+  async function renderStockReasons(body) {
+    const lista = await API.get('/stock-reasons?all=true' + qsPerfil('&'));
+    body.innerHTML = `
+      <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i> Opções da pergunta <b>"Por que você está pegando este item?"</b> quando alguém dá baixa
+        no <b>Estoque de T.I.</b>. Aparecem no relatório de estoque (quantas retiradas e quanto custaram, por motivo).
+      </div>
+      <div class="d-flex justify-content-end mb-2">
+        <button class="btn btn-primary btn-sm" id="btn-new-sr"><i class="bi bi-plus-lg"></i> Nova razão</button>
+      </div>
+      <div class="card panel-card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Ordem</th><th>Razão</th><th>Usada</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <tbody>${lista.map((c) => `
+          <tr>
+            <td class="text-muted">${c.sort_order}</td>
+            <td><strong>${esc(c.name)}</strong><br><small class="text-muted">${esc(c.description || '')}</small></td>
+            <td class="small text-muted">${c.usos ? `${c.usos} vez(es)` : '—'}</td>
+            <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary sr-edit" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
+              ${c.active ? `<button class="btn btn-sm btn-outline-danger sr-del" data-id="${c.id}" title="Desativar"><i class="bi bi-slash-circle"></i></button>` : ''}
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div></div>`;
+    const open = (c) => {
+      const m = document.createElement('div');
+      m.className = 'modal fade';
+      m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h6>${c ? 'Editar' : 'Nova'} razão de retirada</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label small">Nome *</label><input class="form-control" id="sr-name" maxlength="120" value="${esc((c && c.name) || '')}"></div>
+          <div class="mb-2"><label class="form-label small">Explicação</label><input class="form-control" id="sr-desc" maxlength="500" value="${esc((c && c.description) || '')}"></div>
+          <div class="mb-2"><label class="form-label small">Ordem</label><input class="form-control" id="sr-order" type="number" value="${esc(String((c && c.sort_order) || 0))}"></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" id="sr-active" ${!c || c.active ? 'checked' : ''}><label class="form-check-label small">Ativa</label></div>
+          <div class="form-text">Uma razão chamada "Outro" obriga a pessoa a explicar na observação.</div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="sr-save">Salvar</button></div>
+      </div></div>`;
+      document.body.appendChild(m);
+      const modal = new bootstrap.Modal(m);
+      m.addEventListener('hidden.bs.modal', () => m.remove());
+      m.querySelector('#sr-save').onclick = async () => {
+        const b = {
+          name: m.querySelector('#sr-name').value.trim(),
+          description: m.querySelector('#sr-desc').value.trim(),
+          sort_order: parseInt(m.querySelector('#sr-order').value, 10) || 0,
+          active: m.querySelector('#sr-active').checked,
+        };
+        if (!b.name) { toast('Informe o nome.', 'warning'); return; }
+        try {
+          if (c) await API.patch('/stock-reasons/' + c.id, b); else await API.post('/stock-reasons', { ...b, profile_id: perfilSel });
+          modal.hide(); toast('Salvo.', 'success'); render();
+        } catch (e) { showError(e); }
+      };
+      modal.show();
+    };
+    body.querySelector('#btn-new-sr').onclick = () => open(null);
+    body.querySelectorAll('.sr-edit').forEach((b) => b.addEventListener('click', () => open(lista.find((c) => String(c.id) === b.dataset.id))));
+    body.querySelectorAll('.sr-del').forEach((b) => b.addEventListener('click', async () => {
+      const ok = await confirmDialog({ title: 'Desativar razão', body: 'As retiradas antigas mantêm o motivo registrado.', confirmText: 'Desativar', danger: true });
+      if (!ok) return;
+      try { await API.del('/stock-reasons/' + b.dataset.id); render(); } catch (e) { showError(e); }
     }));
   }
 
@@ -1235,6 +1303,13 @@ Views.adminSettings = async function adminSettings(el) {
 
       <div class="col-lg-6">
         <div class="card panel-card mb-3">
+          <div class="card-header"><i class="bi bi-chat-dots me-1"></i> Chat interno</div>
+          <div class="card-body">
+            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="s-chat" ${s['chat.enabled'] ? 'checked' : ''}><label class="form-check-label" for="s-chat">Ligar o chat interno</label></div>
+            <div class="form-text">Conversas entre as pessoas do sistema, com <b>@</b> para citar alguém e <b>#</b> para marcar um chamado. Desligado, o menu Chat some para todos.</div>
+          </div>
+        </div>
+        <div class="card panel-card mb-3">
           <div class="card-header"><i class="bi bi-volume-up me-1"></i> Painel em tempo real</div>
           <div class="card-body">
             <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="s-voice" ${s['app.voice_enabled'] ? 'checked' : ''}><label class="form-check-label">Notificação por voz no navegador (novos chamados)</label></div>
@@ -1327,9 +1402,11 @@ Views.adminSettings = async function adminSettings(el) {
       'app.refresh_interval': parseInt(document.getElementById('s-refresh').value, 10) || 30000,
       'backup.auto_enabled': document.getElementById('s-backup-auto').checked,
       'backup.auto_hour': parseInt(document.getElementById('s-backup-hour').value, 10) || 3,
+      'chat.enabled': document.getElementById('s-chat').checked,
     };
     try {
       await API.post('/settings', payload);
+      if (window.CHAT_LIGADO !== payload['chat.enabled']) { window.CHAT_LIGADO = payload['chat.enabled']; renderNav(); activeNav(); }
       toast('Configurações salvas.', 'success');
     } catch (e) { showError(e); }
   };

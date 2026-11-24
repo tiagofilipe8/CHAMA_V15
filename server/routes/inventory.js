@@ -20,6 +20,31 @@ const requireInv = [requireAuth, (req, res, next) => {
 }];
 
 const router = express.Router();
+const { cifrar, decifrar } = require('../services/segredo');
+
+// Estados e categorias do equipamento
+const ESTADOS = ['OPERATING', 'REPAIR', 'BROKEN', 'ORDERED', 'READY', 'STOCK', 'DISPOSED', 'LOST'];
+const TIPOS = ['COMPUTER', 'NOTEBOOK', 'SERVER', 'PRINTER', 'MONITOR', 'UPS', 'NETWORK_DEVICE', 'MOBILE_DEVICE', 'PERIPHERAL', 'OTHER'];
+const veSegredos = (u) => has(u, 'inventory.secrets');
+
+// Nunca manda as senhas (nem criptografadas). Preço só para quem pode ver.
+function limpar(a, user) {
+  const out = { ...a };
+  out.tem_senha_anydesk = !!a.anydesk_password_enc;
+  out.tem_acesso_mestre = !!(a.master_user_enc || a.master_password_enc);
+  delete out.anydesk_password_enc; delete out.master_user_enc; delete out.master_password_enc;
+  if (!veSegredos(user)) delete out.price;
+  return out;
+}
+
+// Local (posto) precisa ser da empresa do equipamento
+async function localDaEmpresa(locationId, entityId) {
+  if (!locationId) return true;
+  const { rows } = await query('SELECT 1 FROM locations WHERE id = $1 AND entity_id = $2', [locationId, entityId]);
+  return rows.length > 0;
+}
+
+const precoValido = (v) => v === null || v === undefined || v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) < 1e10);
 
 // Storage para fotos de ativos — reutiliza config.uploadsDir
 const assetPhotoStorage = multer.diskStorage({
@@ -94,15 +119,16 @@ router.get('/assets', requireInv, async (req, res) => {
   }
   if (type) add('a.type = ?', type);
   if (status) add('a.status = ?', status);
+  if (req.query.location_id && /^\d+$/.test(req.query.location_id)) add('a.location_id = ?', req.query.location_id);
   if (q) {
     const like = `%${q}%`;
     params.push(like, like, like, like);
-    conds.push(`(a.name ILIKE $${params.length-3} OR a.asset_tag ILIKE $${params.length-2} OR a.serial_number ILIKE $${params.length-1} OR a.model ILIKE $${params.length})`);
+    conds.push(`(a.name ILIKE $${params.length-3} OR a.asset_tag ILIKE $${params.length-2} OR a.serial_number ILIKE $${params.length-1} OR a.model ILIKE $${params.length} OR a.anydesk_id ILIKE $${params.length})`);
   }
   const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const lim = Math.min(parseInt(limit,10)||100, 500);
   const { rows } = await query(
-    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name,
+    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name,
             (SELECT count(*) FROM asset_photos ap WHERE ap.asset_id=a.id)::int AS photos_count,
             COALESCE(
               a.primary_photo_id,
@@ -113,24 +139,26 @@ router.get('/assets', requireInv, async (req, res) => {
      JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
      LEFT JOIN agents ag ON ag.asset_id=a.id
+     LEFT JOIN locations lo ON lo.id=a.location_id
      ${where}
      ORDER BY a.updated_at DESC LIMIT ${lim}`, params);
-  res.json(rows);
+  res.json(rows.map((a) => limpar(a, user)));
 });
 
 // Detalhe do ativo
 router.get('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query(
-    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name
+    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name
      FROM assets a
      JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
+     LEFT JOIN locations lo ON lo.id=a.location_id
      WHERE a.id=$1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   const asset = rows[0];
   if (!canAccessEntity(req.user, asset.entity_id)) return res.status(403).json({ error: 'Acesso negado' });
   // hardware
-  const [details, mem, storage, gpu, net, software, photos, history, agent, tickets, maints] = await Promise.all([
+  const [details, mem, storage, gpu, net, software, photos, history, agent, tickets, maints, movs] = await Promise.all([
     query('SELECT * FROM computer_details WHERE asset_id=$1', [asset.id]),
     query('SELECT * FROM computer_memory WHERE asset_id=$1 ORDER BY slot', [asset.id]),
     query('SELECT * FROM computer_storage WHERE asset_id=$1', [asset.id]),
@@ -146,9 +174,10 @@ router.get('/assets/:id', requireInv, async (req, res) => {
            LEFT JOIN users u ON u.id=m.created_by
            WHERE m.asset_id=$1
            ORDER BY m.performed_at DESC, m.created_at DESC`, [asset.id]),
+    movimentacoes(asset.id),
   ]);
   res.json({
-    ...asset,
+    ...limpar(asset, req.user),
     computer: details.rows[0] || null,
     memory: mem.rows,
     storage: storage.rows,
@@ -156,17 +185,37 @@ router.get('/assets/:id', requireInv, async (req, res) => {
     network: net.rows,
     software: software.rows,
     photos: photos.rows,
-    history: history.rows,
+    history: mascararHistorico(history.rows, req.user),
+    movements: movs.map((m) => (veSegredos(req.user) ? m : { ...m, price: undefined })),
     agent: agent.rows[0] || null,
     tickets: tickets.rows,
     maintenances: maints.rows,
   });
 });
 
+// Movimentações de estoque do equipamento (log)
+async function movimentacoes(assetId) {
+  const { rows } = await query(
+    `SELECT m.*, u.name AS user_name, lf.name AS from_location_name, lt.name AS to_location_name,
+            ef.name AS from_entity_name, et.name AS to_entity_name
+     FROM stock_movements m
+     LEFT JOIN users u ON u.id = m.user_id
+     LEFT JOIN locations lf ON lf.id = m.from_location_id LEFT JOIN locations lt ON lt.id = m.to_location_id
+     LEFT JOIN entities ef ON ef.id = m.from_entity_id LEFT JOIN entities et ON et.id = m.to_entity_id
+     WHERE m.asset_id = $1 ORDER BY m.created_at DESC LIMIT 200`, [assetId]);
+  return rows;
+}
+
+// Preço no histórico: só para quem pode ver
+function mascararHistorico(rows, user) {
+  if (veSegredos(user)) return rows;
+  return rows.map((h) => (h.field === 'price' ? { ...h, old_value: h.old_value ? '•••' : '', new_value: h.new_value ? '•••' : '' } : h));
+}
+
 // Criar ativo
 router.post('/assets', requireInv, async (req, res) => {
   const user = req.user;
-  const { entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro } = req.body || {};
+  const { entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro, location_id, anydesk_id } = req.body || {};
   let entId = entity_id;
   if (!isStaff(user) && !(entId && canAccessEntity(user, entId))) entId = user.entity_id;
   if (!entId) return res.status(422).json({ error: 'Entidade é obrigatória' });
@@ -176,17 +225,31 @@ router.post('/assets', requireInv, async (req, res) => {
     return res.status(422).json({ error: 'Informe o que será feito na próxima manutenção (obrigatório com a data)' });
   }
   const t = String(type || 'OTHER');
-  if (!['COMPUTER','NOTEBOOK','SERVER','PRINTER','MONITOR','UPS','NETWORK_DEVICE','MOBILE_DEVICE','OTHER'].includes(t)) return res.status(422).json({ error: 'Tipo inválido' });
+  if (!TIPOS.includes(t)) return res.status(422).json({ error: 'Categoria inválida' });
+  const st = String(status || 'OPERATING');
+  if (!ESTADOS.includes(st)) return res.status(422).json({ error: 'Estado inválido' });
+  if (location_id && !(await localDaEmpresa(location_id, entId))) return res.status(422).json({ error: 'Esse local não é da empresa escolhida.' });
+  const b = req.body || {};
+  const querSegredo = ['price', 'anydesk_password', 'master_user', 'master_password'].some((k) => b[k] !== undefined && b[k] !== null && b[k] !== '');
+  if (querSegredo && !veSegredos(user)) return res.status(403).json({ error: 'Seu perfil não pode informar preço nem senhas.' });
+  if (!precoValido(b.price)) return res.status(422).json({ error: 'Preço inválido.' });
   try {
     const { rows } = await query(
-      `INSERT INTO assets (entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
-      [entId, asset_tag||null, name, t, status||'ACTIVE', manufacturer||null, model||null, serial_number||null, description||null, location||null, department||null, responsible_user_id||null, purchase_date||null, warranty_expiration||null, next_maintenance_date||null, next_maintenance_notes||null, notes||null, mac_address||null, memory_info||null, hd_info||null, cpu_info||null, os_info||null, license_info||null, ip_address||null,
+      `INSERT INTO assets (entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro, created_by,
+                           location_id, price, anydesk_id, anydesk_password_enc, master_user_enc, master_password_enc)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35) RETURNING *`,
+      [entId, asset_tag||null, name, t, st, manufacturer||null, model||null, serial_number||null, description||null, location||null, department||null, responsible_user_id||null, purchase_date||null, warranty_expiration||null, next_maintenance_date||null, next_maintenance_notes||null, notes||null, mac_address||null, memory_info||null, hd_info||null, cpu_info||null, os_info||null, license_info||null, ip_address||null,
        webcam === true || webcam === false ? webcam : null,
        eth_port === true || eth_port === false ? eth_port : null,
-       toner||null, cilindro||null, user.id]);
+       toner||null, cilindro||null, user.id,
+       location_id||null, b.price === '' || b.price == null ? null : Number(b.price), anydesk_id||null,
+       cifrar(b.anydesk_password), cifrar(b.master_user), cifrar(b.master_password)]);
     await query(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`, [rows[0].id, user.id, name]);
-    res.status(201).json(rows[0]);
+    if (st === 'STOCK') {
+      await query(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, price, note)
+                   VALUES ($1,'entry',$2,$3,$4,$5,'Cadastrado no estoque')`, [rows[0].id, user.id, entId, location_id||null, rows[0].price]);
+    }
+    res.status(201).json(limpar(rows[0], user));
   } catch (e) {
     if (String(e.message).includes('duplicate key') || String(e.message).includes('asset_tag')) return res.status(409).json({ error: 'Patrimônio já cadastrado' });
     res.status(400).json({ error: 'Erro ao criar ativo', details: e.message });
@@ -199,7 +262,16 @@ router.patch('/assets/:id', requireInv, async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   const asset = rows[0];
   if (!canAccessEntity(req.user, asset.entity_id)) return res.status(403).json({ error: 'Acesso negado' });
-  const fields = ['name','asset_tag','type','status','manufacturer','model','serial_number','description','location','department','responsible_user_id','purchase_date','warranty_expiration','next_maintenance_date','next_maintenance_notes','notes','mac_address','memory_info','hd_info','cpu_info','os_info','license_info','ip_address','webcam','eth_port','toner','cilindro'];
+  const b = req.body || {};
+  if (b.status !== undefined && !ESTADOS.includes(String(b.status))) return res.status(422).json({ error: 'Estado inválido' });
+  if (b.type !== undefined && !TIPOS.includes(String(b.type))) return res.status(422).json({ error: 'Categoria inválida' });
+  const segredos = ['anydesk_password', 'master_user', 'master_password'].filter((k) => b[k] !== undefined);
+  if ((segredos.length || b.price !== undefined) && !veSegredos(req.user)) return res.status(403).json({ error: 'Seu perfil não pode mudar preço nem senhas.' });
+  if (!precoValido(b.price)) return res.status(422).json({ error: 'Preço inválido.' });
+  const entDestino = b.entity_id !== undefined ? b.entity_id : asset.entity_id;
+  const locDestino = b.location_id !== undefined ? b.location_id : (String(entDestino) !== String(asset.entity_id) ? null : asset.location_id);
+  if (locDestino && !(await localDaEmpresa(locDestino, entDestino))) return res.status(422).json({ error: 'Esse local não é da empresa do equipamento.' });
+  const fields = ['name','asset_tag','type','status','manufacturer','model','serial_number','description','location','department','responsible_user_id','purchase_date','warranty_expiration','next_maintenance_date','next_maintenance_notes','notes','mac_address','memory_info','hd_info','cpu_info','os_info','license_info','ip_address','webcam','eth_port','toner','cilindro','price','anydesk_id'];
   const params = [req.params.id];
   const sets = [];
   const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
@@ -221,13 +293,32 @@ router.patch('/assets/:id', requireInv, async (req, res) => {
     await query(`INSERT INTO asset_customer_history (asset_id, old_entity_id, new_entity_id, user_id, reason) VALUES ($1,$2,$3,$4,$5)`, [asset.id, asset.entity_id, req.body.entity_id, req.user.id, req.body.transfer_reason||null]);
     await query(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetTransferred','entity_id',$3,$4)`, [asset.id, req.user.id, asset.entity_id, req.body.entity_id]);
   }
+  // local (posto): guarda o id e registra o nome no histórico
+  if (String(locDestino || '') !== String(asset.location_id || '')) {
+    add('location_id', locDestino || null);
+    const nomes = await query('SELECT id, name FROM locations WHERE id = ANY($1::bigint[])', [[asset.location_id, locDestino].filter(Boolean)]);
+    const nome = (id) => (nomes.rows.find((r) => String(r.id) === String(id)) || {}).name || '';
+    await query(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','location_id',$3,$4)`, [asset.id, req.user.id, nome(asset.location_id), nome(locDestino)]);
+  }
+  // senhas: guarda criptografado; no histórico só "alterada" ou "apagada"
+  const COLUNA = { anydesk_password: 'anydesk_password_enc', master_user: 'master_user_enc', master_password: 'master_password_enc' };
+  for (const k of segredos) {
+    add(COLUNA[k], cifrar(b[k]));
+    await query(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'SecretChanged',$3,$4)`, [asset.id, req.user.id, k, b[k] ? 'alterada' : 'apagada']);
+  }
   if (!sets.length) return res.status(422).json({ error: 'Nenhum campo para atualizar' });
   // registra histórico de mudanças
   for (const f of fields) if (req.body[f] !== undefined && String(req.body[f]||'') !== String(asset[f]||'')) {
     await query(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated',$3,$4,$5)`, [asset.id, req.user.id, f, String(asset[f]||''), String(req.body[f]||'')]);
   }
+  // entrou no estoque: registra a entrada
+  if (b.status === 'STOCK' && asset.status !== 'STOCK') {
+    await query(`INSERT INTO stock_movements (asset_id, kind, user_id, from_entity_id, to_entity_id, from_location_id, to_location_id, price, note)
+                 VALUES ($1,'entry',$2,$3,$4,$5,$6,$7,'Colocado no estoque')`,
+      [asset.id, req.user.id, asset.entity_id, entDestino, asset.location_id, locDestino || null, b.price !== undefined ? (b.price === '' ? null : b.price) : asset.price]);
+  }
   const { rows: updated } = await query(`UPDATE assets SET ${sets.join(', ')} WHERE id=$1 RETURNING *`, params);
-  res.json(updated[0]);
+  res.json(limpar(updated[0], req.user));
 });
 
 // Excluir ativo
@@ -389,7 +480,7 @@ router.post('/agents/register', async (req, res) => {
     // cria asset automaticamente se não existir vínculo
     const assetIns = await query(
       `INSERT INTO assets (entity_id, name, type, status, last_seen_at, created_by)
-       VALUES ($1,$2,'COMPUTER','ACTIVE',now(),NULL) RETURNING *`,
+       VALUES ($1,$2,'COMPUTER','OPERATING',now(),NULL) RETURNING *`,
       [prov.entity_id, hostname || `PC-${agent_id.slice(0,8)}`]);
     await query('UPDATE agents SET asset_id=$1 WHERE id=$2', [assetIns.rows[0].id, agent.id]);
     agent.asset_id = assetIns.rows[0].id;
@@ -564,13 +655,29 @@ router.patch('/assets/:assetId/maintenances/:id', requireInv, async (req, res) =
   res.json(full[0]);
 });
 
+// Senhas do equipamento (AnyDesk e acesso mestre): só quem pode ver; fica no histórico quem viu
+router.get('/assets/:id/secrets', requireInv, async (req, res) => {
+  if (!veSegredos(req.user)) return res.status(403).json({ error: 'Seu perfil não pode ver as senhas dos equipamentos.' });
+  const { rows } = await query('SELECT id, entity_id, anydesk_id, anydesk_password_enc, master_user_enc, master_password_enc FROM assets WHERE id=$1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
+  if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
+  const a = rows[0];
+  const quais = String(req.query.quais || 'anydesk,mestre').split(',');
+  const out = {};
+  if (quais.includes('anydesk')) out.anydesk_password = decifrar(a.anydesk_password_enc);
+  if (quais.includes('mestre')) { out.master_user = decifrar(a.master_user_enc); out.master_password = decifrar(a.master_password_enc); }
+  await query(`INSERT INTO asset_history (asset_id, user_id, action, field) VALUES ($1,$2,'SecretViewed',$3)`,
+    [a.id, req.user.id, quais.filter((q) => ['anydesk', 'mestre'].includes(q)).join(',')]);
+  res.json(out);
+});
+
 // Histórico do ativo
 router.get('/assets/:id/history', requireInv, async (req, res) => {
   const { rows } = await query('SELECT * FROM assets WHERE id=$1', [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   if (!canAccessEntity(req.user, rows[0].entity_id)) return res.status(403).json({ error: 'Acesso negado' });
   const { rows: hist } = await query('SELECT h.*, u.name AS user_name FROM asset_history h LEFT JOIN users u ON u.id=h.user_id WHERE h.asset_id=$1 ORDER BY h.created_at DESC LIMIT 200', [req.params.id]);
-  res.json(hist);
+  res.json(mascararHistorico(hist, req.user));
 });
 
 // Transferência de ativo entre entidades (histórico acompanha)

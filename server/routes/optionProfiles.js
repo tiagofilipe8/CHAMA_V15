@@ -3,7 +3,7 @@ const { query, withTransaction } = require('../db');
 const { requireAuth, requireRoles } = require('../middleware/auth');
 
 // ---------------------------------------------------------------------
-// Perfis de opções (Categorias, Urgências e Causas de encerramento)
+// Perfis de opções (Categorias, Urgências, Causas de encerramento e Razões de retirada do estoque)
 //   - "Padrão" = as opções com profile_id NULL. Não pode ser alterado.
 //   - Perfil novo = cópia do Padrão, que depois pode ser editada à vontade.
 //   - Cada empresa usa um perfil (entities.option_profile_id; NULL = Padrão).
@@ -98,6 +98,10 @@ router.post('/', requireRoles('admin'), async (req, res) => {
         `INSERT INTO resolution_causes (name, description, sort_order, active, neutral, profile_id)
          SELECT name, description, sort_order, TRUE, neutral, $1
          FROM resolution_causes WHERE profile_id IS NULL AND active`, [pid]);
+      await q(
+        `INSERT INTO stock_reasons (name, description, sort_order, active, profile_id)
+         SELECT name, description, sort_order, TRUE, $1
+         FROM stock_reasons WHERE profile_id IS NULL AND active`, [pid]);
       return rows[0];
     });
     res.status(201).json({ ...criado, padrao: false, empresas: [] });

@@ -26,6 +26,8 @@ function buildNav(u) {
   items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-ticket-detailed', label: 'Meus chamados' });
   // Em atendimento (quem atende chamados): o chamado que a pessoa está atendendo agora
   if (Atendimento.pode(u)) items.push({ atend: true, href: '#/atendimento', icon: 'bi-play-circle', label: 'Em atendimento' });
+  // Chat interno (todo mundo), com a bolinha de mensagens não lidas
+  if (window.CHAT_LIGADO) items.push({ chat: true, href: '#/chat', icon: 'bi-chat-dots', label: 'Chat' });
 
   const atendimento = [];
   if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
@@ -39,8 +41,12 @@ function buildNav(u) {
   if (atendimento.length === 1) items.push({ ...atendimento[0], g: 'g-solto' });
   else grupo('Atendimento', 'g-atend', atendimento);
 
-  grupo('Equipamentos', 'g-equip', can('inventory.view')
-    ? [{ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' }] : []);
+  // Equipamentos: Inventário e, logo abaixo (ligado por um "L"), o Estoque de T.I. de cada posto
+  const equip = [];
+  if (can('inventory.view')) equip.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
+  if (can('stock.withdraw') || can('inventory.view')) equip.push({ href: '#/estoque', icon: 'bi-box-seam', label: 'Estoque de T.I.', sub: can('inventory.view') });
+  if (can('stock.report')) equip.push({ href: '#/estoque/relatorio', icon: 'bi-graph-up', label: 'Relatório de estoque', sub: can('inventory.view') });
+  grupo('Equipamentos', 'g-equip', equip);
 
   // Locais: Empresas e, logo abaixo (ligada por um "L"), as Localizações de cada empresa
   const locais = [];
@@ -78,6 +84,9 @@ function pageTitleFromPath() {
     '/causas': 'Causas e notas',
     '/urgencia': 'Score de urgência',
     '/rotas': 'Sugerir rotas',
+    '/chat': 'Chat',
+    '/estoque': 'Estoque de T.I.',
+    '/estoque/relatorio': 'Relatório de estoque',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
@@ -91,7 +100,8 @@ function pageTitleFromPath() {
     '/perfil': 'Meu Perfil',
   };
   if (path.startsWith('/tickets/')) return 'Chamado';
-  if (path.startsWith('/inventory/')) return 'Ativo';
+  if (path.startsWith('/chat/')) return 'Chat';
+  if (path.startsWith('/inventory/')) return 'Equipamento';
   return map[path] || 'Sistema';
 }
 
@@ -114,7 +124,10 @@ function pageDescFromPath() {
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
     '/new': 'Conte o problema e onde ele está. A equipe de TI recebe o chamado na hora.',
-    '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão e quem usa.',
+    '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão, quanto custaram e em que estado estão.',
+    '/chat': 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.',
+    '/estoque': 'Itens guardados no estoque de cada posto. Quem pega um item dá baixa aqui, dizendo o motivo.',
+    '/estoque/relatorio': 'Por que os itens saem do estoque, quanto custam as retiradas e quanto vale o inventário.',
     '/inventory/agents': 'Programas instalados nos computadores que enviam o inventário sozinhos.',
     '/admin/locations': 'Lugares atendidos (lojas, postos, setores). Cada chamado e equipamento fica ligado a um local.',
     '/admin/users': 'Quem acessa o sistema, de qual empresa e local, e com qual perfil.',
@@ -126,6 +139,7 @@ function pageDescFromPath() {
     '/perfil': 'Seus dados de contato e sua senha.',
   };
   if (/^\/tickets\/\d+/.test(path)) return 'Situação, conversa e histórico do chamado.';
+  if (/^\/chat\/\d+/.test(path)) return 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.';
   if (/^\/inventory\/\d+/.test(path)) return 'Dados do equipamento e os chamados ligados a ele.';
   return map[path] || '';
 }
@@ -152,6 +166,9 @@ function renderNav() {
       aberto = true;
     } else if (it.sep) {
       html += '<hr class="nav-sep">';
+    } else if (it.chat) {
+      html += `<a class="nav-item nav-top" id="nav-chat" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
+        + '<b class="nav-chat-n d-none" title="Mensagens não lidas"></b></a>';
     } else {
       html += it.atend
         ? `<a class="nav-item nav-atend" id="nav-atend" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span><span class="nav-atend-num"></span></a>`
@@ -162,6 +179,7 @@ function renderNav() {
   nav.innerHTML = html;
   pintarNovidades();
   Atendimento.carregar();
+  Chat.pintarBolinha();
 
   // identities
   const name = user.name || user.username;
@@ -199,7 +217,8 @@ function renderNav() {
 // Selo do grupo ao lado do título (mesma cor do grupo no menu)
 function moduloAtual() {
   const p = location.hash.replace(/^#/, '') || '/dashboard';
-  if (p.startsWith('/inventory')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
+  if (p.startsWith('/inventory') || p.startsWith('/estoque')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
+  if (p.startsWith('/chat')) return ['Chat', 'tg-teal', 'bi-chat-dots'];
   if (p.startsWith('/admin/locations')) return ['Locais', 'tg-teal', 'bi-geo-alt'];
   if (p.startsWith('/admin/roles') || p.startsWith('/admin/settings')) return ['Sistema', 'tg-gray', 'bi-gear'];
   if (p.startsWith('/admin')) return ['Cadastros', 'tg-violet', 'bi-folder2-open'];
@@ -250,6 +269,10 @@ const routes = [
   { re: /^#\/causas$/, view: () => Views.causas },
   { re: /^#\/urgencia$/, view: () => Views.urgencia },
   { re: /^#\/rotas$/, view: () => Views.rotas },
+  { re: /^#\/chat$/, view: () => Views.chat },
+  { re: /^#\/chat\/(\d+)$/, view: (m) => Views.chatConversa(m[1]) },
+  { re: /^#\/estoque$/, view: () => Views.estoque },
+  { re: /^#\/estoque\/relatorio$/, view: () => Views.estoqueRelatorio },
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },
@@ -338,11 +361,15 @@ function connectSocket() {
     }
   });
 
+  socket.on('chat:message', (m) => Chat.chegou(m));
+  socket.on('chat:deleted', (d) => Chat.apagada(d));
+
   socket.on('notification:new', (n) => {
     loadBell();
     // sem aviso repetido: nao avisa do chamado que ja esta aberto na tela,
     // nem repete o mesmo titulo em poucos segundos
     if (n.ticket_id && location.hash === `#/tickets/${n.ticket_id}`) return;
+    if (n.link && location.hash === n.link) return; // a conversa citada já está aberta
     const chave = `${n.ticket_id || ''}|${n.title}`;
     if (ultimosAvisos.has(chave)) return;
     ultimosAvisos.add(chave);
@@ -510,7 +537,7 @@ async function loadBell() {
     countEl.textContent = data.unread > 99 ? '99+' : data.unread;
     listEl.innerHTML = data.list.length
       ? data.list.map((n) => `
-        <a class="dropdown-item notif-item ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-ticket="${n.ticket_id || ''}" href="${n.ticket_id ? `#/tickets/${n.ticket_id}` : (String(n.title).includes('Manutenção') ? '#/dashboard' : '#/inventory')}">
+        <a class="dropdown-item notif-item ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-ticket="${n.ticket_id || ''}" href="${n.link && /^#\/[\w/?=&-]*$/.test(n.link) ? n.link : n.ticket_id ? `#/tickets/${n.ticket_id}` : (String(n.title).includes('Manutenção') ? '#/dashboard' : '#/inventory')}">
           <div class="notif-title">${esc(n.title)}</div>
           <div class="notif-msg">${esc(n.message)}</div>
           <small class="text-muted">${fmt.timeAgo(n.created_at)}</small>
@@ -545,6 +572,7 @@ async function boot() {
   try {
     const s = await (await fetch('/api/settings/public')).json();
     document.title = s.app_name || 'Central de Serviços';
+    window.CHAT_LIGADO = !!s.chat_enabled;
     document.getElementById('side-title').textContent = s.app_name || 'Central de Serviços';
     if (s.versao) document.getElementById('side-versao').textContent = `Versão ${s.versao}`;
     const logoBox = document.getElementById('side-logo');
@@ -572,6 +600,7 @@ async function boot() {
   renderNav();
   connectSocket();
   loadBell();
+  if (window.CHAT_LIGADO) Chat.carregarBolinha();
 
   // eventos do shell
   document.getElementById('btn-logout').onclick = logout;

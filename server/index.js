@@ -27,6 +27,9 @@ const resolutionCauseRoutes = require('./routes/resolutionCauses');
 const permissionRoutes = require('./routes/permissions');
 const materialRoutes = require('./routes/materials');
 const optionProfileRoutes = require('./routes/optionProfiles');
+const chatRoutes = require('./routes/chat');
+const stockRoutes = require('./routes/stock');
+const stockReasonRoutes = require('./routes/stockReasons');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
 
@@ -72,6 +75,9 @@ app.use('/api/resolution-causes', resolutionCauseRoutes);
 app.use('/api/permissions', permissionRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/option-profiles', optionProfileRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/stock', stockRoutes);
+app.use('/api/stock-reasons', stockReasonRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);

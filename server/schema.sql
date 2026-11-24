@@ -501,6 +501,16 @@ ALTER TABLE whatsapp_contacts ALTER COLUMN step DROP NOT NULL;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS next_maintenance_date DATE;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS toner TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS cilindro TEXT;
+-- campos do cadastro manual que a tela e a API já usam (faltavam no schema: o cadastro dava erro)
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS mac_address TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS memory_info TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS hd_info TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS cpu_info TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS os_info TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS license_info TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS ip_address TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS webcam BOOLEAN;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS eth_port BOOLEAN;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS maintenance_alert_notified_date DATE;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS next_maintenance_notes TEXT;
 
@@ -685,3 +695,108 @@ CREATE TRIGGER trg_chama_limpa_atendimento AFTER UPDATE OF status, assigned_user
 -- Observadores tirados do sistema (2026-11-23): some a permissão. A tabela ticket_watchers
 -- fica guardada (histórico), mas não dá mais acesso nem avisos.
 DELETE FROM role_permissions WHERE permission = 'ticket.watchers';
+
+-- =====================================================================
+-- Chat interno (2026-11-24): conversas diretas e grupos, com @ e #
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id              BIGSERIAL PRIMARY KEY,
+    kind            TEXT NOT NULL CHECK (kind IN ('direct','group')),
+    name            TEXT,
+    direct_key      TEXT UNIQUE,           -- "12:34" (as duas pessoas da conversa direta)
+    created_by      BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_message_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS chat_members (
+    conversation_id BIGINT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+    user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_read_at    TIMESTAMPTZ,
+    joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (conversation_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_members_user ON chat_members(user_id);
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id              BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+    user_id         BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    content         TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON chat_messages(conversation_id, id DESC);
+-- aviso que abre outra tela (ex.: citação no chat abre a conversa)
+ALTER TABLE inapp_notifications ADD COLUMN IF NOT EXISTS link TEXT;
+
+-- =====================================================================
+-- Inventário e Estoque de T.I. (2026-11-24)
+--   local do posto, preço, AnyDesk e acesso mestre da Orcim (senhas criptografadas),
+--   estados novos com cores, razões de retirada (por perfil de opções) e movimentações.
+-- =====================================================================
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS location_id BIGINT REFERENCES locations(id) ON DELETE SET NULL;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS price NUMERIC(12,2);
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS anydesk_id TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS anydesk_password_enc TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS master_user_enc TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS master_password_enc TEXT;
+CREATE INDEX IF NOT EXISTS idx_assets_location ON assets(location_id);
+-- estados: Operando, Em conserto, Estragado, Comprado (aguardando chegar), Pronto para entregar, Em estoque
+-- (+ Descartado e Extraviado, que já existiam)
+ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_status_check;
+UPDATE assets SET status = 'OPERATING' WHERE status = 'ACTIVE';
+UPDATE assets SET status = 'REPAIR'    WHERE status = 'MAINTENANCE';
+UPDATE assets SET status = 'BROKEN'    WHERE status = 'INACTIVE';
+ALTER TABLE assets ADD CONSTRAINT assets_status_check
+  CHECK (status IN ('OPERATING','REPAIR','BROKEN','ORDERED','READY','STOCK','DISPOSED','LOST'));
+ALTER TABLE assets ALTER COLUMN status SET DEFAULT 'OPERATING';
+-- categoria nova: periférico / acessório (mouse, teclado, cabo, headset...)
+ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_type_check;
+ALTER TABLE assets ADD CONSTRAINT assets_type_check
+  CHECK (type IN ('COMPUTER','NOTEBOOK','SERVER','PRINTER','MONITOR','UPS','NETWORK_DEVICE','MOBILE_DEVICE','PERIPHERAL','OTHER'));
+
+-- Razões de retirada do estoque (Categorias e opções > Razões de retirada)
+CREATE TABLE IF NOT EXISTS stock_reasons (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    active      BOOLEAN NOT NULL DEFAULT TRUE,
+    profile_id  BIGINT REFERENCES option_profiles(id),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_reasons_perfil_nome ON stock_reasons (COALESCE(profile_id, 0), name);
+-- razões padrão (no Padrão e em cada perfil de opções que ainda não tem nenhuma)
+INSERT INTO stock_reasons (name, description, sort_order, profile_id)
+SELECT v.name, v.description, v.ord, p.id
+  FROM (VALUES
+    ('O outro item estragou', 'O equipamento que estava em uso quebrou e não tem conserto rápido.', 1),
+    ('O outro item está em conserto', 'Substituição temporária enquanto o equipamento é consertado.', 2),
+    ('Funcionário novo ou posto novo', 'Primeiro equipamento de uma pessoa, caixa, setor ou unidade nova.', 3),
+    ('Troca por um melhor (upgrade)', 'O equipamento atual funciona, mas não dá conta do serviço.', 4),
+    ('Perda, furto ou roubo', 'O equipamento anterior sumiu.', 5),
+    ('Acidente (queda, líquido, raio)', 'O equipamento anterior foi danificado por acidente.', 6),
+    ('Uso temporário ou evento', 'Empréstimo por um período; deve voltar ao estoque.', 7),
+    ('Reposição de consumível', 'Toner, cabo, mouse, teclado e outros itens que gastam.', 8),
+    ('Outro', 'Explique na observação.', 99)
+  ) AS v(name, description, ord)
+  CROSS JOIN (SELECT NULL::bigint AS id UNION ALL SELECT id FROM option_profiles WHERE deleted_at IS NULL) p
+ WHERE NOT EXISTS (SELECT 1 FROM stock_reasons r WHERE COALESCE(r.profile_id, 0) = COALESCE(p.id, 0));
+
+-- Movimentações do estoque (baixa, devolução, transferência, entrada): base do log e do relatório
+CREATE TABLE IF NOT EXISTS stock_movements (
+    id               BIGSERIAL PRIMARY KEY,
+    asset_id         BIGINT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    kind             TEXT NOT NULL CHECK (kind IN ('entry','withdraw','return','transfer')),
+    user_id          BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    reason_id        BIGINT REFERENCES stock_reasons(id) ON DELETE SET NULL,
+    reason_name      TEXT,
+    from_entity_id   BIGINT REFERENCES entities(id) ON DELETE SET NULL,
+    to_entity_id     BIGINT REFERENCES entities(id) ON DELETE SET NULL,
+    from_location_id BIGINT REFERENCES locations(id) ON DELETE SET NULL,
+    to_location_id   BIGINT REFERENCES locations(id) ON DELETE SET NULL,
+    price            NUMERIC(12,2),
+    note             TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_stock_mov_asset ON stock_movements(asset_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_mov_data ON stock_movements(created_at DESC);

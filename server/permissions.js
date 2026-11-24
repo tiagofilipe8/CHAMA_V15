@@ -37,7 +37,11 @@ const PERMISSIONS = [
   // Painel e equipamentos
   { key: 'dashboard.view', group: 'Painel e equipamentos', label: 'Ver o painel' },
   { key: 'inventory.view', group: 'Painel e equipamentos', label: 'Ver o inventário' },
-  { key: 'inventory.manage', group: 'Painel e equipamentos', label: 'Cadastrar e editar equipamentos' },
+  { key: 'inventory.manage', group: 'Painel e equipamentos', label: 'Cadastrar e editar equipamentos', help: 'Inclui devolver itens ao estoque e transferir de unidade.' },
+  { key: 'inventory.secrets', group: 'Painel e equipamentos', label: 'Ver preço e senhas dos equipamentos', help: 'Preço, senha do AnyDesk e acesso mestre da Orcim. Quem vê uma senha fica registrado no histórico.' },
+  // Estoque de T.I.
+  { key: 'stock.withdraw', group: 'Estoque de T.I.', label: 'Ver o estoque e dar baixa nos itens', help: 'Pegar um item do estoque do posto, dizendo o motivo. Fica registrado no histórico do item.' },
+  { key: 'stock.report', group: 'Estoque de T.I.', label: 'Relatório de estoque e custos', help: 'Movimentações por motivo, custo dos equipamentos e das retiradas.' },
   // Cadastros da própria empresa
   { key: 'users.manage', group: 'Cadastros da empresa', label: 'Usuários' },
   { key: 'locations.manage', group: 'Cadastros da empresa', label: 'Localizações' },
@@ -56,6 +60,7 @@ const DEPENDENCIAS = {
   'ticket.take': VER_CHAMADOS,
   'ticket.resolve_direct': ['ticket.status_any', 'ticket.work'],
   'inventory.manage': ['inventory.view'],
+  'inventory.secrets': ['inventory.view'],
 };
 
 // Corrige uma linha da matriz ({ perm: bool }): marca a dependência que faltar
@@ -84,20 +89,21 @@ const DEFAULTS = {
   moderator: [
     'ticket.create', 'ticket.view_all', 'ticket.triage', 'ticket.assign',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.cancel', 'ticket.internal', 'ticket.rating',
-    'dashboard.view', 'inventory.view', 'inventory.manage',
+    'dashboard.view', 'inventory.view', 'inventory.manage', 'stock.withdraw',
   ],
   technician: [
     'ticket.create', 'ticket.view_all', 'ticket.take', 'ticket.work', 'ticket.cancel',
     'ticket.internal', 'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage',
+    'inventory.secrets', 'stock.withdraw',
   ],
   // Gestor = chefe da empresa cliente (absorveu o antigo Administrador Local)
   manager: [
     'ticket.create', 'ticket.view_company', 'ticket.triage', 'ticket.assign',
     'ticket.status_any', 'ticket.resolve_direct', 'ticket.approve', 'ticket.cancel', 'ticket.manager_note',
     'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
-    'locations.manage', 'materials.manage',
+    'locations.manage', 'materials.manage', 'inventory.secrets', 'stock.withdraw', 'stock.report',
   ],
-  user: ['ticket.create', 'ticket.approve', 'ticket.cancel'],
+  user: ['ticket.create', 'ticket.approve', 'ticket.cancel', 'stock.withdraw'],
 };
 
 const ALL_KEYS = PERMISSIONS.map((p) => p.key);

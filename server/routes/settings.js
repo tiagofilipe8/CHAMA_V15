@@ -18,6 +18,7 @@ router.get('/public', async (req, res) => {
     background: s['app.background'] ? (s['app.background'].startsWith('http') ? s['app.background'] : `${config.publicUrl}${s['app.background']}`) : '',
     'app.voice_enabled': s['app.voice_enabled'],
     'app.voice_new_ticket': s['app.voice_new_ticket'],
+    chat_enabled: !!s['chat.enabled'],
     versao: require('../versao'),
   });
 });

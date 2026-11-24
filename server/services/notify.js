@@ -118,10 +118,10 @@ async function summary(ticket) {
   };
 }
 
-async function createInApp(userId, title, message, ticketId = null) {
+async function createInApp(userId, title, message, ticketId = null, link = null) {
   const { rows } = await query(
-    `INSERT INTO inapp_notifications (user_id, ticket_id, title, message)
-     VALUES ($1, $2, $3, $4) RETURNING *`, [userId, ticketId, title, message]);
+    `INSERT INTO inapp_notifications (user_id, ticket_id, title, message, link)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`, [userId, ticketId, title, message, link]);
   realtime.emitToUsers([userId], 'notification:new', rows[0]);
   return rows[0];
 }

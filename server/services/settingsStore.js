@@ -14,6 +14,7 @@ const ALLOWED_KEYS = {
   'app.notify_clients': 'boolean',
   'app.approval_on_solve': 'boolean',
   'backup.auto_enabled': 'boolean',
+  'chat.enabled': 'boolean', // chat interno: começa desligado; só o admin mestre liga (Configurações)
   'backup.auto_hour': null,
   'notify.templates': 'json',
 };

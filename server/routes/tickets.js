@@ -304,7 +304,8 @@ router.get('/', async (req, res) => {
   const where = ['TRUE', ...conds].join(' AND ');
   const lim = Math.min(parseInt(limit, 10) || 200, 500);
   const { rows } = await query(
-    `${TICKET_SELECT} WHERE (${where}) ${scope.sql ? 'AND ' + scope.sql : ''} ORDER BY t.updated_at DESC LIMIT ${lim}`, params);
+    `${TICKET_SELECT} WHERE (${where}) ${scope.sql ? 'AND ' + scope.sql : ''}
+     ORDER BY ${req.query.sort === 'number' ? 't.id DESC' : 't.updated_at DESC'} LIMIT ${lim}`, params);
   res.json(rows.map((r) => decorate(r, req.user)));
 });
 
