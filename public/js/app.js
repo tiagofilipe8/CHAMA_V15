@@ -30,6 +30,8 @@ function buildNav(u) {
   const atendimento = [];
   if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
   if (can('dashboard.view') && can('ticket.rating')) atendimento.push({ href: '#/causas', icon: 'bi-clipboard-data', label: 'Causas e notas' });
+  if (can('dashboard.view')) atendimento.push({ href: '#/urgencia', icon: 'bi-fire', label: 'Score de urgência' });
+  if (can('dashboard.view')) atendimento.push({ href: '#/rotas', icon: 'bi-signpost-split', label: 'Sugerir rotas' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
   if (!listaJaEMinha) atendimento.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
   if (client && can('ticket.view_company')) atendimento.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da equipe' });
@@ -74,6 +76,8 @@ function pageTitleFromPath() {
     '/mine': 'Meus chamados',
     '/atendimento': 'Meu atendimento',
     '/causas': 'Causas e notas',
+    '/urgencia': 'Score de urgência',
+    '/rotas': 'Sugerir rotas',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': 'Inventário',
@@ -104,6 +108,8 @@ function pageDescFromPath() {
     '/dashboard': 'Resumo do atendimento: chamados abertos, urgências e o que precisa ficar pronto em cada dia.',
     '/atendimento': 'O chamado que você está atendendo agora e a sua fila, do mais urgente para o menos urgente.',
     '/causas': 'Por que abrem e por que fecham os chamados, e a nota de cada local e usuário com a TI.',
+    '/urgencia': 'Os locais em ordem de urgência: soma do score dos chamados abertos (urgência, atraso e prazo).',
+    '/rotas': 'Escolha quantos locais vai atender: o sistema sugere os mais urgentes, monta a ordem de visita e o que levar.',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
@@ -242,6 +248,8 @@ const routes = [
   { re: /^#\/mine$/, view: () => (el) => Views.tickets(el, { mine: true }) },
   { re: /^#\/atendimento$/, view: () => Views.atendimento },
   { re: /^#\/causas$/, view: () => Views.causas },
+  { re: /^#\/urgencia$/, view: () => Views.urgencia },
+  { re: /^#\/rotas$/, view: () => Views.rotas },
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
   { re: /^#\/new$/, view: () => Views.newTicket },

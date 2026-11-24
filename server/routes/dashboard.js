@@ -326,4 +326,61 @@ router.get('/causas', async (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------
+// Score de urgência por local (e base da sugestão de rotas). Ver services/scoreUrgencia.js.
+//   ?entity_id=  · só chamados em aberto, dentro do que a pessoa pode ver
+// ---------------------------------------------------------------------
+router.get('/urgencia', async (req, res) => {
+  const user = req.user;
+  if (!canSeeDashboard(user)) return res.status(403).json({ error: 'Seu perfil não vê o score de urgência.' });
+  const { calcular, REGRAS, diaSP } = require('../services/scoreUrgencia');
+  const scope = scopeConditions(user, 1);
+  const params = [...scope.params];
+  const conds = ['t.status NOT IN (5,6,7)'];
+  if (scope.sql) conds.push(scope.sql);
+  if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) { params.push(req.query.entity_id); conds.push(`t.entity_id = $${params.length}`); }
+  const { rows } = await query(
+    `SELECT t.id, t.title, t.status, t.priority, t.needed_by, t.due_at, t.created_at, t.entity_id, t.location_id,
+            e.name AS entity_name, l.name AS location_name, l.address, l.city, l.state, l.latitude, l.longitude,
+            il.name AS impact_name, u.name AS assigned_name,
+            COALESCE(sc.name, c.name) AS category_name,
+            COALESCE((SELECT json_agg(json_build_object('name', m.name, 'unit', m.unit, 'quantity', m.quantity) ORDER BY m.id)
+                      FROM ticket_materials m WHERE m.ticket_id = t.id), '[]') AS materiais
+     FROM tickets t
+     JOIN entities e ON e.id = t.entity_id
+     LEFT JOIN locations l ON l.id = t.location_id
+     LEFT JOIN impact_levels il ON il.id = t.impact_id
+     LEFT JOIN users u ON u.id = t.assigned_user_id
+     LEFT JOIN categories c ON c.id = t.category_id
+     LEFT JOIN categories sc ON sc.id = t.simple_category_id
+     WHERE ${conds.join(' AND ')}`, params);
+  const hoje = diaSP(new Date());
+  const locais = new Map();
+  for (const t of rows) {
+    const k = `${t.entity_id}:${t.location_id || 'sem'}`;
+    if (!locais.has(k)) {
+      locais.set(k, {
+        location_id: t.location_id, location_name: t.location_name || 'Sem localização', entity_id: t.entity_id, entity_name: t.entity_name,
+        address: t.address, city: t.city, state: t.state,
+        latitude: t.latitude === null ? null : Number(t.latitude), longitude: t.longitude === null ? null : Number(t.longitude),
+        score: 0, chamados: [],
+      });
+    }
+    const loc = locais.get(k);
+    const calc = calcular(t, hoje);
+    loc.score += calc.score;
+    loc.chamados.push({
+      id: t.id, number: `#${t.id}`, title: t.title, status: t.status, priority: t.priority, impact_name: t.impact_name,
+      category_name: t.category_name, assigned_name: t.assigned_name, materiais: t.materiais, ...calc,
+    });
+  }
+  const lista = [...locais.values()].map((l) => ({
+    ...l,
+    score: Math.round(l.score * 100) / 100,
+    chamados: l.chamados.sort((a, b) => b.score - a.score),
+    atrasados: l.chamados.filter((c) => c.dias_atraso > 0).length,
+  })).sort((a, b) => b.score - a.score);
+  res.json({ hoje, regras: REGRAS, locais: lista });
+});
+
 module.exports = router;
