@@ -16,7 +16,7 @@ const BOARD_STATUS = [
   { id: 1, label: 'Novo' },
   { id: 2, label: 'Atribuído' },
   { id: 3, label: 'Em andamento' },
-  { id: 4, label: 'Pendente' },
+  { id: 4, label: 'Em pausa' },
   { id: 5, label: 'Resolvido' },
   { id: 6, label: 'Fechado', closed: true },
   { id: 7, label: 'Cancelado', closed: true },
@@ -405,13 +405,14 @@ Views.tickets = async function tickets(el, opts = {}) {
         const to = col.drop.status;
         const de = t.status;
         if (to === de) return;
-        if (to === 5 || (to === 6 && de !== 5)) { TicketModals.resolve(t, { toStatus: to, onDone: load, onCancel: render }); return; }
+        if (to === 5 || (to === 6 && (de !== 5 || t.awaiting_evaluation))) { TicketModals.resolve(t, { toStatus: to, onDone: load, onCancel: render }); return; }
+        if (to === 4) { TicketModals.pause(t, { onDone: load, onCancel: render }); return; }
         if (to === 2 && !t.assigned_user_id) {
           if (P('ticket.take') && !P('ticket.assign')) { await API.post(`/tickets/${t.id}/assign`, { assumir: true }); toast(`${t.number} assumido por você.`, 'success'); return load(); }
           TicketModals.assign(t, { onDone: load, onCancel: render }); return;
         }
         await API.post(`/tickets/${t.id}/status`, { status: to });
-        const simples = [1, 2, 3, 4].includes(de) && [1, 2, 3, 4].includes(to);
+        const simples = [1, 2, 3].includes(de) && [1, 2, 3].includes(to);
         avisoComDesfazer(`${t.number} → ${LABELS.status[to]}`,
           simples ? () => API.post(`/tickets/${t.id}/status`, { status: de }) : null);
       } else if (col.drop.impact_id !== undefined) {

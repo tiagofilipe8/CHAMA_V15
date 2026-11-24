@@ -131,13 +131,10 @@ const TicketModals = (() => {
               </select>
               <div class="invalid-feedback">Escolha uma opção.</div>
               ${t.asset_id ? `<div class="form-text">Fica registrado também no histórico de manutenção de <b>${esc(t.asset_name || 'equipamento')}</b>.</div>` : ''}</div>
-          <div class="mb-2"><label class="form-label">4. Nota para o usuário <b>${esc(t.requester_name || '')}</b> neste chamado <span class="text-danger" data-obrig>*</span></label>
-            <div class="d-flex align-items-center gap-3 flex-wrap">
-              <span class="star-pick" data-f="stars">${[1, 2, 3, 4, 5].map((n) => `<i class="bi bi-star" data-n="${n}"></i>`).join('')}</span>
-              <button type="button" class="btn btn-sm btn-outline-secondary" data-f="zero">0 estrelas</button>
-              <span class="small text-muted" data-f="stars-label">Toque nas estrelas</span>
-            </div>
-            <div class="text-danger small d-none" data-f="stars-err">Dê uma nota de 0 a 5 estrelas.</div>
+          <div class="mb-2"><label class="form-label mb-1">4. Nota para o usuário <b>${esc(t.requester_name || '')}</b> neste chamado <span class="text-danger" data-obrig>*</span></label>
+            <div class="form-text mt-0 mb-2">Cada item marcado vale 1 estrela. Passe o mouse no item para ver quando marcar. <i class="bi bi-magic"></i> = o sistema já marcou pelo que aconteceu no chamado; confira.</div>
+            <div class="ck-lista" data-f="ck"><div class="text-muted small">Carregando...</div></div>
+            <div class="ck-total" data-f="ck-total"></div>
             <input class="form-control form-control-sm mt-2" data-f="rating-comment" maxlength="300" placeholder="Comentário sobre o usuário (opcional)">
             <div class="form-text"><i class="bi bi-lock me-1"></i>A causa e a nota só são vistas pela equipe — o usuário não vê.</div>
           </div>
@@ -149,16 +146,33 @@ const TicketModals = (() => {
       </div></div></div>`;
     return open(html, (m, finish) => {
       const f = (k) => m.querySelector(`[data-f="${k}"]`);
-      let rating = null;
-      const starLabels = ['0 — muito ruim', '1 — ruim', '2 — regular', '3 — bom', '4 — muito bom', '5 — excelente'];
-      const paintStars = () => {
-        f('stars').querySelectorAll('i').forEach((i) => {
-          i.className = rating !== null && Number(i.dataset.n) <= rating ? 'bi bi-star-fill' : 'bi bi-star';
-        });
-        f('stars-label').textContent = rating === null ? 'Toque nas estrelas' : starLabels[rating];
+      // Checklist da nota: cada "sim" = 1 estrela. O sistema pré-marca o que dá para saber pelo chamado.
+      const NOMES_NOTA = ['muito ruim', 'ruim', 'regular', 'bom', 'muito bom', 'excelente'];
+      let checklistTocado = false;
+      const nota = () => f('ck').querySelectorAll('input[data-k]:checked').length;
+      const pintarTotal = () => {
+        const n = nota();
+        f('ck-total').innerHTML = `${[1, 2, 3, 4, 5].map((i) => `<i class="bi ${i <= n ? 'bi-star-fill' : 'bi-star'}"></i>`).join('')} <b>${n} estrela${n === 1 ? '' : 's'}</b> · ${NOMES_NOTA[n]}`;
       };
-      f('stars').querySelectorAll('i').forEach((i) => i.addEventListener('click', () => { rating = Number(i.dataset.n); paintStars(); }));
-      f('zero').addEventListener('click', () => { rating = 0; paintStars(); });
+      API.get(`/tickets/${t.id}/avaliacao-sugestoes`).then(({ criterios, sugestoes }) => {
+        f('ck').innerHTML = criterios.map((c) => {
+          const s = sugestoes[c.key] || {};
+          // sem sugestão: "seguiu as orientações" e "não foi mau uso" começam marcados (o normal é dar certo)
+          const marcado = s.valor === null || s.valor === undefined ? ['orientacoes', 'sem_mau_uso'].includes(c.key) : s.valor;
+          return `<label class="ck-it ${marcado ? 'on' : ''}">
+            <input type="checkbox" data-k="${c.key}" ${marcado ? 'checked' : ''}>
+            <span class="ck-tx"><b>${esc(c.label)}</b>${s.motivo ? `<small class="ck-auto ${s.valor ? 'sim' : 'nao'}"><i class="bi bi-magic"></i> ${esc(s.motivo)}</small>` : ''}</span>
+            <i class="bi bi-info-circle ck-i"></i>
+            <span class="ck-dica"><b><i class="bi bi-check-lg"></i> Marque se:</b> ${esc(c.sim)}<br><b><i class="bi bi-x-lg"></i> Não marque se:</b> ${esc(c.nao)}</span>
+          </label>`;
+        }).join('');
+        f('ck').querySelectorAll('input[data-k]').forEach((i) => i.addEventListener('change', () => {
+          checklistTocado = true;
+          i.closest('.ck-it').classList.toggle('on', i.checked);
+          pintarTotal();
+        }));
+        pintarTotal();
+      }).catch((e) => { f('ck').innerHTML = `<div class="text-danger small">${esc(e.message || 'Não foi possível carregar o checklist.')}</div>`; });
 
       const causeSel = f('cause');
       // causas do perfil de opções da empresa do chamado
@@ -174,10 +188,7 @@ const TicketModals = (() => {
         const n = ehNeutra();
         f('neutro-info').classList.toggle('d-none', !n);
         m.querySelectorAll('[data-obrig]').forEach((x) => { x.textContent = n ? '(opcional)' : '*'; x.className = n ? 'text-muted small' : 'text-danger'; });
-        if (n) {
-          ['notes', 'action'].forEach((k) => f(k).classList.remove('is-invalid'));
-          f('stars-err').classList.add('d-none');
-        }
+        if (n) ['notes', 'action'].forEach((k) => f(k).classList.remove('is-invalid'));
       }
       causeSel.addEventListener('change', () => {
         f('cause-help').textContent = causeSel.selectedOptions[0]?.dataset.help || '';
@@ -185,8 +196,6 @@ const TicketModals = (() => {
         atualizarNeutro();
       });
       ['notes', 'action'].forEach((k) => f(k).addEventListener('input', () => f(k).classList.remove('is-invalid')));
-      f('stars').addEventListener('click', () => f('stars-err').classList.add('d-none'));
-      f('zero').addEventListener('click', () => f('stars-err').classList.add('d-none'));
 
       // Empresa obrigatoria para chamados do WhatsApp ainda sem empresa real
       let empresaOk = !precisaEmpresa;
@@ -227,21 +236,25 @@ const TicketModals = (() => {
           resolution_notes: f('notes').value.trim(),
           resolution_cause_id: parseInt(causeSel.value, 10) || null,
           equipment_action: f('action').value,
-          requester_rating: rating,
           requester_rating_comment: f('rating-comment').value.trim(),
         };
+        const ck = f('ck').querySelectorAll('input[data-k]');
+        // causa neutra (sem problema): a nota é opcional, só vai se o técnico mexeu no checklist
+        if (ck.length && (!ehNeutra() || checklistTocado)) {
+          body.requester_rating_criteria = Object.fromEntries([...ck].map((i) => [i.dataset.k, i.checked]));
+        }
         // Erros ficam marcados em vermelho no próprio campo (não somem)
         const neutra = ehNeutra();
         const erros = [];
         if (!body.resolution_cause_id) { causeSel.classList.add('is-invalid'); erros.push(causeSel); }
         if (!neutra && body.resolution_notes.length < 5) { f('notes').classList.add('is-invalid'); erros.push(f('notes')); }
         if (!neutra && !body.equipment_action) { f('action').classList.add('is-invalid'); erros.push(f('action')); }
-        if (!neutra && rating === null) { f('stars-err').classList.remove('d-none'); erros.push(f('zero')); }
+        if (!neutra && !body.requester_rating_criteria) { toast('Espere o checklist da nota carregar.', 'warning'); return; }
         if (erros.length) { erros[0].focus(); erros[0].scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
         try {
           try {
             await API.post(`/tickets/${t.id}/status`, body);
-            toast(`${t.number} ${paraStatus === 6 ? 'fechado' : 'resolvido'}.`, 'success');
+            toast(paraStatus === 6 ? `${t.number} fechado. O usuário pode reabrir em até 3 dias.` : `${t.number} resolvido.`, 'success');
           } catch (e) {
             // perfil que precisa da aprovacao do solicitante: envia para aprovar
             if (!e.data?.request_approval) throw e;
@@ -257,5 +270,131 @@ const TicketModals = (() => {
     }, opts);
   }
 
-  return { assign, resolve };
+  // ---------------- Em pausa: motivo + data para voltar à fila ----------------
+  const DIAS_PADRAO_PAUSA = { peca: 7, usuario: 3, fornecedor: 7, agendado: 1, outro: 3 };
+  const diaMais = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('sv-SE'); };
+  function pause(t, opts = {}) {
+    const html = `<div class="modal fade" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h6><i class="bi bi-pause-circle me-1"></i> Colocar em pausa · ${esc(t.number)}</h6>
+          <button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="small text-muted mb-2">${esc(t.title || '')}</div>
+          <label class="form-label small fw-semibold mb-1">Por que está parado? *</label>
+          <div class="es-razoes" data-f="motivos">${Object.entries(LABELS.pausa).map(([k, v]) => `<label class="es-razao"><input type="radio" name="pz-motivo" value="${k}"><span><b>${esc(v)}</b></span></label>`).join('')}</div>
+          <label class="form-label small fw-semibold mt-3 mb-1">Volta para a fila em *</label>
+          <input type="date" class="form-control form-control-sm" data-f="ate" min="${diaMais(1)}" max="${diaMais(120)}" value="${diaMais(3)}">
+          <div class="form-text">Nessa data o chamado volta sozinho para a fila e você recebe um aviso. Enquanto isso ele não conta no score de urgência nem nas rotas.</div>
+          <label class="form-label small fw-semibold mt-3 mb-1">Comentário <span class="text-muted fw-normal" data-f="dica">(opcional)</span></label>
+          <textarea class="form-control form-control-sm" data-f="nota" rows="2" placeholder="Ex.: fonte nova pedida ao fornecedor, chega na sexta"></textarea>
+          <div class="form-text">O solicitante vê o motivo e a data.</div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-warning" data-f="save"><i class="bi bi-pause-fill"></i> Pausar</button></div>
+      </div></div></div>`;
+    return open(html, (m, finish) => {
+      const f = (k) => m.querySelector(`[data-f="${k}"]`);
+      m.querySelectorAll('[name="pz-motivo"]').forEach((r) => r.addEventListener('change', () => {
+        m.querySelectorAll('.es-razao').forEach((l) => l.classList.toggle('on', l.querySelector('input').checked));
+        f('ate').value = diaMais(DIAS_PADRAO_PAUSA[r.value] || 3);
+        f('dica').textContent = r.value === 'outro' ? '(obrigatório: explique)' : '(opcional)';
+      }));
+      f('save').addEventListener('click', async () => {
+        const motivo = m.querySelector('[name="pz-motivo"]:checked')?.value;
+        if (!motivo) { toast('Escolha por que o chamado está parado.', 'warning'); return; }
+        try {
+          await API.post(`/tickets/${t.id}/status`, { status: 4, pause_reason: motivo, pause_until: f('ate').value, comment: f('nota').value.trim() });
+          toast(`${t.number} em pausa até ${f('ate').value.split('-').reverse().join('/')}.`, 'success');
+          finish(true);
+        } catch (e) { showError(e); }
+      });
+    }, opts);
+  }
+
+  // ---------------- Quem abriu encerra o próprio chamado ----------------
+  const AJUDA_ENCERRA = {
+    resolvido: 'Alguém da TI resolveu. O técnico confirma e fecha.',
+    sozinho: 'Conte como resolveu: ajuda em casos iguais.',
+    engano: 'Não era um problema de TI ou abriu sem querer.',
+    repetido: 'Já existe outro chamado para o mesmo problema.',
+    nao_preciso: 'O pedido não é mais necessário.',
+    outro: 'Explique o motivo.',
+  };
+  function encerrarUsuario(t, opts = {}) {
+    const html = `<div class="modal fade" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h6><i class="bi bi-check2-square me-1"></i> Resolvi / não preciso mais · ${esc(t.number)}</h6>
+          <button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="small text-muted mb-2">${esc(t.title || '')}</div>
+          <label class="form-label small fw-semibold mb-1">O que aconteceu? *</label>
+          <div class="es-razoes">${Object.entries(LABELS.encerraUsuario).map(([k, v]) => `<label class="es-razao"><input type="radio" name="eu-motivo" value="${k}"><span><b>${esc(v)}</b><small>${esc(AJUDA_ENCERRA[k])}</small></span></label>`).join('')}</div>
+          <div class="mt-3 d-none" data-f="ref-box"><label class="form-label small fw-semibold mb-1">Qual é o outro chamado? *</label>
+            <input class="form-control form-control-sm" data-f="ref" placeholder="Ex.: #12"></div>
+          <label class="form-label small fw-semibold mt-3 mb-1" data-f="nota-rot">Observação <span class="text-muted fw-normal">(opcional)</span></label>
+          <textarea class="form-control form-control-sm" data-f="nota" rows="2" maxlength="1000"></textarea>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Voltar</button>
+          <button class="btn btn-success" data-f="save"><i class="bi bi-check2"></i> Confirmar</button></div>
+      </div></div></div>`;
+    return open(html, (m, finish) => {
+      const f = (k) => m.querySelector(`[data-f="${k}"]`);
+      const motivoSel = () => m.querySelector('[name="eu-motivo"]:checked')?.value;
+      m.querySelectorAll('[name="eu-motivo"]').forEach((r) => r.addEventListener('change', () => {
+        m.querySelectorAll('.es-razao').forEach((l) => l.classList.toggle('on', l.querySelector('input').checked));
+        f('ref-box').classList.toggle('d-none', r.value !== 'repetido');
+        f('nota-rot').innerHTML = r.value === 'sozinho' ? 'Como você resolveu? <span class="text-muted fw-normal">(opcional)</span>'
+          : r.value === 'outro' ? 'Explique o motivo *' : 'Observação <span class="text-muted fw-normal">(opcional)</span>';
+        f('save').innerHTML = r.value === 'resolvido' ? '<i class="bi bi-check2"></i> Avisar que resolveu' : '<i class="bi bi-check2"></i> Encerrar chamado';
+      }));
+      const enviar = async (confirmar) => {
+        const motivo = motivoSel();
+        if (!motivo) { toast('Escolha o que aconteceu.', 'warning'); return; }
+        const body = { motivo, nota: f('nota').value.trim(), ref: f('ref').value.trim(), confirmar };
+        if (motivo === 'outro' && !body.nota) { toast('Explique o motivo.', 'warning'); return; }
+        if (motivo === 'repetido' && !/^#?\d+$/.test(body.ref)) { toast('Informe o número do outro chamado (ex.: #12).', 'warning'); return; }
+        try {
+          await API.post(`/tickets/${t.id}/encerrar-usuario`, body);
+          toast(motivo === 'resolvido' ? 'Obrigado! O técnico vai confirmar e fechar o chamado.' : 'Chamado encerrado.', 'success');
+          finish(true);
+        } catch (e) {
+          if (e.data?.em_atendimento && !confirmar) {
+            const ok = await confirmDialog({ title: 'O técnico já está atendendo', body: `${esc(e.data.error)}<br>Encerrar mesmo assim? Ele recebe um aviso.`, confirmText: 'Encerrar mesmo assim', danger: true });
+            if (ok) enviar(true);
+            return;
+          }
+          showError(e);
+        }
+      };
+      f('save').addEventListener('click', () => enviar(false));
+    }, opts);
+  }
+
+  // ---------------- Reabrir (contando o que não resolveu) ----------------
+  function reopen(t, opts = {}) {
+    const html = `<div class="modal fade" tabindex="-1">
+      <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h6><i class="bi bi-arrow-counterclockwise me-1"></i> Reabrir · ${esc(t.number)}</h6>
+          <button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <label class="form-label small fw-semibold mb-1">O que não ficou resolvido? *</label>
+          <textarea class="form-control" data-f="nota" rows="3" maxlength="1000" placeholder="Ex.: a impressora voltou a travar no dia seguinte"></textarea>
+          ${t.reopen_until ? `<div class="form-text">Dá para reabrir até ${esc(fmt.dateTime(t.reopen_until))}.</div>` : ''}
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-primary" data-f="save"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button></div>
+      </div></div></div>`;
+    return open(html, (m, finish) => {
+      const nota = m.querySelector('[data-f="nota"]');
+      m.querySelector('[data-f="save"]').addEventListener('click', async () => {
+        if (!nota.value.trim()) { toast('Conte o que não ficou resolvido.', 'warning'); nota.focus(); return; }
+        try {
+          await API.post(`/tickets/${t.id}/status`, { status: 3, comment: nota.value.trim() });
+          toast('Chamado reaberto.', 'success'); finish(true);
+        } catch (e) { showError(e); }
+      });
+    }, opts);
+  }
+
+  return { assign, resolve, pause, encerrarUsuario, reopen };
 })();

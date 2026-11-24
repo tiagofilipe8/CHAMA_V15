@@ -33,17 +33,29 @@ Views.ticketDetail = function ticketDetail(id) {
     // Só as ações principais. Empresa, técnico, situação e moderador ficam no card "Responsáveis",
     // cada um com a sua ação ao lado (Trocar, Assumir, Alterar).
     const actions = [];
-    if (can.resolve && ![5, 6, 7].includes(t.status)) {
-      actions.push(`<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-check2-circle"></i> Resolver chamado</button>`);
+    // quem pode fechar direto (o solicitante ainda reabre em até 3 dias) vê "Fechar chamado"
+    const fechaDireto = !can.needs_approval;
+    if (can.resolve && (![5, 6, 7].includes(t.status) || (t.status === 5 && t.awaiting_evaluation))) {
+      actions.push(t.awaiting_evaluation
+        ? '<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-clipboard-check"></i> Avaliar e fechar</button>'
+        : `<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-check2-circle"></i> ${fechaDireto ? 'Fechar chamado' : 'Resolver chamado'}</button>`);
+    }
+    if (can.status && [1, 2, 3].includes(t.status)) {
+      actions.push('<button class="btn btn-outline-warning btn-sm" id="act-pause"><i class="bi bi-pause-circle"></i> Pausar</button>');
+    }
+    // quem abriu: "Resolvi / não preciso mais" (com motivo)
+    if (isRequester && can.cancel && [1, 2, 3, 4].includes(t.status)) {
+      actions.push('<button class="btn btn-outline-success btn-sm" id="act-encerrar-usuario"><i class="bi bi-check2-square"></i> Resolvi / não preciso mais</button>');
     }
     if (canEdit) {
       actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> ${triage ? 'Triagem / editar' : 'Editar'}</button>`);
     }
-    if (can.cancel && !can.status && [1, 2, 3, 4].includes(t.status)) {
+    if (can.cancel && !can.status && !isRequester && [1, 2, 3, 4].includes(t.status)) {
       actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-cancel"><i class="bi bi-slash-circle"></i> Cancelar chamado</button>`);
     }
-    if (can.cancel && !can.status && [5, 6].includes(t.status)) {
-      actions.push(`<button class="btn btn-outline-primary btn-sm" id="act-reopen"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button>`);
+    const prazoReabrirAcabou = t.reopen_until && new Date(t.reopen_until) < new Date();
+    if (can.cancel && !can.status && [5, 6].includes(t.status) && !prazoReabrirAcabou && !t.closed_by_requester) {
+      actions.push(`<button class="btn btn-outline-primary btn-sm" id="act-reopen"><i class="bi bi-arrow-counterclockwise"></i> Não resolveu? Reabrir</button>`);
     }
     if (isManager) {
       actions.push(`<button class="btn btn-outline-warning btn-sm" id="act-note-focus"><i class="bi bi-chat-square-quote"></i> Instrução</button>`);
@@ -96,6 +108,31 @@ Views.ticketDetail = function ticketDetail(id) {
         </div>
       </div>` : '';
 
+    // ---------------- Avisos do encerramento e da pausa ----------------
+    const dataBR = (d) => new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const motivoUsuario = LABELS.encerraUsuario[t.requester_close_reason] || '';
+    const avisos = [];
+    if (t.status === 4 && t.pause_reason) {
+      avisos.push(`<div class="alert alert-warning small d-flex gap-2 align-items-start"><i class="bi bi-pause-circle-fill"></i><div>
+        <b>Em pausa: ${esc(LABELS.pausa[t.pause_reason] || t.pause_reason)}</b>${t.pause_until ? ` · volta para a fila em <b>${esc(String(t.pause_until).slice(0, 10).split('-').reverse().join('/'))}</b>` : ''}</div></div>`);
+    }
+    if (t.status === 5 && t.awaiting_evaluation) {
+      avisos.push(can.resolve
+        ? `<div class="alert alert-success small d-flex gap-2 align-items-start"><i class="bi bi-clipboard-check"></i><div>
+            <b>${esc(t.requester_name || 'O usuário')} avisou que foi resolvido.</b> Avalie (causa e checklist da nota) para fechar.
+            ${t.requester_close_note ? `<br><span class="text-muted">${esc(t.requester_close_note)}</span>` : ''}</div></div>`
+        : '<div class="alert alert-success small"><i class="bi bi-check2-circle me-1"></i>Você avisou que foi resolvido. O técnico vai confirmar e fechar o chamado.</div>');
+    }
+    if (t.closed_by_requester && motivoUsuario) {
+      avisos.push(`<div class="alert alert-secondary small"><i class="bi bi-person-check me-1"></i><b>Encerrado por ${esc(t.requester_name || 'quem abriu')}:</b> ${esc(motivoUsuario)}${t.requester_close_ref ? ` (mesmo problema do <a href="#/tickets/${t.requester_close_ref}">#${t.requester_close_ref}</a>)` : ''}${t.requester_close_note ? `<br>${t.requester_close_reason === 'sozinho' ? '<b>Como resolveu:</b> ' : ''}${esc(t.requester_close_note)}` : ''}</div>`);
+    }
+    if (isRequester && t.status === 6 && t.reopen_until && !t.closed_by_requester) {
+      avisos.push(prazoReabrirAcabou
+        ? `<div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>O prazo para reabrir acabou em ${esc(dataBR(t.reopen_until))}. Se o problema voltou, abra um chamado novo e cite o ${esc(t.number)}.</div>`
+        : `<div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Se o problema não foi resolvido, você pode reabrir até ${esc(dataBR(t.reopen_until))}.</div>`);
+    }
+    const avisosHtml = avisos.join('');
+
     // ---------------- Timeline ----------------
     const timeline = (t.messages || []).map((m) => {
       if (m.kind === 'system') {
@@ -145,6 +182,7 @@ Views.ticketDetail = function ticketDetail(id) {
       </div>
 
       ${actionBar}
+      ${avisosHtml}
       ${approvalBox}
 
       <div class="row g-3">
@@ -236,7 +274,8 @@ Views.ticketDetail = function ticketDetail(id) {
                   ${t.resolution_notes ? `<tr class="table-success"><th>O que foi feito</th><td>${esc(t.resolution_notes).replace(/\n/g, '<br>')}${t.resolved_by_name ? `<br><small class="text-muted">por ${esc(t.resolved_by_name)}</small>` : ''}</td></tr>` : ''}
                   ${t.equipment_action_label ? `<tr><th>Com o equipamento</th><td>${esc(t.equipment_action_label)}</td></tr>` : ''}
                   ${t.resolution_cause_name ? `<tr><th>Causa <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${esc(t.resolution_cause_name)}</td></tr>` : ''}
-                  ${t.requester_rating !== undefined && t.requester_rating !== null ? `<tr><th>Nota do usuário <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${starsHtml(t.requester_rating)} ${t.requester_rating}/5${t.requester_rating_comment ? `<br><small class="text-muted">${esc(t.requester_rating_comment)}</small>` : ''}</td></tr>` : ''}
+                  ${t.requester_rating !== undefined && t.requester_rating !== null ? `<tr><th>Nota do usuário <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${starsHtml(t.requester_rating)} ${t.requester_rating}/5${t.requester_rating_criteria ? `<ul class="ck-resumo">${Object.entries(CHECKLIST_NOTA).map(([k, v]) => `<li class="${t.requester_rating_criteria[k] ? 'sim' : 'nao'}"><i class="bi ${t.requester_rating_criteria[k] ? 'bi-check-lg' : 'bi-x-lg'}"></i>${esc(v)}</li>`).join('')}</ul>` : ''}${t.requester_rating_comment ? `<small class="text-muted">${esc(t.requester_rating_comment)}</small>` : ''}</td></tr>` : ''}
+                  ${t.requester_close_reason ? `<tr><th>Encerramento pelo usuário</th><td>${esc(LABELS.encerraUsuario[t.requester_close_reason] || t.requester_close_reason)}</td></tr>` : ''}
                 </tbody>
               </table>
             </div>
@@ -273,7 +312,9 @@ Views.ticketDetail = function ticketDetail(id) {
       if (q.get('resolve') && can.resolve) TicketModals.resolve(t, { onDone: () => afterReload() });
       else if (q.get('assign') && can.assign) TicketModals.assign(t, { onDone: () => afterReload() });
     }
-    el.querySelector('#act-resolve')?.addEventListener('click', () => TicketModals.resolve(t, { onDone: () => afterReload() }));
+    el.querySelector('#act-resolve')?.addEventListener('click', () => TicketModals.resolve(t, { toStatus: (fechaDireto || t.awaiting_evaluation) ? 6 : 5, onDone: () => afterReload() }));
+    el.querySelector('#act-pause')?.addEventListener('click', () => TicketModals.pause(t, { onDone: () => afterReload() }));
+    el.querySelector('#act-encerrar-usuario')?.addEventListener('click', () => TicketModals.encerrarUsuario(t, { onDone: () => afterReload() }));
     el.querySelector('#act-assign')?.addEventListener('click', () => TicketModals.assign(t, { onDone: () => afterReload() }));
 
     // ---------------- acoes ----------------
@@ -358,12 +399,7 @@ Views.ticketDetail = function ticketDetail(id) {
         catch (e) { showError(e); }
       });
 
-      el.querySelector('#act-reopen')?.addEventListener('click', async () => {
-        const ok = await confirmDialog({ title: 'Reabrir chamado', body: `Reabrir o chamado ${t.number}?`, confirmText: 'Reabrir' });
-        if (!ok) return;
-        try { await API.post(`/tickets/${t.id}/status`, { status: 3 }); toast('Chamado reaberto.', 'success'); afterReload(); }
-        catch (e) { showError(e); }
-      });
+      el.querySelector('#act-reopen')?.addEventListener('click', () => TicketModals.reopen(t, { onDone: () => afterReload() }));
 
       el.querySelector('#act-note-focus')?.addEventListener('click', () => el.querySelector('#msg-content').focus());
 
@@ -425,7 +461,7 @@ Views.ticketDetail = function ticketDetail(id) {
                 `<option value="${s}">${LABELS.status[s]}</option>`).join('')}
             </select>
             <textarea class="form-control" id="s-comment" rows="3" placeholder="Comentário (opcional)..."></textarea>
-            <div class="form-text">Para <b>Resolver</b> ou <b>Fechar</b>, o sistema abre o formulário de encerramento (a causa é obrigatória).</div>
+            <div class="form-text">Para <b>Fechar</b>, o sistema abre o formulário de encerramento (causa e checklist da nota). <b>Em pausa</b> pede o motivo e a data para voltar.</div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -487,8 +523,14 @@ Views.ticketDetail = function ticketDetail(id) {
       // status
       el.querySelector('#btn-save-status')?.addEventListener('click', async () => {
         const novo = parseInt(el.querySelector('#s-status').value, 10);
-        // Fechar sem ter resolvido antes: passa pelo formulário de encerramento
-        if (novo === 6 && t.status !== 5) {
+        // Em pausa: abre a janela da pausa (motivo e data)
+        if (novo === 4) {
+          hideModal('modal-status');
+          TicketModals.pause(t, { onDone: () => afterReload() });
+          return;
+        }
+        // Fechar sem ter resolvido antes (ou o usuário avisou que resolveu): passa pelo formulário de encerramento
+        if (novo === 6 && (t.status !== 5 || t.awaiting_evaluation)) {
           hideModal('modal-status');
           TicketModals.resolve(t, { toStatus: 6, onDone: () => afterReload() });
           return;

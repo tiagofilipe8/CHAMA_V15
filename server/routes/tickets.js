@@ -16,6 +16,19 @@ const settingsStore = require('../services/settingsStore');
 const realtime = require('../services/realtime');
 const { perfilDaEmpresa } = require('./optionProfiles');
 const regrasArquivo = require('../uploadRules');
+const avaliacao = require('../services/avaliacao');
+const pausas = require('../services/pausas');
+
+// Quem abriu pode encerrar o próprio chamado ("resolvido" fica para o técnico avaliar e fechar)
+const MOTIVOS_USUARIO = {
+  resolvido: 'Já foi resolvido',
+  sozinho: 'Resolvi sozinho',
+  engano: 'Aberto por engano',
+  repetido: 'Chamado repetido',
+  nao_preciso: 'Não preciso mais',
+  outro: 'Outro motivo',
+};
+const DIAS_PARA_REABRIR = 3;
 
 // A opção (categoria, urgência ou causa) é do perfil de opções da empresa?
 // perfil undefined = não confere (compatibilidade); null = Padrão.
@@ -124,6 +137,7 @@ function decorate(ticket, user) {
     // a nota dada ao usuario e a causa sao informacoes internas da equipe
     delete out.requester_rating;
     delete out.requester_rating_comment;
+    delete out.requester_rating_criteria;
     delete out.resolution_cause_id;
     delete out.resolution_cause_name;
   }
@@ -219,7 +233,14 @@ async function readResolution(body = {}, perfil) {
   const cause = c.rows[0];
   let notes = String(body.resolution_notes || body.comment || '').trim();
   let action = String(body.equipment_action || '');
-  const rating = body.requester_rating;
+  // nota: checklist de 5 itens (cada "sim" = 1 estrela); sem checklist, aceita a nota direta
+  let rating = body.requester_rating;
+  let criterios = null;
+  if (body.requester_rating_criteria !== undefined && body.requester_rating_criteria !== null) {
+    const c = avaliacao.lerChecklist(body.requester_rating_criteria);
+    if (c.error) return { error: c.error };
+    criterios = c.criterios; rating = c.nota;
+  }
   const semNota = rating === undefined || rating === null || rating === '';
   const ratingComment = String(body.requester_rating_comment || '').trim() || null;
 
@@ -228,7 +249,7 @@ async function readResolution(body = {}, perfil) {
     if (!notes) notes = `Encerrado sem atendimento: ${cause.name}.`;
     if (!EQUIPMENT_ACTIONS[action]) action = 'no_equipment';
     if (!semNota && !/^[0-5]$/.test(String(rating))) return { error: 'A nota vai de 0 a 5 estrelas.' };
-    return { notes, cause, action, rating: semNota ? null : parseInt(rating, 10), ratingComment };
+    return { notes, cause, action, rating: semNota ? null : parseInt(rating, 10), ratingComment, criterios: semNota ? null : criterios };
   }
 
   if (notes.length < 5) return { error: 'Descreva o que aconteceu e o que foi feito.' };
@@ -236,15 +257,16 @@ async function readResolution(body = {}, perfil) {
   if (semNota || !/^[0-5]$/.test(String(rating))) {
     return { error: 'Dê uma nota de 0 a 5 estrelas para o usuário.' };
   }
-  return { notes, cause, action, rating: parseInt(rating, 10), ratingComment };
+  return { notes, cause, action, rating: parseInt(rating, 10), ratingComment, criterios };
 }
 
 async function saveResolution(ticket, user, r) {
   await query(
     `UPDATE tickets SET resolution_notes = $2, resolution_cause_id = $3, equipment_action = $4,
-            requester_rating = $5, requester_rating_comment = $6, resolved_by_id = $7
+            requester_rating = $5, requester_rating_comment = $6, resolved_by_id = $7,
+            requester_rating_criteria = $8, awaiting_evaluation = FALSE
      WHERE id = $1`,
-    [ticket.id, r.notes, r.cause.id, r.action, r.rating, r.ratingComment, user.id]);
+    [ticket.id, r.notes, r.cause.id, r.action, r.rating, r.ratingComment, user.id, r.criterios ? JSON.stringify(r.criterios) : null]);
   await addHistory(ticket.id, user.id, 'resolution', null, `${r.cause.name} · ${EQUIPMENT_ACTIONS[r.action]}`);
   // registra no historico de manutencoes do equipamento vinculado
   if (ticket.asset_id && !['no_change', 'no_equipment'].includes(r.action)) {
@@ -931,6 +953,20 @@ router.post('/:id/status', async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ error: 'Você não pode alterar o status deste chamado.' });
     }
+    // reabrir: só até 3 dias depois que o técnico fechou, e contando o que não resolveu
+    if (toStatus === 3) {
+      if (ticket.reopen_until && new Date(ticket.reopen_until) < new Date()) {
+        return res.status(403).json({ error: `O prazo para reabrir (${DIAS_PARA_REABRIR} dias depois do fechamento) acabou. Abra um chamado novo e cite o #${ticket.id}.` });
+      }
+      if (!String(comment || '').trim()) return res.status(422).json({ error: 'Conte o que não ficou resolvido.', reopen_reason: true });
+    }
+  }
+
+  // Em pausa: sempre com motivo e data para retomar
+  let pausa = null;
+  if (toStatus === 4) {
+    pausa = pausas.lerPausa(req.body);
+    if (pausa.error) return res.status(422).json({ error: pausa.error, pause_form: true });
   }
 
   // Chamado do WhatsApp sem empresa real: atribuir empresa antes de resolver.
@@ -972,25 +1008,115 @@ router.post('/:id/status', async (req, res) => {
     `INSERT INTO ticket_status_history (ticket_id, old_status, new_status, user_id)
      VALUES ($1, $2, $3, $4)`, [req.params.id, ticket.status, toStatus, user.id]);
   if (resolution) await saveResolution(ticket, user, resolution);
+  if (pausa) {
+    await query(
+      `UPDATE tickets SET pause_reason = $2, pause_until = $3, pause_prev_status = $4, paused_at = now(), paused_by = $5 WHERE id = $1`,
+      [ticket.id, pausa.motivo, pausa.ate, [1, 2, 3].includes(ticket.status) ? ticket.status : null, user.id]);
+  } else if (ticket.status === 4) {
+    await query('UPDATE tickets SET pause_reason = NULL, pause_until = NULL, pause_prev_status = NULL, paused_at = NULL WHERE id = $1', [ticket.id]);
+  }
+  // técnico (ou a equipe) fechou: o solicitante ainda pode reabrir por 3 dias
+  const fechouPelaEquipe = toStatus === 6 && String(user.id) !== String(ticket.requester_id);
+  if (fechouPelaEquipe) {
+    await query(`UPDATE tickets SET reopen_until = now() + ($2::int * interval '1 day'), awaiting_evaluation = FALSE WHERE id = $1`, [ticket.id, DIAS_PARA_REABRIR]);
+  } else if ([1, 2, 3, 4].includes(toStatus)) {
+    await query('UPDATE tickets SET reopen_until = NULL, awaiting_evaluation = FALSE, closed_by_requester = FALSE WHERE id = $1', [ticket.id]);
+  }
   const reopened = [5, 6].includes(ticket.status) && toStatus === 3;
   await addHistory(ticket.id, user.id, reopened ? 'reopened' : 'status',
     notify.STATUS_LABELS[ticket.status], notify.STATUS_LABELS[toStatus]);
   await query(
     `INSERT INTO ticket_messages (ticket_id, user_id, kind, content, new_status)
      VALUES ($1, $2, $3, $4, $5)`,
-    [req.params.id, user.id, (comment || resolution) ? 'comment' : 'system',
+    [req.params.id, user.id, (comment || resolution || pausa) ? 'comment' : 'system',
      resolution ? `Chamado ${toStatus === 6 ? 'fechado' : 'resolvido'}.\n\nO que foi feito: ${resolution.notes}`
-       : comment || `${user.name} alterou o status de "${notify.STATUS_LABELS[ticket.status]}" para "${notify.STATUS_LABELS[toStatus]}".`,
+       : pausa ? `Chamado em pausa: ${pausas.MOTIVOS_PAUSA[pausa.motivo]}. Volta para a fila em ${pausa.ate.split('-').reverse().join('/')}.${comment ? `\n\n${comment}` : ''}`
+         : reopened && comment ? `Chamado reaberto. O que não ficou resolvido: ${comment}`
+           : comment || `${user.name} alterou o status de "${notify.STATUS_LABELS[ticket.status]}" para "${notify.STATUS_LABELS[toStatus]}".`,
      toStatus]);
   if (triage) await claimModerator(ticket, user);
 
   const updated = await loadTicket(req.params.id);
   await notify.statusChanged(updated, user, toStatus);
+  if (fechouPelaEquipe && ticket.requester_id) {
+    const ate = new Date(Date.now() + DIAS_PARA_REABRIR * 86400000).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    await notify.createInApp(ticket.requester_id, `Chamado #${ticket.id} fechado`,
+      `Se o problema não foi resolvido, você pode reabrir até ${ate}.`, ticket.id).catch(() => {});
+  }
   if (resolution) {
     await notify.solutionToWhatsApp(updated, resolution.notes).catch((e) =>
       console.log('[tickets] aviso whatsapp da solucao falhou:', e.message));
   }
   res.json(decorate(updated, user));
+});
+
+// ---------------------------------------------------------------------
+// Quem abriu encerra o próprio chamado, com motivo
+//   resolvido -> fica "Resolvido" esperando o técnico avaliar (causa + checklist) e fechar
+//   os outros -> fecha na hora, marcado como "fechado pelo usuário" (sem nota)
+// ---------------------------------------------------------------------
+router.post('/:id/encerrar-usuario', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  const user = req.user;
+  if (String(ticket.requester_id) !== String(user.id) || !canCancel(user, ticket)) {
+    return res.status(403).json({ error: 'Só quem abriu o chamado pode encerrá-lo por aqui.' });
+  }
+  if (![1, 2, 3, 4].includes(ticket.status)) return res.status(422).json({ error: 'Esse chamado já está encerrado.' });
+  const motivo = String(req.body?.motivo || '');
+  if (!MOTIVOS_USUARIO[motivo]) return res.status(422).json({ error: 'Escolha o motivo.' });
+  const nota = String(req.body?.nota || '').trim().slice(0, 1000) || null;
+  if (motivo === 'outro' && !nota) return res.status(422).json({ error: 'Explique o motivo.' });
+  let ref = null;
+  if (motivo === 'repetido') {
+    const n = parseInt(String(req.body?.ref || '').replace('#', ''), 10);
+    const outro = n && n !== Number(ticket.id) ? await loadTicket(n) : null;
+    if (!outro || !canViewTicket(user, outro)) return res.status(422).json({ error: 'Informe o número do outro chamado (ex.: #12).' });
+    ref = outro.id;
+  }
+  // técnico atendendo agora (pode estar a caminho): avisa antes
+  const atendendo = (await query('SELECT name FROM users WHERE working_ticket_id = $1', [ticket.id])).rows[0];
+  if (atendendo && !req.body?.confirmar) {
+    return res.status(409).json({ error: `${atendendo.name} está atendendo este chamado agora (pode já estar a caminho).`, em_atendimento: true, tecnico: atendendo.name });
+  }
+  const novo = motivo === 'resolvido' ? 5 : 6;
+  await query(
+    `UPDATE tickets SET status = $2::smallint, closed_at = CASE WHEN $2::smallint = 6 THEN now() ELSE NULL END,
+            resolved_at = COALESCE(resolved_at, now()),
+            closed_by_requester = ($2::smallint = 6), awaiting_evaluation = ($2::smallint = 5),
+            requester_close_reason = $3, requester_close_note = $4, requester_close_ref = $5, reopen_until = NULL,
+            approval_status = CASE WHEN approval_status = 'pending' THEN 'none' ELSE approval_status END,
+            pause_reason = NULL, pause_until = NULL, pause_prev_status = NULL, paused_at = NULL
+     WHERE id = $1`, [ticket.id, novo, motivo, nota, ref]);
+  await query(`INSERT INTO ticket_status_history (ticket_id, old_status, new_status, user_id) VALUES ($1, $2, $3, $4)`,
+    [ticket.id, ticket.status, novo, user.id]);
+  await addHistory(ticket.id, user.id, novo === 5 ? 'marked_resolved' : 'closed_by_requester', notify.STATUS_LABELS[ticket.status], MOTIVOS_USUARIO[motivo]);
+  const rotuloNota = motivo === 'sozinho' ? 'Como resolveu' : 'Observação';
+  const texto = novo === 5
+    ? `${user.name} avisou que o problema foi resolvido. Falta o técnico avaliar para fechar.${nota ? `\n\n${rotuloNota}: ${nota}` : ''}`
+    : `${user.name} encerrou o chamado: ${MOTIVOS_USUARIO[motivo]}${ref ? ` (é o mesmo do #${ref})` : ''}.${nota ? `\n\n${rotuloNota}: ${nota}` : ''}`;
+  await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content, new_status) VALUES ($1, $2, 'comment', $3, $4)`,
+    [ticket.id, user.id, texto, novo]);
+  const updated = await loadTicket(ticket.id);
+  await notify.statusChanged(updated, user, novo);
+  // quem cuida do chamado: o técnico; sem técnico, a coordenação (admin e moderadores)
+  const quem = ticket.assigned_user_id
+    ? [ticket.assigned_user_id]
+    : (await query(`SELECT id FROM users WHERE active AND role IN ('admin','moderator')`)).rows.map((r) => r.id);
+  for (const id of quem) {
+    if (String(id) === String(user.id)) continue;
+    await notify.createInApp(id, novo === 5 ? `#${ticket.id}: o usuário avisou que resolveu. Avalie para fechar` : `#${ticket.id} encerrado pelo usuário`,
+      `${MOTIVOS_USUARIO[motivo]}${nota ? ` — ${nota}` : ''}`, ticket.id).catch(() => {});
+  }
+  res.json(decorate(updated, user));
+});
+
+// Sugestões para o checklist da nota (o que dá para saber pelo próprio chamado)
+router.get('/:id/avaliacao-sugestoes', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!canResolve(req.user, ticket)) return res.status(403).json({ error: 'Acesso negado.' });
+  res.json({ criterios: avaliacao.CRITERIOS, sugestoes: await avaliacao.sugestoes(ticket) });
 });
 
 // ---------------------------------------------------------------------

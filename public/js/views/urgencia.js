@@ -52,6 +52,7 @@ const Urgencia = (() => {
     const max = Math.max(1, ...d.locais.map((l) => l.score));
     el.innerHTML = `
       ${regrasHtml(d.regras)}
+      ${d.pausados ? `<div class="small text-muted mt-2"><i class="bi bi-pause-circle"></i> ${d.pausados} chamado(s) em pausa não entram no score (aguardando peça, fornecedor, usuário ou visita agendada).</div>` : ''}
       <div class="card panel-card mt-3">
         <div class="dp-bloco-cab"><span><i class="bi bi-sort-down"></i> Locais por urgência</span>
           <a class="btn btn-sm btn-primary" href="#/rotas"><i class="bi bi-signpost-split"></i> Sugerir rota</a></div>

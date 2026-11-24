@@ -1639,3 +1639,30 @@ a.dp-ind:hover { background: var(--surface-2); }
 .er-rec-tx { flex: 1; min-width: 0; font-size: .84rem; }
 @media (max-width: 575px) { .er-grade { grid-template-columns: 1fr; } .es-filtros select, .es-filtros input { max-width: none; flex: 1 1 140px; } }
 .es-card-rodape { flex-wrap: wrap; } .es-card-rodape .btn { white-space: nowrap; }
+
+/* ---------- Checklist da nota (cada item marcado = 1 estrela) ---------- */
+.ck-lista { display: flex; flex-direction: column; gap: 4px; }
+.ck-it { position: relative; display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--border); border-radius: 9px;
+  padding: 7px 10px; cursor: pointer; margin: 0; background: var(--card); }
+.ck-it.on { border-color: var(--primary); background: var(--primary-soft); }
+.ck-it input { margin-top: 3px; flex: none; }
+.ck-tx { flex: 1; display: flex; flex-direction: column; font-size: .86rem; }
+.ck-auto { font-size: .72rem; }
+.ck-auto.sim { color: #15803d; } .ck-auto.nao { color: #b45309; }
+.ck-i { color: var(--muted); font-size: .85rem; margin-top: 2px; }
+.ck-dica { display: none; position: absolute; z-index: 30; left: 30px; right: 10px; top: calc(100% + 4px); background: #1f2937; color: #f9fafb;
+  font-size: .76rem; line-height: 1.45; border-radius: 8px; padding: 8px 10px; box-shadow: 0 8px 22px rgba(0,0,0,.25); pointer-events: none; }
+.ck-dica b { color: #fff; }
+.ck-it:hover .ck-dica, .ck-it:focus-within .ck-dica { display: block; }
+.ck-total { margin-top: 8px; font-size: .88rem; color: var(--ink); }
+.ck-total .bi-star-fill { color: #f59e0b; } .ck-total .bi-star { color: var(--muted); }
+.ck-resumo { list-style: none; padding: 0; margin: 4px 0; font-size: .78rem; }
+.ck-resumo li { display: flex; gap: 5px; align-items: center; }
+.ck-resumo li.sim { color: #15803d; } .ck-resumo li.nao { color: #b91c1c; }
+.cz-ck th { font-size: .72rem; font-weight: 600; color: var(--muted); white-space: normal; min-width: 90px; }
+.cz-ck td { font-size: .82rem; }
+.cz-falha { display: inline-block; min-width: 44px; border-radius: 6px; padding: 1px 6px; font-weight: 700; font-size: .78rem; }
+.cz-falha.alta { background: #fee2e2; color: #b91c1c; } .cz-falha.media { background: #fef3c7; color: #b45309; } .cz-falha.baixa { background: #dcfce7; color: #15803d; }
+[data-bs-theme="dark"] .cz-falha { background: rgba(127,127,127,.18); }
+[data-bs-theme="dark"] .ck-auto.sim, [data-bs-theme="dark"] .ck-resumo li.sim { color: #86efac; }
+[data-bs-theme="dark"] .ck-auto.nao { color: #fcd34d; } [data-bs-theme="dark"] .ck-resumo li.nao { color: #fca5a5; }

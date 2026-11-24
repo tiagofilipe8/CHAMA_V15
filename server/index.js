@@ -142,6 +142,7 @@ app.get(/^\/(?!api|uploads|vendor|healthz).*/, (req, res) => {
 
 initSocket(server);
 backupService.startScheduler();
+require('./services/pausas').startScheduler(); // chamados em pausa voltam para a fila na data marcada
 maintenanceAlerts.startScheduler();
 
 server.listen(config.port, () => {

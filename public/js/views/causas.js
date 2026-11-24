@@ -94,6 +94,18 @@ Views.causas = async function causas(el) {
         </div>`;
     }).join('');
 
+    // checklist da nota: em que cada local mais falha (% de "não" em cada item)
+    const comCk = d.locais.filter((l) => l.com_checklist > 0);
+    const pct = (n, tot) => (tot ? Math.round((n / tot) * 100) : 0);
+    const celula = (n, tot) => { const p = pct(n, tot); return `<td class="text-center"><span class="cz-falha ${p >= 50 ? 'alta' : p >= 25 ? 'media' : 'baixa'}" title="${n} de ${tot} chamado(s) sem este item">${p}%</span></td>`; };
+    const tabelaCk = comCk.length ? `
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0 cz-ck">
+        <thead><tr><th>Local</th><th class="text-center">Notas</th>${Object.values(CHECKLIST_NOTA).map((v) => `<th class="text-center">${esc(v)}</th>`).join('')}</tr></thead>
+        <tbody>${comCk.map((l) => `<tr><td>${esc(l.location_name)}<small class="text-muted multi-empresa"> · ${esc(l.entity_name)}</small></td><td class="text-center">${l.com_checklist}</td>
+          ${Object.keys(CHECKLIST_NOTA).map((k) => celula(l[`nao_${k}`], l.com_checklist)).join('')}</tr>`).join('')}</tbody>
+      </table></div>` : '<div class="dp-vazio">Ainda não há chamados avaliados com o checklist.</div>';
+    const totUsu = (d.pelo_usuario || []).reduce((s, r) => s + r.total, 0);
+
     corpo.innerHTML = `
       <div class="cz-grade">
         <div class="card panel-card">
@@ -110,6 +122,15 @@ Views.causas = async function causas(el) {
           <small class="text-muted">média das estrelas (0 a 5) que o técnico dá ao encerrar · clique no local para ver cada usuário</small></div>
         <p class="cz-aviso"><i class="bi bi-mortarboard"></i> Locais com score menor podem ter necessidade de treinamento.</p>
         ${blocosEmpresa || '<div class="dp-vazio">Nenhum chamado resolvido no período.</div>'}
+      </div>
+      <div class="card panel-card mt-3">
+        <div class="dp-bloco-cab"><span><i class="bi bi-list-check"></i> Onde cada local mais falha</span>
+          <small class="text-muted">% dos chamados em que o item do checklist da nota ficou sem marcar · vermelho = foco do treinamento</small></div>
+        ${tabelaCk}
+      </div>
+      <div class="card panel-card mt-3">
+        <div class="dp-bloco-cab"><span><i class="bi bi-person-check"></i> Encerrados por quem abriu</span><small class="text-muted">resolvi sozinho, aberto por engano...</small></div>
+        <div class="cz-lista">${totUsu ? barras((d.pelo_usuario || []).map((r) => ({ ...r, nome: LABELS.encerraUsuario[r.motivo] || r.motivo })), totUsu) : '<div class="text-muted small">Nenhum no período.</div>'}</div>
       </div>`;
   }
   carregar();

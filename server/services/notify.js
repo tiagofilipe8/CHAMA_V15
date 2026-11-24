@@ -7,7 +7,7 @@ const realtime = require('./realtime');
 const { isPreview } = require('../db');
 
 const STATUS_LABELS = {
-  1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente',
+  1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Em pausa',
   5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado',
 };
 const PRIORITY_LABELS = { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' };
@@ -34,7 +34,7 @@ const DEFAULT_TEMPLATES = {
   'status.changed.1': { title: 'Chamado {{number}} — Novo', subject: '[Novo] {{number}} - {{title}}', message: 'O chamado {{number}} foi reaberto como *Novo*. Título: "{{title}}"\nAguardando atribuição.' },
   'status.changed.2': { title: 'Chamado {{number}} — Atribuído', subject: '[Atribuído] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi atribuído ao técnico {{assigned_name}}.\nEm breve o atendimento será iniciado.' },
   'status.changed.3': { title: 'Chamado {{number}} — Em andamento', subject: '[Em andamento] {{number}} - {{title}}', message: 'Boa notícia! O chamado {{number}} - "{{title}}" está *em andamento*.\nTécnico responsável: {{assigned_name}}\nAcompanhe as atualizações por aqui.' },
-  'status.changed.4': { title: 'Chamado {{number}} — Pendente', subject: '[Pendente] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" está *pendente*.\nMotivo: aguardando informações ou ação externa. Retornaremos em breve.' },
+  'status.changed.4': { title: 'Chamado {{number}} — Em pausa', subject: '[Em pausa] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" está *em pausa*.\nAguardando peça, fornecedor, uma resposta sua ou a visita agendada. Ele volta para a fila na data combinada.' },
   'status.changed.5': { title: 'Chamado {{number}} — Resolvido', subject: '[Resolvido] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi *resolvido*.\n{{approval_comment}}\nAcesse o sistema para avaliar a solução.' },
   'status.changed.6': { title: 'Chamado {{number}} — Fechado', subject: '[Fechado] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi *fechado*. Obrigado pelo contato!' },
   'status.changed.7': { title: 'Chamado {{number}} — Cancelado', subject: '[Cancelado] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi *cancelado*.' },

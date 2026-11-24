@@ -129,7 +129,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
           <span class="tg tg-red ms-auto">${a.days_overdue} dia(s)</span></a>`).join('')}</div>
     </div>` : '';
 
-  const STATUS = { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' };
+  const STATUS = { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Em pausa', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' };
   const totStatus = Math.max(1, (dist.by_status || []).reduce((a, b) => a + b.total, 0));
   const distRow = `
     <div class="card panel-card dp-bloco">

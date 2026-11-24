@@ -29,7 +29,7 @@ const PERMISSIONS = [
   { key: 'ticket.take', group: 'Atender', label: 'Assumir chamados sem técnico' },
   { key: 'ticket.work', group: 'Atender', label: 'Atender os chamados que estão com ele', help: 'Mudar a situação, editar, marcar "Em atendimento" e registrar a solução.' },
   { key: 'ticket.status_any', group: 'Atender', label: 'Mudar a situação de qualquer chamado que vê' },
-  { key: 'ticket.resolve_direct', group: 'Atender', label: 'Resolver sem pedir aprovação ao solicitante' },
+  { key: 'ticket.resolve_direct', group: 'Atender', label: 'Fechar o chamado sem pedir aprovação ao solicitante', help: 'O solicitante ainda pode reabrir em até 3 dias.' },
   // Quem coordena
   { key: 'ticket.triage', group: 'Coordenar', label: 'Triagem', help: 'Ajustar categoria, urgência, local, previsão e equipamento.' },
   { key: 'ticket.assign', group: 'Coordenar', label: 'Escolher ou trocar o técnico' },
@@ -92,7 +92,7 @@ const DEFAULTS = {
     'dashboard.view', 'inventory.view', 'inventory.manage', 'stock.withdraw',
   ],
   technician: [
-    'ticket.create', 'ticket.view_all', 'ticket.take', 'ticket.work', 'ticket.cancel',
+    'ticket.create', 'ticket.view_all', 'ticket.take', 'ticket.work', 'ticket.cancel', 'ticket.resolve_direct',
     'ticket.internal', 'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage',
     'inventory.secrets', 'stock.withdraw',
   ],

@@ -30,7 +30,10 @@ const fmt = {
 };
 
 const LABELS = {
-  status: { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' },
+  status: { 1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Em pausa', 5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado' },
+  // motivos da pausa e do encerramento pelo próprio usuário
+  pausa: { peca: 'Aguardando peça ou compra', usuario: 'Aguardando o usuário', fornecedor: 'Aguardando fornecedor ou terceiro', agendado: 'Visita agendada', outro: 'Outro' },
+  encerraUsuario: { resolvido: 'Já foi resolvido', sozinho: 'Resolvi sozinho', engano: 'Aberto por engano', repetido: 'Chamado repetido', nao_preciso: 'Não preciso mais', outro: 'Outro motivo' },
   // um nome só para a mesma coisa: a urgência do chamado
   priority: { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' },
   role: {
@@ -40,6 +43,7 @@ const LABELS = {
   clientLevel: { 1: 'Usuário', 2: 'Gestor' },
   history: {
     created: 'Chamado criado', status: 'Status alterado', reopened: 'Chamado reaberto',
+    marked_resolved: 'Usuário avisou que resolveu', closed_by_requester: 'Encerrado pelo usuário',
     technician: 'Técnico', moderator: 'Moderador', category: 'Categoria', impact: 'Urgência',
     entity: 'Empresa',
     priority: 'Urgência', location: 'Localização', needed_by: 'Data de necessidade',
@@ -59,6 +63,12 @@ const LABELS = {
     no_equipment: 'Não envolveu equipamento',
   },
   approval: { none: '—', pending: 'Aprovação pendente', approved: 'Aprovado', rejected: 'Reprovado' },
+};
+
+// Checklist da nota do usuário (cada "sim" = 1 estrela) — nomes curtos para resumo e relatório
+const CHECKLIST_NOTA = {
+  clara: 'Explicou de forma clara', disponivel: 'Estava disponível e respondeu', orientacoes: 'Seguiu as orientações',
+  sem_mau_uso: 'Não foi mau uso nem erro repetido', ajudou: 'Ajudou a mais',
 };
 
 const STATUS_BADGE = { 1: 'new', 2: 'assigned', 3: 'progress', 4: 'pending', 5: 'solved', 6: 'closed', 7: 'canceled' };

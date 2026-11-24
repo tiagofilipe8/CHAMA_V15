@@ -267,7 +267,7 @@ router.get('/causas', async (req, res) => {
   const periodoAbertura = dias ? `AND t.created_at >= now() - interval '${dias} days'` : '';
   const periodoFech = dias ? `AND COALESCE(t.resolved_at, t.closed_at, t.updated_at) >= now() - interval '${dias} days'` : '';
 
-  const [abertura, fechamento, locais, usuarios] = await Promise.all([
+  const [abertura, fechamento, locais, usuarios, peloUsuario] = await Promise.all([
     query(
       `SELECT COALESCE(sc.name, c.name, 'Sem categoria') AS nome, COALESCE(sc.icon, c.icon) AS icon,
               count(*)::int AS total, count(*) FILTER (WHERE t.status NOT IN (5,6,7))::int AS abertos
@@ -287,6 +287,14 @@ router.get('/causas', async (req, res) => {
               round(avg(t.requester_rating)::numeric, 2) AS media,
               count(t.requester_rating)::int AS avaliados,
               count(*)::int AS chamados,
+              -- checklist da nota: em quantos chamados cada item ficou "não"
+              count(t.requester_rating_criteria)::int AS com_checklist,
+              count(*) FILTER (WHERE (t.requester_rating_criteria->>'clara')::boolean IS FALSE)::int AS nao_clara,
+              count(*) FILTER (WHERE (t.requester_rating_criteria->>'disponivel')::boolean IS FALSE)::int AS nao_disponivel,
+              count(*) FILTER (WHERE (t.requester_rating_criteria->>'orientacoes')::boolean IS FALSE)::int AS nao_orientacoes,
+              count(*) FILTER (WHERE (t.requester_rating_criteria->>'sem_mau_uso')::boolean IS FALSE)::int AS nao_sem_mau_uso,
+              count(*) FILTER (WHERE (t.requester_rating_criteria->>'ajudou')::boolean IS FALSE)::int AS nao_ajudou,
+              count(*) FILTER (WHERE t.closed_by_requester)::int AS fechados_usuario,
               (SELECT rc2.name FROM tickets t2 JOIN resolution_causes rc2 ON rc2.id = t2.resolution_cause_id
                 WHERE t2.entity_id = e.id AND t2.location_id IS NOT DISTINCT FROM l.id AND t2.status IN (5,6)
                 GROUP BY rc2.name ORDER BY count(*) DESC LIMIT 1) AS causa_principal
@@ -304,6 +312,11 @@ router.get('/causas', async (req, res) => {
        WHERE t.status IN (5,6) AND t.requester_rating IS NOT NULL ${periodoFech} ${base}
        GROUP BY u.id, u.name, t.entity_id, t.location_id
        ORDER BY avg(t.requester_rating), u.name`, params),
+    // encerrados pelo próprio usuário (resolvi sozinho, aberto por engano...)
+    query(
+      `SELECT t.requester_close_reason AS motivo, count(*)::int AS total
+       FROM tickets t WHERE t.requester_close_reason IS NOT NULL AND t.status IN (5,6) ${periodoFech} ${base}
+       GROUP BY 1 ORDER BY total DESC`, params),
   ]);
 
   // empresas: média geral (só chamados com nota)
@@ -323,6 +336,8 @@ router.get('/causas', async (req, res) => {
     })),
     locais: locais.rows.map((l) => ({ ...l, media: l.media === null ? null : Number(l.media) })),
     usuarios: usuarios.rows.map((u) => ({ ...u, media: Number(u.media) })),
+    pelo_usuario: peloUsuario.rows,
+    criterios: require('../services/avaliacao').CRITERIOS,
   });
 });
 
@@ -336,9 +351,12 @@ router.get('/urgencia', async (req, res) => {
   const { calcular, REGRAS, diaSP } = require('../services/scoreUrgencia');
   const scope = scopeConditions(user, 1);
   const params = [...scope.params];
-  const conds = ['t.status NOT IN (5,6,7)'];
+  // em pausa (aguardando peça, fornecedor, usuário ou visita agendada) não entra: não há o que fazer agora
+  const conds = ['t.status NOT IN (4,5,6,7)'];
   if (scope.sql) conds.push(scope.sql);
   if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) { params.push(req.query.entity_id); conds.push(`t.entity_id = $${params.length}`); }
+  const pausados = (await query(
+    `SELECT count(*)::int AS n FROM tickets t WHERE ${conds.join(' AND ').replace('t.status NOT IN (4,5,6,7)', 't.status = 4')}`, params)).rows[0].n;
   const { rows } = await query(
     `SELECT t.id, t.title, t.status, t.priority, t.needed_by, t.due_at, t.created_at, t.entity_id, t.location_id,
             e.name AS entity_name, l.name AS location_name, l.address, l.city, l.state, l.latitude, l.longitude,
@@ -380,7 +398,7 @@ router.get('/urgencia', async (req, res) => {
     chamados: l.chamados.sort((a, b) => b.score - a.score),
     atrasados: l.chamados.filter((c) => c.dias_atraso > 0).length,
   })).sort((a, b) => b.score - a.score);
-  res.json({ hoje, regras: REGRAS, locais: lista });
+  res.json({ hoje, regras: REGRAS, locais: lista, pausados });
 });
 
 module.exports = router;

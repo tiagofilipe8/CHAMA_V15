@@ -800,3 +800,52 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 );
 CREATE INDEX IF NOT EXISTS idx_stock_mov_asset ON stock_movements(asset_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stock_mov_data ON stock_movements(created_at DESC);
+
+-- =====================================================================
+-- Encerramento (2026-11-24)
+--   - nota do usuário em checklist (5 itens, cada "sim" = 1 estrela)
+--   - "Em pausa" com motivo e data para retomar (volta sozinho)
+--   - técnico fecha direto; o usuário pode reabrir em até 3 dias
+--   - o usuário fecha o próprio chamado com motivo, ou marca "resolvido"
+--     e o técnico avalia depois (causa + checklist) para fechar
+-- =====================================================================
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_rating_criteria JSONB;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pause_reason TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pause_until DATE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pause_prev_status SMALLINT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS paused_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reopen_until TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS awaiting_evaluation BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS closed_by_requester BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_close_reason TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_close_note TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_close_ref BIGINT REFERENCES tickets(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tickets_pausa ON tickets(pause_until) WHERE status = 4;
+-- mudanças feitas pelo próprio sistema (ex.: fim da pausa) não têm usuário
+ALTER TABLE ticket_status_history ALTER COLUMN user_id DROP NOT NULL;
+-- pausou, resolveu, fechou ou cancelou: quem estava atendendo deixa de estar
+CREATE OR REPLACE FUNCTION chama_limpa_atendimento() RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status IN (4, 5, 6, 7) THEN
+    UPDATE users SET working_ticket_id = NULL, working_since = NULL WHERE working_ticket_id = NEW.id;
+  ELSIF NEW.assigned_user_id IS DISTINCT FROM OLD.assigned_user_id THEN
+    UPDATE users SET working_ticket_id = NULL, working_since = NULL
+     WHERE working_ticket_id = NEW.id AND id IS DISTINCT FROM NEW.assigned_user_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Ajustes que rodam uma vez só (não desfazem o que o admin mudar depois)
+CREATE TABLE IF NOT EXISTS schema_marcos (
+    nome     TEXT PRIMARY KEY,
+    feito_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- o técnico passa a poder fechar o chamado direto (o usuário ainda pode reabrir em até 3 dias)
+DO $marco$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_marcos WHERE nome = 'tecnico_fecha_direto') THEN
+    UPDATE role_permissions SET allowed = TRUE WHERE role_key = 'technician' AND permission = 'ticket.resolve_direct';
+    INSERT INTO schema_marcos (nome) VALUES ('tecnico_fecha_direto');
+  END IF;
+END $marco$;
