@@ -25,32 +25,59 @@ const TicketModals = (() => {
   }
 
   // ---------------- Atribuir tecnico ----------------
+  // Atribuir técnico: cada pessoa (Técnicos e Administrador Mestre) aparece com a carga dela —
+  // chamados em aberto por urgência e o que está atendendo agora — para escolher quem pega.
   function assign(t, opts = {}) {
+    const eu = API.user || {};
     const html = `<div class="modal fade" tabindex="-1">
       <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h6><i class="bi bi-person-plus me-1"></i> Atribuir técnico · ${esc(t.number)}</h6>
+        <div class="modal-header"><h6><i class="bi bi-person-gear me-1"></i> Quem fica com o chamado · ${esc(t.number)}</h6>
           <button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
           <div class="small text-muted mb-2">${esc(t.title || '')}</div>
-          <select class="form-select" data-f="tech"><option value="">Carregando...</option></select>
+          <div class="at-lista" data-f="lista"><div class="text-muted small">Carregando...</div></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button class="btn btn-primary" data-f="save">Salvar</button>
+          <button class="btn btn-primary" data-f="save" disabled>Salvar</button>
         </div>
       </div></div></div>`;
     return open(html, (m, finish) => {
-      const sel = m.querySelector('[data-f="tech"]');
-      API.get('/users?role=technician&active=true').then((users) => {
-        sel.innerHTML = '<option value="">— Nenhum (desatribuir) —</option>' +
-          users.map((u) => `<option value="${u.id}" ${String(u.id) === String(t.assigned_user_id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-      }).catch(() => { sel.innerHTML = '<option value="">— Nenhum (desatribuir) —</option>'; });
-      m.querySelector('[data-f="save"]').addEventListener('click', async () => {
+      const lista = m.querySelector('[data-f="lista"]');
+      const btn = m.querySelector('[data-f="save"]');
+      const atual = String(t.assigned_user_id || '');
+      let escolhido = atual;
+      const TOM = { 4: 'u-stop', 3: 'u-soon', 2: 'u-slow', 1: 'u-req' };
+      const pill = (p, n) => (n ? `<span class="dp-pill ${TOM[p]}" title="${n} · ${esc(LABELS.priority[p] || '')}">${n}</span>` : '');
+      const pintar = (pessoas) => {
+        lista.innerHTML = pessoas.map((u) => `
+          <label class="at-op ${String(u.id) === escolhido ? 'sel' : ''}">
+            <input type="radio" name="at-tec" value="${u.id}" ${String(u.id) === escolhido ? 'checked' : ''}>
+            <span class="dp-avatar">${esc((u.name || '?').trim().charAt(0).toUpperCase())}</span>
+            <span class="at-op-tx">
+              <b>${esc(u.name)}${String(u.id) === String(eu.id) ? ' <span class="tg tg-teal">você</span>' : ''}${String(u.id) === atual ? ' <span class="tg tg-gray">atual</span>' : ''}</b>
+              <small>${u.role === 'admin' ? 'Administrador Mestre' : 'Técnico'} · ${u.total ? `${u.total} chamado(s) em aberto` : 'sem chamados'}${u.atendendo ? ` · <span class="dp-ativo"><i class="dp-pulso"></i>atendendo #${u.atendendo.id}</span>` : ''}</small>
+            </span>
+            <span class="dp-pills">${pill(4, u.p4)}${pill(3, u.p3)}${pill(2, u.p2)}${pill(1, u.p1)}</span>
+          </label>`).join('')
+          + (atual ? `<label class="at-op at-op-nenhum ${escolhido === '' ? 'sel' : ''}"><input type="radio" name="at-tec" value="" ${escolhido === '' ? 'checked' : ''}>
+              <i class="bi bi-person-dash"></i><span class="at-op-tx"><b>Ninguém</b><small>Tira o técnico do chamado</small></span></label>` : '');
+        lista.querySelectorAll('input[name="at-tec"]').forEach((r) => r.addEventListener('change', () => {
+          escolhido = r.value;
+          lista.querySelectorAll('.at-op').forEach((op) => op.classList.toggle('sel', op.contains(r)));
+          btn.disabled = escolhido === atual;
+        }));
+      };
+      API.get(`/tickets/${t.id}/tecnicos`).then(pintar)
+        .catch((e) => { lista.innerHTML = `<div class="text-danger small">${esc(e.message || 'Não foi possível carregar.')}</div>`; });
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
         try {
-          await API.post(`/tickets/${t.id}/assign`, { user_id: sel.value || null });
-          toast(sel.value ? `${t.number} atribuído a ${sel.selectedOptions[0].textContent}.` : 'Técnico removido.', 'success');
+          await API.post(`/tickets/${t.id}/assign`, { user_id: escolhido || null });
+          const nome = lista.querySelector('input[name="at-tec"]:checked')?.closest('.at-op')?.querySelector('b')?.childNodes[0]?.textContent || '';
+          toast(escolhido ? `${t.number} agora está com ${nome.trim()}.` : 'Técnico tirado do chamado.', 'success');
           finish(true);
-        } catch (e) { showError(e); }
+        } catch (e) { btn.disabled = false; showError(e); }
       });
     }, opts);
   }

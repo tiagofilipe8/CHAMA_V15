@@ -150,7 +150,8 @@ async function getParticipants(ticketId, entityId, excludeUserId = null) {
        OR u.role = 'admin'
      )`,
     [ticketId, entityId]);
-  return rows.filter((r) => r.id !== excludeUserId);
+  const fora = String(excludeUserId ?? '');
+  return rows.filter((r) => !fora || String(r.id) !== fora);
 }
 
 async function getAdminsAndTechs() {
@@ -270,7 +271,7 @@ async function resolveTemplate(eventKey, vars, statusOverride) {
 async function ticketCreated(ticket, socketTicket) {
   const s = socketTicket || await summary(ticket);
   const templates = await loadTemplates();
-  const support = await getAdminsAndTechs();
+  const support = (await getAdminsAndTechs()).filter((u) => String(u.id) !== String(ticket.requester_id));
   const vars = buildVars(s);
   const t = templates['ticket.created'] || DEFAULT_TEMPLATES['ticket.created'];
   await deliver({
@@ -309,9 +310,9 @@ async function statusChanged(ticket, actor, newStatus) {
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
 
-async function ticketAssigned(ticket) {
+async function ticketAssigned(ticket, actor = null) {
   const s = await summary(ticket);
-  const recipients = await getParticipants(ticket.id, ticket.entity_id);
+  const recipients = await getParticipants(ticket.id, ticket.entity_id, actor && actor.id);
   const vars = buildVars(s);
   const t = (await loadTemplates())['ticket.assigned'] || DEFAULT_TEMPLATES['ticket.assigned'];
   await deliver({ ticket, event: 'ticket.assigned', recipients, title: () => renderTemplate(t.title, vars), subject: () => renderTemplate(t.subject, vars), message: () => renderTemplate(t.message, vars), ticketMsg: s });
@@ -335,9 +336,9 @@ async function commentAdded(ticket, message) {
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
 
-async function approvalRequested(ticket) {
+async function approvalRequested(ticket, actor = null) {
   const s = await summary(ticket);
-  const recipients = await getParticipants(ticket.id, ticket.entity_id);
+  const recipients = await getParticipants(ticket.id, ticket.entity_id, actor && actor.id);
   const vars = buildVars(s);
   const t = (await loadTemplates())['approval.requested'] || DEFAULT_TEMPLATES['approval.requested'];
   await deliver({ ticket, event: 'approval.requested', recipients: recipients.filter((r) => r.role === 'client' || r.role === 'admin'), title: () => renderTemplate(t.title, vars), subject: () => renderTemplate(t.subject, vars), message: () => renderTemplate(t.message, vars), ticketMsg: s });

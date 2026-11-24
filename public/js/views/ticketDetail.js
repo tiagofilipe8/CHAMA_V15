@@ -30,32 +30,14 @@ Views.ticketDetail = function ticketDetail(id) {
     const podeAtribuirEmpresa = triage || (empresaWaPadrao && !!can.resolve);
 
     // ---------------- Barra de acoes ----------------
+    // Só as ações principais. Empresa, técnico, situação e moderador ficam no card "Responsáveis",
+    // cada um com a sua ação ao lado (Trocar, Assumir, Alterar).
     const actions = [];
-    // Em atendimento: o técnico do chamado marca que está atendendo este agora (ou pausa)
-    const comigo = String(t.assigned_user_id || '') === String(user.id) && ![5, 6, 7].includes(t.status);
-    if (comigo && window.Atendimento && Atendimento.pode(user)) {
-      actions.push(String(Atendimento.atualId || '') === String(t.id)
-        ? `<button class="btn btn-sm btn-atendendo" id="act-parar" title="Você está atendendo este chamado. Clique para pausar."><i class="dp-pulso"></i> Atendendo agora · pausar</button>`
-        : `<button class="btn btn-sm btn-outline-success" id="act-atender" title="Marca este como o chamado que você está atendendo agora"><i class="bi bi-play-fill"></i> Atender agora</button>`);
-    }
-    if (can.take) {
-      actions.push(`<button class="btn btn-outline-success btn-sm" id="act-take"><i class="bi bi-person-check"></i> Assumir chamado</button>`);
-    }
-    if (can.status) {
-      actions.push(`<button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar status</button>`);
-    }
     if (can.resolve && ![5, 6, 7].includes(t.status)) {
       actions.push(`<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-check2-circle"></i> Resolver chamado</button>`);
     }
-    if (can.assign) {
-      actions.push(`<button class="btn btn-outline-secondary btn-sm" id="act-assign"><i class="bi bi-person-plus"></i> Atribuir técnico</button>`);
-    }
     if (canEdit) {
       actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> ${triage ? 'Triagem / editar' : 'Editar'}</button>`);
-    }
-    if (canClientApprove) {
-      actions.push(`<button class="btn btn-success btn-sm" id="act-approve"><i class="bi bi-check-circle"></i> Aprovar solução</button>`);
-      actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-reject"><i class="bi bi-x-circle"></i> Reprovar</button>`);
     }
     if (can.cancel && !can.status && [1, 2, 3, 4].includes(t.status)) {
       actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-cancel"><i class="bi bi-slash-circle"></i> Cancelar chamado</button>`);
@@ -66,9 +48,41 @@ Views.ticketDetail = function ticketDetail(id) {
     if (isManager) {
       actions.push(`<button class="btn btn-outline-warning btn-sm" id="act-note-focus"><i class="bi bi-chat-square-quote"></i> Instrução</button>`);
     }
-
     const actionBar = actions.length
       ? `<div class="d-flex flex-wrap gap-2 mb-3">${actions.join('')}</div>` : '';
+
+    // ---------------- Responsáveis (empresa, técnico, situação, moderador) ----------------
+    const comigo = String(t.assigned_user_id || '') === String(user.id) && ![5, 6, 7].includes(t.status);
+    const tecAcoes = [];
+    if (comigo && window.Atendimento && Atendimento.pode(user)) {
+      tecAcoes.push(String(Atendimento.atualId || '') === String(t.id)
+        ? `<button class="btn btn-sm btn-atendendo" id="act-parar" title="Você está atendendo este chamado. Clique para pausar."><i class="dp-pulso"></i> Atendendo · pausar</button>`
+        : `<button class="btn btn-sm btn-outline-success" id="act-atender" title="Marca este como o chamado que você está atendendo agora"><i class="bi bi-play-fill"></i> Atender agora</button>`);
+    }
+    if (can.take) tecAcoes.push(`<button class="btn btn-sm btn-success" id="act-take" title="Fica com você"><i class="bi bi-person-check"></i> Assumir</button>`);
+    if (can.assign) tecAcoes.push(`<button class="btn btn-sm btn-outline-secondary" id="act-assign"><i class="bi bi-person-gear"></i> ${t.assigned_user_id ? 'Trocar' : 'Escolher'}</button>`);
+    const respItem = (icone, rotulo, valor, acoes = '', extra = '') => `
+      <div class="resp-item ${extra}">
+        <i class="bi ${icone} resp-ico"></i>
+        <div class="resp-tx"><span class="resp-rot">${rotulo}</span><span class="resp-val">${valor}</span></div>
+        ${acoes ? `<div class="resp-acoes">${acoes}</div>` : ''}
+      </div>`;
+    const respCard = `
+      <div class="card panel-card mb-3 resp-card">
+        <div class="card-header"><i class="bi bi-people me-1"></i> Responsáveis</div>
+        <div class="resp-lista">
+          ${respItem('bi-building', 'Empresa',
+            empresaWaPadrao ? '<span class="text-warning-emphasis fw-semibold"><i class="bi bi-exclamation-triangle"></i> Não atribuída</span>' : esc(t.entity_name || '—'),
+            podeAtribuirEmpresa ? `<button class="btn btn-sm ${empresaWaPadrao ? 'btn-warning' : 'btn-outline-secondary'}" data-bs-toggle="modal" data-bs-target="#modal-entity" title="Atribuir este chamado a uma empresa${empresaWaPadrao ? ' (obrigatório antes de resolver)' : ''}"><i class="bi bi-building-add"></i> ${empresaWaPadrao ? 'Atribuir' : 'Trocar'}</button>` : '',
+            empresaWaPadrao ? 'resp-alerta' : 'multi-empresa')}
+          ${respItem('bi-person-badge', 'Técnico',
+            t.assigned_name ? `${esc(t.assigned_name)}${comigo ? ' <span class="tg tg-teal">você</span>' : ''}${t.assigned_at ? `<small>desde ${esc(fmt.timeAgo(t.assigned_at))}</small>` : ''}` : '<span class="tg tg-amber">Não atribuído</span>',
+            tecAcoes.join(''), t.assigned_name ? '' : 'resp-alerta')}
+          ${respItem('bi-flag', 'Situação', badgeStatus(t.status),
+            can.status ? '<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar</button>' : '')}
+          ${respItem('bi-shield-check', 'Moderador', t.moderator_name ? esc(t.moderator_name) : '<span class="text-muted">—</span>')}
+        </div>
+      </div>`;
 
     // ---------------- Aprovacao pendente (box para o cliente) ----------------
     const approvalBox = canClientApprove ? `
@@ -126,7 +140,6 @@ Views.ticketDetail = function ticketDetail(id) {
           ${empresaWaPadrao ? `<div class="mt-1"><span class="badge text-bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Empresa não atribuída — obrigatório antes de resolver</span></div>` : ''}
         </div>
         <div class="d-flex gap-2">
-          ${podeAtribuirEmpresa ? `<button class="btn btn-sm ${empresaWaPadrao && !triage ? 'btn-warning' : 'btn-outline-primary'}" data-bs-toggle="modal" data-bs-target="#modal-entity" title="Atribuir este chamado a uma empresa existente${empresaWaPadrao ? ' (obrigatório antes de resolver)' : ''}"><i class="bi bi-building-add"></i> Atribuir empresa${empresaWaPadrao ? ' *' : ''}</button>` : ''}
           <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
         </div>
       </div>
@@ -198,6 +211,7 @@ Views.ticketDetail = function ticketDetail(id) {
         </div>
 
         <div class="col-lg-4">
+          ${respCard}
           <div class="card panel-card mb-3">
             <div class="card-header"><i class="bi bi-info-circle me-1"></i> Informações</div>
             <div class="card-body p-0">
@@ -205,15 +219,12 @@ Views.ticketDetail = function ticketDetail(id) {
                 <tbody>
                   <tr><th>Solicitante</th><td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.requester_email || '')}</small>
                     ${t.requester_rating_summary && t.requester_rating_summary.count ? `<br><small title="Média das notas dadas pela equipe">${starsHtml(t.requester_rating_summary.avg)} ${String(t.requester_rating_summary.avg).replace('.', ',')} em ${t.requester_rating_summary.count} chamado(s)</small>` : ''}</td></tr>
-                  <tr class="multi-empresa"><th>Empresa</th><td>${esc(t.entity_name || '—')}</td></tr>
                   <tr><th>Localização</th><td>${t.location_name ? esc(t.location_name) + (t.location_code ? ` <small class="text-muted">(${esc(t.location_code)})</small>` : '') : '<span class="text-muted">—</span>'}</td></tr>
                   <tr><th>Categoria</th><td>${esc(t.display_category || '—')}${triage && t.simple_category_name ? `<br><small class="text-muted">Na lista simples: ${esc(t.simple_category_icon || '')} ${esc(t.simple_category_name)}</small>` : ''}</td></tr>
                   <tr><th>Urgência</th><td>${esc(t.impact_name || LABELS.priority[t.priority] || '—')}</td></tr>
                   <tr><th>Precisa até</th><td>${t.needed_by ? fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00') : '<span class="text-muted">não informado</span>'}</td></tr>
                   <tr><th>Previsão</th><td>${t.estimated_at ? `<b>${fmt.dateTime(t.estimated_at)}</b>` : '<span class="text-muted">ainda não definida</span>'}</td></tr>
                   ${t.due_at ? `<tr><th>Prazo (SLA)</th><td>${fmt.dateTime(t.due_at)}</td></tr>` : ''}
-                  <tr><th>Técnico</th><td>${t.assigned_name ? esc(t.assigned_name) : '<span class="text-danger">Não atribuído</span>'}</td></tr>
-                  <tr><th>Moderador</th><td>${esc(t.moderator_name || '—')}</td></tr>
                   <tr><th>Equipamento</th><td>${t.asset_id ? `<a href="#/inventory/${t.asset_id}">${esc(t.asset_name || 'Ativo')} ${t.asset_tag ? `(${esc(t.asset_tag)})` : ''}</a>` : '<span class="text-muted">—</span>'}</td></tr>
                   <tr><th>Abertura</th><td>${fmt.dateTime(t.created_at)}</td></tr>
                   <tr><th>Tempo decorrido</th><td>${fmtDuration(t.created_at, t.closed_at || t.resolved_at)}</td></tr>
@@ -308,7 +319,7 @@ Views.ticketDetail = function ticketDetail(id) {
       el.querySelector('#act-take')?.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Assumir chamado', body: `Deseja assumir o chamado ${t.number}?`, confirmText: 'Assumir' });
         if (!ok) return;
-        try { await API.post(`/tickets/${t.id}/assign`, {}); toast('Chamado assumido.', 'success'); afterReload(); }
+        try { await API.post(`/tickets/${t.id}/assign`, { assumir: true }); toast('Agora o chamado está com você.', 'success'); afterReload(); }
         catch (e) { showError(e); }
       });
 

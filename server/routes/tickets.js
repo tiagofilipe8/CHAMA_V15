@@ -821,7 +821,10 @@ router.post('/:id/assign', async (req, res) => {
     return res.status(403).json({ error: 'Seu perfil não pode atribuir técnicos neste chamado.' });
   }
 
-  let techId = req.body?.user_id || null;
+  // "Assumir chamado" (assumir: true) = fica com quem clicou. Antes, quem tinha permissão de
+  // atribuir e clicava em Assumir mandava "sem técnico" e acabava TIRANDO o técnico do chamado.
+  const assumir = req.body?.assumir === true;
+  let techId = assumir ? user.id : (req.body?.user_id || null);
   if (!triage) {
     // so pode assumir para si um chamado sem responsavel
     techId = user.id;
@@ -831,13 +834,18 @@ router.post('/:id/assign', async (req, res) => {
   }
   let techName = null;
   if (techId) {
+    // quem pode ficar com chamados: Técnico e Administrador Mestre
     const { rows } = await query(
-      `SELECT name FROM users WHERE id = $1 AND role = 'technician' AND active = TRUE`, [techId]);
-    if (!rows.length) return res.status(422).json({ error: 'Técnico inválido.' });
+      `SELECT name FROM users WHERE id = $1 AND role IN ('technician', 'admin') AND active = TRUE`, [techId]);
+    if (!rows.length) return res.status(422).json({ error: 'Só um Técnico ou o Administrador Mestre pode ficar com o chamado.' });
     techName = rows[0].name;
   }
+  if (String(techId || '') === String(ticket.assigned_user_id || '')) {
+    return res.json(decorate(ticket, user)); // nada mudou: não grava nem avisa ninguém
+  }
 
-  const newStatus = ticket.status === 1 && techId ? 2 : ticket.status;
+  // Novo + técnico = Atribuído; Atribuído sem técnico volta a Novo
+  const newStatus = ticket.status === 1 && techId ? 2 : (ticket.status === 2 && !techId ? 1 : ticket.status);
   const changed = String(techId || '') !== String(ticket.assigned_user_id || '');
   await query(
     `UPDATE tickets SET assigned_user_id = $2::bigint,
@@ -846,9 +854,9 @@ router.post('/:id/assign', async (req, res) => {
                           ELSE assigned_at END
      WHERE id = $1`, [req.params.id, techId, newStatus, changed]);
 
-  const changeText = techId
-    ? `${user.name} atribuiu o chamado ao técnico ${techName}.`
-    : 'Chamado desatribuído.';
+  const changeText = !techId ? `${user.name} tirou o técnico do chamado.`
+    : String(techId) === String(user.id) ? `${user.name} assumiu o chamado.`
+      : `${user.name} atribuiu o chamado a ${techName}.`;
   await query(
     `INSERT INTO ticket_messages (ticket_id, user_id, kind, content, new_status)
      VALUES ($1, $2, 'system', $3, $4)`,
@@ -863,8 +871,31 @@ router.post('/:id/assign', async (req, res) => {
   if (triage) await claimModerator(ticket, user);
 
   const updated = await loadTicket(req.params.id);
-  await notify.ticketAssigned(updated);
+  await notify.ticketAssigned(updated, user);
   res.json(decorate(updated, user));
+});
+
+// Quem pode ficar com este chamado (Técnicos e Administrador Mestre), com a carga de cada um:
+// chamados em aberto por urgência e o que está atendendo agora. Usado na janela "Atribuir técnico".
+router.get('/:id/tecnicos', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!canAssign(req.user, ticket)) return res.status(403).json({ error: 'Seu perfil não pode atribuir técnicos neste chamado.' });
+  const { rows } = await query(
+    `SELECT u.id, u.name, u.role,
+            count(t.id)::int AS total,
+            count(t.id) FILTER (WHERE t.priority = 4)::int AS p4,
+            count(t.id) FILTER (WHERE t.priority = 3)::int AS p3,
+            count(t.id) FILTER (WHERE t.priority = 2)::int AS p2,
+            count(t.id) FILTER (WHERE t.priority = 1)::int AS p1,
+            (SELECT json_build_object('id', w.id, 'title', w.title) FROM tickets w
+              WHERE w.id = u.working_ticket_id AND w.status NOT IN (5,6,7)) AS atendendo
+     FROM users u
+     LEFT JOIN tickets t ON t.assigned_user_id = u.id AND t.status NOT IN (5,6,7)
+     WHERE u.active AND u.role IN ('technician', 'admin')
+     GROUP BY u.id
+     ORDER BY (u.role = 'technician') DESC, count(t.id), u.name`);
+  res.json(rows);
 });
 
 // ---------------------------------------------------------------------
@@ -990,7 +1021,7 @@ router.post('/:id/approval', async (req, res) => {
   await saveResolution(ticket, user, resolution);
 
   const updated = await loadTicket(req.params.id);
-  await notify.approvalRequested(updated);
+  await notify.approvalRequested(updated, user);
   res.json(decorate(updated, user));
 });
 

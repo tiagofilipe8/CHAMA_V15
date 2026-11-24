@@ -1357,3 +1357,31 @@ a.dp-ind:hover { background: var(--surface-2); }
 [data-bs-theme="dark"] .perm-table .perm-lado.empresa { color: #c4b5fd; }
 .perm-table .perm-cargo { display: block; font-size: .66rem; font-weight: 400; color: var(--muted); line-height: 1.25; margin: 2px auto 0; max-width: 120px; white-space: normal; }
 .perm-table thead .perm-col { vertical-align: top; }
+
+/* Chamado: card "Responsáveis" (empresa, técnico, situação, moderador), cada um com a sua ação */
+.resp-lista { display: flex; flex-direction: column; }
+.resp-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--border); }
+.resp-item:first-child { border-top: 0; }
+.resp-item.resp-alerta { background: rgba(245,158,11,.08); }
+.resp-ico { color: var(--muted); font-size: 1rem; flex: none; width: 18px; text-align: center; }
+.resp-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.resp-rot { font-size: .7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.resp-val { font-size: .88rem; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.resp-val small { display: block; font-size: .72rem; font-weight: 400; color: var(--muted); }
+.resp-acoes { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.resp-acoes .btn { white-space: nowrap; }
+
+/* Janela "Quem fica com o chamado": cada pessoa com a carga dela */
+.at-lista { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.at-op { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; margin: 0; }
+.at-op:hover { border-color: var(--primary); }
+.at-op.sel { border-color: var(--primary); background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
+.at-op input { accent-color: var(--primary); }
+.at-op-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.at-op-tx b { font-size: .88rem; color: var(--ink); }
+.at-op-tx small { font-size: .74rem; color: var(--muted); }
+.at-op-nenhum > .bi { font-size: 1.2rem; color: var(--muted); width: 24px; text-align: center; }
+/* em coluna estreita, os botões descem para baixo do nome em vez de espremer o texto */
+.resp-item { flex-wrap: wrap; }
+.resp-tx { min-width: 120px; }
+.resp-acoes { margin-left: auto; }

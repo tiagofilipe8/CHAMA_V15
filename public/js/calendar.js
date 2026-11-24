@@ -209,7 +209,15 @@ const CalendarUI = (() => {
       if (flut.pop.classList.contains('fixo') && !flut.pop.contains(ev.target) && !ev.target.closest('.cg-dias')) fechar();
     });
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') fechar(); });
-    document.addEventListener('scroll', (ev) => { if (!flut.pop.contains(ev.target)) fechar(); }, true);
+    // rolar a página fecha a lista; mas não a rolagem do próprio calendário (a lista do dia ao lado é
+    // redesenhada a cada clique) nem a do navegador logo depois de abrir (ao focar o dia clicado)
+    document.addEventListener('scroll', (ev) => {
+      if (!flut.pop.classList.contains('on')) return;
+      if (flut.pop.contains(ev.target)) return;
+      if (ev.target && ev.target.closest && ev.target.closest('.cg')) return;
+      if (Date.now() - (flut.abertoEm || 0) < 600) return;
+      fechar();
+    }, true);
     window.addEventListener('resize', fechar);
     window.addEventListener('hashchange', fechar);
     return flut;
@@ -423,6 +431,7 @@ const CalendarUI = (() => {
     }
     function mostrarLista(cel) {
       const F = flutuantes();
+      F.abertoEm = Date.now();
       F.dono = eu;
       eu.celFixa = cel.dataset.dia;
       F.dica.classList.remove('on'); diaDica = null;
