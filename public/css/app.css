@@ -1752,3 +1752,11 @@ a.dp-ind:hover { background: var(--surface-2); }
 .ur-em-chamas.regua .ur-fogo { width: 24px; height: 30px; margin-left: -12px; background-size: 48px 30px; animation-name: ur-fogo-quadros-regua, ur-fogo-tremer; }
 .ur-em-chamas.regua > b { font-size: .8rem; }
 @keyframes ur-fogo-quadros-regua { from { background-position: 0 0; } to { background-position: -48px 0; } }
+
+/* Score: emoji de cada faixa (abaixo de 18) */
+.ur-num-emoji { display: inline-flex; align-items: center; gap: 4px; }
+.ur-emoji { font-size: .95em; line-height: 1; }
+.ur-regua-it { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+.ur-regua-it i { font-style: normal; font-size: .9rem; line-height: 1; }
+.ur-regua { align-items: flex-end; }
+.ur-escala .ur-regua-it i { width: auto; height: auto; border-radius: 0; display: inline; }

@@ -46,9 +46,16 @@ const Urgencia = (() => {
     st.textContent = `.ur-fogo{background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")}`;
     document.head.appendChild(st);
   }());
-  const numScore = (score, alvo, cls = '') => (Number(score) >= FOGO
-    ? `<span class="ur-em-chamas ${cls}" title="Score ${n1(score)}: muito urgente"><span class="ur-fogo" aria-hidden="true"></span><b style="color:${cor(score, alvo)}">${n1(score)}</b></span>`
-    : `<b style="color:${cor(score, alvo)}">${n1(score)}</b>`);
+  // abaixo de 18: um emoji para cada faixa (de 18 para cima é o foguinho em pixel art)
+  const FAIXAS_EMOJI = [[3, '😌', 'tranquilo'], [6, '🙂', 'baixo'], [9, '😐', 'atenção'], [12, '😟', 'preocupante'], [15, '😰', 'alto'], [FOGO, '😱', 'quase pegando fogo']];
+  const faixaEmoji = (score) => FAIXAS_EMOJI.find(([ate]) => Number(score) < ate);
+  const numScore = (score, alvo, cls = '') => {
+    if (Number(score) >= FOGO) {
+      return `<span class="ur-em-chamas ${cls}" title="Score ${n1(score)}: pegando fogo"><span class="ur-fogo" aria-hidden="true"></span><b style="color:${cor(score, alvo)}">${n1(score)}</b></span>`;
+    }
+    const [, emoji, nome] = faixaEmoji(score);
+    return `<span class="ur-num-emoji" title="Score ${n1(score)}: ${nome}"><span class="ur-emoji" aria-hidden="true">${emoji}</span><b style="color:${cor(score, alvo)}">${n1(score)}</b></span>`;
+  };
 
   // como o score é calculado (aparece nas duas páginas)
   const regrasHtml = (r) => {
@@ -87,8 +94,8 @@ const Urgencia = (() => {
           <div><span>Operação parada para daqui a 10 dias</span><code>1 × 3 × 1 × 0,25</code><b>= 0,75</b></div>
         </div>
         <div class="ur-escala"><span>Cor do score:</span>
-          <span class="ur-regua">${[0, 3, 6, 9, 12, 15].map((n) => `<b style="color:${cor(n, ALVO_LOCAL)}">${n}</b>`).join('')}<span class="ur-em-chamas regua"><span class="ur-fogo" aria-hidden="true"></span><b>${FOGO}+</b></span></span>
-          <small>o número vai ficando mais vermelho conforme o score sobe; de ${FOGO} para cima ele pega fogo</small></div>
+          <span class="ur-regua">${[0, 3, 6, 9, 12, 15].map((n) => `<span class="ur-regua-it" title="${faixaEmoji(n)[2]}"><i>${faixaEmoji(n)[1]}</i><b style="color:${cor(n, ALVO_LOCAL)}">${n}</b></span>`).join('')}<span class="ur-em-chamas regua" title="pegando fogo"><span class="ur-fogo" aria-hidden="true"></span><b>${FOGO}</b></span></span>
+          <small>o número vai do verde ao vermelho conforme o score sobe; a partir de ${FOGO} ele pega fogo</small></div>
         <p class="text-muted mb-0 small">Prazo usado: o "Precisa até" do chamado; se não tiver, o prazo (SLA).</p>
       </div>
     </details>`;
