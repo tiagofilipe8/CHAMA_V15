@@ -129,6 +129,9 @@ function decorate(ticket, user) {
   }
   return {
     ...out,
+    // numeração simples: "#16" (o número antigo, ex. 2026-00016, fica em numero_antigo)
+    number: `#${ticket.id}`,
+    numero_antigo: ticket.number,
     approval: notify.APPROVAL_LABELS[ticket.approval_status],
     display_category: simpleView
       ? `${ticket.simple_category_icon ? ticket.simple_category_icon + ' ' : ''}${ticket.simple_category_name}`
@@ -291,8 +294,12 @@ router.get('/', async (req, res) => {
   // "Meus chamados": os que eu abri e os que estao comigo (tecnico)
   if (req.query.mine === 'me') frag(`(t.requester_id = ? OR t.assigned_user_id = ?)`, [req.user.id, req.user.id]);
   if (watching === 'me') frag('FALSE', []); // observadores foram tirados do sistema
-  if (q) frag(`(t.title ILIKE ? OR t.description ILIKE ? OR t.number ILIKE ?)`,
-    [`%${q}%`, `%${q}%`, `%${q}%`]);
+  if (q && /^#?\d+$/.test(String(q).trim())) {
+    frag(`(t.id = ? OR t.number ILIKE ?)`, [parseInt(String(q).replace('#', ''), 10), `%${String(q).replace('#', '')}%`]);
+  } else if (q) {
+    frag(`(t.title ILIKE ? OR t.description ILIKE ? OR t.number ILIKE ?)`,
+      [`%${q}%`, `%${q}%`, `%${q}%`]);
+  }
 
   const where = ['TRUE', ...conds].join(' AND ');
   const lim = Math.min(parseInt(limit, 10) || 200, 500);
@@ -1082,6 +1089,37 @@ router.post('/:id/approval/respond', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
+// Citações na conversa:  @[Nome](u12) = pessoa citada · #16 = outro chamado
+//   GET /tickets/:id/mencionaveis -> quem pode ser citado (quem consegue abrir o chamado:
+//   equipe da Orcim, solicitante, técnico e gestores da empresa)
+// ---------------------------------------------------------------------
+const RE_MENCAO = /@\[([^\]\n]{1,80})\]\(u(\d+)\)/g;
+async function mencionaveis(ticket) {
+  const { rows } = await query(
+    `SELECT u.id, u.name, u.role, u.client_level, l.name AS location_name
+     FROM users u LEFT JOIN locations l ON l.id = u.location_id
+     WHERE u.active AND (
+       u.role IN ('admin', 'moderator', 'technician')
+       OR u.id = $1 OR u.id = $2
+       OR (u.role = 'client' AND u.client_level >= 2 AND (u.entity_id = $3
+           OR u.id IN (SELECT user_id FROM user_entities WHERE entity_id = $3))))
+     ORDER BY (u.id = $2) DESC, (u.id = $1) DESC, u.name`,
+    [ticket.requester_id, ticket.assigned_user_id || 0, ticket.entity_id]);
+  return rows;
+}
+router.get('/:id/mencionaveis', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!canViewTicket(req.user, ticket)) return res.status(403).json({ error: 'Acesso negado.' });
+  const lista = await mencionaveis(ticket);
+  res.json(lista.filter((u) => String(u.id) !== String(req.user.id)).map((u) => ({
+    id: u.id, name: u.name, location_name: u.location_name,
+    papel: u.role === 'admin' ? 'Admin Mestre' : u.role === 'moderator' ? 'Moderador' : u.role === 'technician' ? 'Técnico'
+      : Number(u.client_level) === 2 ? 'Gestor' : 'Solicitante',
+  })));
+});
+
+// ---------------------------------------------------------------------
 // Mensagens / notas no chamado
 //   - equipe (admin, admin local, moderador, tecnico): kind 'internal' = nota interna
 //   - cliente gestor: kind 'note' (instrucao/solicitacao)
@@ -1114,6 +1152,23 @@ router.post('/:id/messages', async (req, res) => {
   const updated = await loadTicket(req.params.id);
   const s = await notify.summary(updated);
   let participants = await notify.getParticipants(ticket.id, ticket.entity_id, user.id);
+
+  // Citações (@): só quem pode abrir o chamado; nota interna, só quem lê notas internas
+  const citadosIds = [...new Set([...content.matchAll(RE_MENCAO)].map((m) => m[2]))].filter((id) => String(id) !== String(user.id));
+  let citados = [];
+  if (citadosIds.length) {
+    const validos = await mencionaveis(ticket);
+    citados = validos.filter((u) => citadosIds.includes(String(u.id))
+      && (kind !== 'internal' || ['admin', 'moderator', 'technician'].includes(u.role)));
+    const textoLimpo = content.replace(RE_MENCAO, '@$1');
+    for (const u of citados) {
+      await notify.createInApp(u.id, `${user.name} citou você no chamado ${s.number}`,
+        textoLimpo.length > 240 ? `${textoLimpo.slice(0, 239)}…` : textoLimpo, ticket.id).catch(() => {});
+    }
+    // quem foi citado já recebeu o aviso de citação: não recebe o de "nova mensagem" também
+    const jaAvisados = new Set(citados.map((u) => String(u.id)));
+    participants = participants.filter((p) => !jaAvisados.has(String(p.id)));
+  }
   if (kind === 'internal') {
     // nota interna: so quem tem a permissao de notas internas recebe o aviso
     const { rows: allowedRoles } = await query(
@@ -1126,7 +1181,7 @@ router.post('/:id/messages', async (req, res) => {
     ticket: updated, event: 'comment.added', recipients: participants,
     title: () => `${kind === 'internal' ? 'Nota interna' : 'Nova mensagem'} em ${s.number}`,
     subject: () => `[Mensagem] ${s.number}`,
-    message: () => `${user.name} escreveu: ${content}`,
+    message: () => `${user.name} escreveu: ${content.replace(RE_MENCAO, '@$1')}`,
   });
   if (kind === 'internal') {
     realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);

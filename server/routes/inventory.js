@@ -140,7 +140,7 @@ router.get('/assets/:id', requireInv, async (req, res) => {
     query('SELECT ap.*, u.name AS uploaded_by_name FROM asset_photos ap LEFT JOIN users u ON u.id=ap.uploaded_by WHERE ap.asset_id=$1 ORDER BY ap.is_primary DESC, ap.created_at ASC', [asset.id]),
     query('SELECT h.*, u.name AS user_name FROM asset_history h LEFT JOIN users u ON u.id=h.user_id WHERE h.asset_id=$1 ORDER BY h.created_at DESC LIMIT 100', [asset.id]),
     query('SELECT * FROM agents WHERE asset_id=$1', [asset.id]),
-    query('SELECT t.id, t.number, t.title, t.status, t.priority FROM tickets t WHERE t.asset_id=$1 ORDER BY t.updated_at DESC LIMIT 20', [asset.id]),
+    query(`SELECT t.id, ('#' || t.id) AS number, t.title, t.status, t.priority FROM tickets t WHERE t.asset_id=$1 ORDER BY t.updated_at DESC LIMIT 20`, [asset.id]),
     query(`SELECT m.*, u.name AS created_by_name
            FROM asset_maintenances m
            LEFT JOIN users u ON u.id=m.created_by

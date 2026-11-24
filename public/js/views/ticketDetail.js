@@ -102,7 +102,7 @@ Views.ticketDetail = function ticketDetail(id) {
         return `<li class="timeline-item system">
           <div class="tl-badge"><i class="bi bi-gear"></i></div>
           <div class="tl-body">
-            <div class="tl-content text-muted">${esc(m.content)}</div>
+            <div class="tl-content text-muted">${Mencoes.formatar(esc(m.content))}</div>
             <small class="text-muted">${m.author_name} · ${fmt.dateTime(m.created_at)}</small>
           </div>
         </li>`;
@@ -121,7 +121,7 @@ Views.ticketDetail = function ticketDetail(id) {
             <span class="badge ${badgeCls} ms-1">${kindLabel}</span>
             <span class="text-muted small ms-auto">${fmt.dateTime(m.created_at)}</span>
           </div>
-          <div class="tl-content">${esc(m.content).replace(/\n/g, '<br>')}</div>
+          <div class="tl-content">${Mencoes.formatar(esc(m.content)).replace(/\n/g, '<br>')}</div>
         </div>
       </li>`;
     }).join('');
@@ -152,7 +152,7 @@ Views.ticketDetail = function ticketDetail(id) {
           <div class="card panel-card mb-3">
             <div class="card-header"><i class="bi bi-card-text me-1"></i> Descrição</div>
             <div class="card-body">
-              <p class="mb-0 ticket-desc">${esc(t.description).replace(/\n/g, '<br>')}</p>
+              <p class="mb-0 ticket-desc">${Mencoes.formatar(esc(t.description)).replace(/\n/g, '<br>')}</p>
             </div>
           </div>
           ${(t.materials || []).length ? `
@@ -196,7 +196,7 @@ Views.ticketDetail = function ticketDetail(id) {
             <div class="card-body">
               <ul class="timeline mb-0">${timeline}</ul>
               <div class="d-flex gap-2 mt-3">
-                <input class="form-control" id="msg-content" placeholder="${isManager ? 'Escreva uma instrução para a equipe...' : 'Escreva uma mensagem...'}" maxlength="2000">
+                <input class="form-control" id="msg-content" placeholder="${isManager ? 'Escreva uma instrução para a equipe...' : 'Escreva uma mensagem... (@ cita uma pessoa, # cita um chamado)'}" maxlength="2000" autocomplete="off">
                 <button class="btn btn-primary ${isManager ? 'btn-warning text-dark' : ''}" id="btn-send-msg">
                   <i class="bi bi-send"></i> ${isManager ? 'Instrução' : 'Enviar'}
                 </button>
@@ -369,14 +369,16 @@ Views.ticketDetail = function ticketDetail(id) {
 
       const sendBtn = el.querySelector('#btn-send-msg');
       const content = el.querySelector('#msg-content');
+      const citacoes = Mencoes.ligar(content, t.id);
       const sendMsg = async () => {
-        const text = content.value.trim();
+        const text = citacoes.preparar(content.value.trim());
         if (!text) return;
         const internal = el.querySelector('#msg-internal')?.checked;
         const kind = internal ? 'internal' : isManager ? 'note' : 'comment';
         try {
           await API.post(`/tickets/${t.id}/messages`, { content: text, kind });
           content.value = '';
+          citacoes.limpar();
           toast(kind === 'internal' ? 'Nota interna registrada.' : isManager ? 'Instrução registrada e notificada.' : 'Mensagem enviada.', 'success');
           afterReload();
         } catch (e) { showError(e); }

@@ -101,7 +101,7 @@ function buildVars(s, extra = {}) {
 async function summary(ticket) {
   return {
     id: ticket.id,
-    number: ticket.number,
+    number: `#${ticket.id}`,
     title: ticket.title,
     status: ticket.status,
     status_label: STATUS_LABELS[ticket.status],

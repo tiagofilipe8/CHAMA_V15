@@ -27,7 +27,7 @@ router.get('/', async (req, res) => {
      FROM tickets t WHERE 1=1 ${scope.sql ? 'AND ' + scope.sql : ''}`, params);
 
   const q2 = await query(
-    `SELECT t.id, t.number, t.title, t.status, t.priority,
+    `SELECT t.id, ('#' || t.id) AS number, t.title, t.status, t.priority,
             u_asg.name AS assigned_name, u_asg.id AS assigned_user_id,
             u_req.name AS requester_name, u_req.id AS requester_id,
             e.name AS entity_name, t.entity_id,
@@ -109,7 +109,7 @@ router.get('/noc', async (req, res) => {
          FROM tickets t WHERE 1=1 ${scope.sql ? 'AND ' + scope.sql : ''} AND t.created_at >= now() - interval '30 days'
        ) sub WHERE sub.first_resp IS NOT NULL`, baseParams);
     const qRadar = await query(
-      `SELECT t.id, t.number, t.title, t.priority, t.status, t.due_at, e.name AS entity_name, u.name AS assigned_name,
+      `SELECT t.id, ('#' || t.id) AS number, t.title, t.priority, t.status, t.due_at, e.name AS entity_name, u.name AS assigned_name,
               il.name AS impact_name, l.name AS location_name,
               EXTRACT(EPOCH FROM (t.due_at - now()))/60 AS minutes_left
        FROM tickets t
@@ -187,9 +187,9 @@ router.get('/noc', async (req, res) => {
               count(t.id) FILTER (WHERE t.priority = 2)::int AS p2,
               count(t.id) FILTER (WHERE t.priority = 1)::int AS p1,
               count(t.id) FILTER (WHERE t.due_at IS NOT NULL AND t.due_at < now())::int AS atrasados,
-              (SELECT json_build_object('id', w.id, 'number', w.number, 'title', w.title, 'priority', w.priority)
+              (SELECT json_build_object('id', w.id, 'number', '#' || w.id, 'title', w.title, 'priority', w.priority)
                  FROM tickets w WHERE w.id = u.working_ticket_id AND w.status NOT IN (5,6,7)) AS atendendo,
-              (SELECT json_build_object('id', p.id, 'number', p.number, 'title', p.title, 'priority', p.priority)
+              (SELECT json_build_object('id', p.id, 'number', '#' || p.id, 'title', p.title, 'priority', p.priority)
                  FROM tickets p WHERE p.assigned_user_id = u.id AND p.status NOT IN (5,6,7)
                  ORDER BY p.priority DESC, p.needed_by NULLS LAST, p.created_at LIMIT 1) AS prioritario
        FROM users u
@@ -201,7 +201,7 @@ router.get('/noc', async (req, res) => {
       baseParams);
     // Chamados novos ainda sem técnico (com o que precisa para decidir quem pega)
     const qNovos = await query(
-      `SELECT t.id, t.number, t.title, t.priority, t.status, t.created_at, t.needed_by,
+      `SELECT t.id, ('#' || t.id) AS number, t.title, t.priority, t.status, t.created_at, t.needed_by,
               il.name AS impact_name, l.name AS location_name, e.name AS entity_name, rq.name AS requester_name,
               COALESCE(sc.name, c.name) AS category_name
        FROM tickets t

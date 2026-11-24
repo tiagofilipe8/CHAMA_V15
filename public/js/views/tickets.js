@@ -247,7 +247,7 @@ Views.tickets = async function tickets(el, opts = {}) {
   function filtered() {
     const q = prefs.q.toLowerCase();
     return all.filter((t) =>
-      (!q || `${t.number} ${t.title} ${t.requester_name || ''}`.toLowerCase().includes(q))
+      (!q || `${t.number} ${t.numero_antigo || ''} ${t.title} ${t.requester_name || ''}`.toLowerCase().includes(q))
       && (!prefs.impacts.length || prefs.impacts.includes(String(t.impact_id)))
       && (!prefs.entities.length || prefs.entities.includes(String(t.entity_id)))
       && (!prefs.locations.length || prefs.locations.includes(t.location_id ? String(t.location_id) : 'none')))
@@ -407,7 +407,7 @@ Views.tickets = async function tickets(el, opts = {}) {
         if (to === de) return;
         if (to === 5 || (to === 6 && de !== 5)) { TicketModals.resolve(t, { toStatus: to, onDone: load, onCancel: render }); return; }
         if (to === 2 && !t.assigned_user_id) {
-          if (P('ticket.take') && !P('ticket.assign')) { await API.post(`/tickets/${t.id}/assign`, {}); toast(`${t.number} assumido por você.`, 'success'); return load(); }
+          if (P('ticket.take') && !P('ticket.assign')) { await API.post(`/tickets/${t.id}/assign`, { assumir: true }); toast(`${t.number} assumido por você.`, 'success'); return load(); }
           TicketModals.assign(t, { onDone: load, onCancel: render }); return;
         }
         await API.post(`/tickets/${t.id}/status`, { status: to });

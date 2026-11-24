@@ -67,7 +67,7 @@ const MSG_TEXTO = `Por favor, envie sua mensagem em texto.`;
 function MSG_CHAMADO(c) {
   return `Chamado aberto!
 
-Número: ${c.number}
+Número: #${c.id}
 Assunto: ${c.title}
 
 A equipe já foi avisada.
@@ -590,8 +590,8 @@ async function handle(msg) {
     // qualquer outra mensagem: NAO vira comentario (nem citando a confirmacao)
     let numero = null;
     if (contact.last_ticket_id) {
-      const r = await query('SELECT number FROM tickets WHERE id = $1', [contact.last_ticket_id]);
-      numero = r.rows.length ? r.rows[0].number : null;
+      const r = await query('SELECT id FROM tickets WHERE id = $1', [contact.last_ticket_id]);
+      numero = r.rows.length ? `#${r.rows[0].id}` : null;
     }
     console.log(`[whatsapp-inbound] ${norm} mensagem fora do chamado (nao registrada${numero ? `, ultimo=${numero}` : ''})`);
     await reply(norm, MSG_APOS_CHAMADO(numero));
