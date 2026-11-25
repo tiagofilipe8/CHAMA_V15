@@ -496,9 +496,10 @@ Views.tickets = async function tickets(el, opts = {}) {
           <tbody>
             ${list.map((t) => `
               <tr class="ticket-row ${URGENCY_TONE[t.priority] || ''}" data-id="${t.id}">
-                <td><span class="fw-semibold text-primary">${esc(t.number)}</span>
-                  <span class="knovo ${window.temNovidade && window.temNovidade(t.id) ? '' : 'd-none'}" data-tk-novidade="${t.id}" title="Teve novidade desde a última vez que você abriu"><i class="bi bi-bell-fill"></i></span><br>${esc(t.title)}
-                  <br><small class="text-muted">${esc(t.display_category || '')}</small></td>
+                <td class="tk-col"><div class="tk-linha"><span class="tk-num">${esc(t.number)}</span>
+                  <span class="knovo ${window.temNovidade && window.temNovidade(t.id) ? '' : 'd-none'}" data-tk-novidade="${t.id}" title="Teve novidade desde a última vez que você abriu"><i class="bi bi-bell-fill"></i></span>
+                  <span class="tk-tit" title="${esc(t.title)}">${esc(t.title)}</span></div>
+                  <small class="text-muted">${esc(t.display_category || '')}</small></td>
                 <td>${badgeStatus(t.status)}</td>
                 <td>${badgeImpact(t)}</td>
                 <td>${esc(t.location_name || '—')}<br><small class="text-muted multi-empresa">${esc(t.entity_name || '')}</small></td>

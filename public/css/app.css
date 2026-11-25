@@ -1864,3 +1864,50 @@ a.dp-ind:hover { background: var(--surface-2); }
   .migalhas .mg-it:not(.mg-casa):not(.mg-atual):not(.mg-grupo) + .mg-sep { display: none; }
   .migalhas .mg-casa span { display: none; }
 }
+
+/* ---------- Chamados mais compacto: letra menor e espaçamento mais justo ---------- */
+/* quadro */
+.board { gap: 8px; }
+.kcol { flex-basis: 200px; }
+.kcol-head { padding: 7px 10px 6px; gap: 6px; border-top-width: 3px; }
+.kcol-title { font-size: .8rem; }
+.kcol-head small { font-size: .68rem; }
+.kcount { font-size: .68rem; padding: 0 7px; }
+.kcol-body { padding: 2px 6px 8px; gap: 6px; }
+.kcard { padding: 7px 9px 6px 12px; border-radius: 9px; }
+.kcard header { margin-bottom: 3px; gap: 6px; }
+.kcard .kurg, .kcard .knum { font-size: .66rem; }
+.kcard .kurg { padding: 0 7px 0 5px; }
+.kcard .kurg i { width: 6px; height: 6px; }
+.kcard .knovo { font-size: .75rem; }
+.kcard h4 { font-size: .8rem; line-height: 1.28; margin: 0 0 4px; }
+.kcard .kmeta { font-size: .68rem; margin-bottom: 5px; gap: 3px 6px; }
+.kcard .kloc + .kcat::before { margin-right: 6px; }
+.kcard footer { font-size: .68rem; gap: 5px; padding-top: 5px; }
+.kcard .kavatar { width: 21px; height: 21px; font-size: .58rem; }
+.kcard .kflag { font-size: .74rem; }
+.kcard .kmove { padding: 0 5px; font-size: .68rem; line-height: 1.5; }
+.kcard .ksem { font-size: .64rem; padding: 0 6px; }
+.board-tip { font-size: .72rem; }
+/* lista */
+.ticket-table { font-size: .78rem; }
+.ticket-table > :not(caption) > * > * { padding: 5px 8px; }
+.ticket-table thead th { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 700; }
+.ticket-table .badge, .ticket-table .tg { font-size: .66rem; }
+/* barra de cima (Quadro / Lista / Calendário, busca, filtros) */
+.board-toolbar { padding: 8px 10px !important; }
+.board-toolbar .tb-row { gap: 6px; }
+.board-toolbar .seg button { font-size: .76rem; padding: 3px 10px; }
+.board-toolbar .btn { font-size: .76rem; padding: 3px 10px; }
+.board-toolbar .form-control, .board-toolbar .form-select, .board-toolbar input { font-size: .78rem; }
+.board-toolbar .tb-search { min-height: 0; }
+/* lista de chamados: título numa linha (com ... se for grande) e letra menor em todas as células */
+.ticket-table td, .ticket-table th { font-size: .76rem; line-height: 1.3; }
+.ticket-table td small, .ticket-table td .small { font-size: .68rem; }
+.ticket-table .tk-col { min-width: 260px; max-width: 420px; }
+.ticket-table .tk-linha { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ticket-table .tk-num { font-weight: 700; color: var(--primary); flex: none; }
+.ticket-table .tk-tit { font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ticket-table .knovo { font-size: .7rem; flex: none; }
+.ticket-table .tk-col { min-width: 200px; max-width: 340px; }
+.ticket-table td:not(.tk-col) { white-space: nowrap; }
