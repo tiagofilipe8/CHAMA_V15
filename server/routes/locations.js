@@ -50,11 +50,19 @@ function readBody(body) {
     return Number.isFinite(n) && Math.abs(n) <= lim ? Math.round(n * 1e6) / 1e6 : NaN;
   };
   return {
-    name: clean(b.name), code: clean(b.code), address: clean(b.address),
+    name: clean(b.name), code: clean(b.code), address: clean(b.address), cep: lerCep(b.cep),
     city: clean(b.city), state: clean(b.state), active: b.active,
     latitude: coord(b.latitude, 90), longitude: coord(b.longitude, 180),
   };
 }
+// CEP: aceita com ou sem traço; guarda "00000-000". Vazio = sem CEP; inválido = NaN (erro).
+function lerCep(v) {
+  if (v === undefined) return undefined;
+  const dig = String(v ?? '').replace(/\D/g, '');
+  if (!dig) return null;
+  return dig.length === 8 ? `${dig.slice(0, 5)}-${dig.slice(5)}` : NaN;
+}
+const cepErro = (b) => (Number.isNaN(b.cep) ? 'CEP inválido: use 8 números (ex.: 30516-120).' : null);
 const coordErro = (b) => (Number.isNaN(b.latitude) ? 'Latitude inválida (de -90 a 90, ex.: -23.550520).'
   : Number.isNaN(b.longitude) ? 'Longitude inválida (de -180 a 180, ex.: -46.633308).'
     : ((b.latitude == null) !== (b.longitude == null) && b.latitude !== undefined && b.longitude !== undefined)
@@ -87,16 +95,16 @@ router.post('/', async (req, res) => {
   if (!canAdmin(user, entityId)) return res.status(403).json({ error: 'Sem permissão para criar localizações nesta empresa.' });
   const b = readBody(req.body);
   if (!b.name) return res.status(422).json({ error: 'Informe o nome da localização.' });
-  const cErr = coordErro(b);
+  const cErr = coordErro(b) || cepErro(b);
   if (cErr) return res.status(422).json({ error: cErr });
   const puErr = await validarUsuarioPosto(req.body?.posto_user);
   if (puErr) return res.status(422).json({ error: puErr });
   try {
     const { rows } = await query(
-      `INSERT INTO locations (entity_id, name, code, address, city, state, active, latitude, longitude)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), $8, $9) RETURNING *`,
+      `INSERT INTO locations (entity_id, name, code, address, city, state, active, latitude, longitude, cep)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), $8, $9, $10) RETURNING *`,
       [entityId, b.name, b.code || null, b.address || null, b.city || null, b.state || null,
-       b.active === undefined ? true : !!b.active, b.latitude ?? null, b.longitude ?? null]);
+       b.active === undefined ? true : !!b.active, b.latitude ?? null, b.longitude ?? null, b.cep ?? null]);
     if (req.body?.posto_user) await criarUsuarioPosto(req.body.posto_user, rows[0]);
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -119,7 +127,9 @@ router.patch('/:id', async (req, res) => {
     if (!b.name) return res.status(422).json({ error: 'O nome não pode ficar vazio.' });
     add('name = ?', b.name);
   }
-  ['code', 'address', 'city', 'state'].forEach((k) => { if (b[k] !== undefined) add(`${k} = ?`, b[k]); });
+  const cepErr = cepErro(b);
+  if (cepErr) return res.status(422).json({ error: cepErr });
+  ['code', 'address', 'city', 'state', 'cep'].forEach((k) => { if (b[k] !== undefined) add(`${k} = ?`, b[k]); });
   const cErr = coordErro(b);
   if (cErr) return res.status(422).json({ error: cErr });
   ['latitude', 'longitude'].forEach((k) => { if (b[k] !== undefined) add(`${k} = ?`, b[k]); });

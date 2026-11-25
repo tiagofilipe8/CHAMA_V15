@@ -849,3 +849,13 @@ DO $marco$ BEGIN
     INSERT INTO schema_marcos (nome) VALUES ('tecnico_fecha_direto');
   END IF;
 END $marco$;
+
+-- =====================================================================
+-- Localizações: CEP em campo próprio (2026-11-25). O campo "Código" sai da tela.
+-- O CEP que estava escrito dentro do endereço ("... · CEP 30516-120") vai para o campo CEP.
+-- =====================================================================
+ALTER TABLE locations ADD COLUMN IF NOT EXISTS cep TEXT;
+UPDATE locations
+   SET cep = regexp_replace(substring(address from '(?i)CEP[:\s]*(\d{5}-?\d{3})'), '^(\d{5})-?(\d{3})$', '\1-\2'),
+       address = NULLIF(btrim(regexp_replace(address, '\s*[·,|]?\s*CEP[:\s]*\d{5}-?\d{3}', '', 'i'), ' ·,|–-'), '')
+ WHERE cep IS NULL AND address ~* 'CEP[:\s]*\d{5}-?\d{3}';

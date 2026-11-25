@@ -311,7 +311,7 @@ Views.newTicket = async function newTicket(el) {
       }
       sel.disabled = false;
       sel.innerHTML = '<option value="">— escolha —</option>' +
-        locs.map((l) => `<option value="${l.id}">${esc(l.name)}${l.code ? ` (${esc(l.code)})` : ''}${l.city ? ` — ${esc(l.city)}` : ''}</option>`).join('');
+        locs.map((l) => `<option value="${l.id}">${esc(l.name)}${l.city ? ` — ${esc(l.city)}` : ''}</option>`).join('');
       const ultimo = lerUltimoPosto();
       if (ultimo.location_id && locs.some((l) => String(l.id) === ultimo.location_id)) {
         sel.value = ultimo.location_id; // o último posto que a pessoa escolheu

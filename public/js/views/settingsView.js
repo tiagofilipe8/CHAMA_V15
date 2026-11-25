@@ -1028,7 +1028,7 @@ Views.adminLocations = async function adminLocations(el) {
     const busca = (document.getElementById('l-busca').value || '').trim().toLowerCase();
     const inativas = document.getElementById('l-inativas').checked;
     const lista = todas.filter((l) => (inativas || l.active)
-      && (!busca || [l.name, l.code, l.address, l.city].some((v) => String(v || '').toLowerCase().includes(busca))));
+      && (!busca || [l.name, l.cep, l.address, l.city].some((v) => String(v || '').toLowerCase().includes(busca))));
     const porEmpresa = new Map();
     // empresas sem localização também aparecem (para criar a primeira), quando não há busca
     // (empresas desativadas só aparecem com "Mostrar inativas")
@@ -1055,8 +1055,8 @@ Views.adminLocations = async function adminLocations(el) {
           <div class="loc-item ${l.active ? '' : 'inativa'}">
             <i class="bi bi-geo-alt-fill loc-pin"></i>
             <div class="loc-info">
-              <div><b>${esc(l.name)}</b>${l.code ? ` <small class="text-muted">(${esc(l.code)})</small>` : ''}${l.active ? '' : ' <span class="tg tg-gray">Inativa</span>'}</div>
-              <div class="small text-muted">${esc([l.address, [l.city, l.state].filter(Boolean).join('/')].filter(Boolean).join(' · ') || 'sem endereço')}</div>
+              <div><b>${esc(l.name)}</b>${l.active ? '' : ' <span class="tg tg-gray">Inativa</span>'}</div>
+              <div class="small text-muted">${esc([l.address, l.cep ? `CEP ${l.cep}` : '', [l.city, l.state].filter(Boolean).join('/')].filter(Boolean).join(' · ') || 'sem endereço')}</div>
             </div>
             <div class="loc-tags">
               ${linkMapa(l) ? `<a class="tg tg-blue" href="${linkMapa(l)}" target="_blank" rel="noopener noreferrer" title="${esc(`${l.latitude}, ${l.longitude}`)}"><i class="bi bi-map"></i>mapa</a>` : '<span class="tg tg-gray" title="Sem latitude/longitude"><i class="bi bi-map"></i>sem mapa</span>'}
@@ -1112,13 +1112,15 @@ Views.adminLocations = async function adminLocations(el) {
             ${ents.map((e) => `<option value="${e.id}" ${String(e.id) === String(defaultEnt) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
           </select></div>
         <div class="row">
-          <div class="col-8 mb-2"><label class="form-label small">Nome *</label>
+          <div class="col-12 mb-2"><label class="form-label small">Nome *</label>
             <input class="form-control" id="lm-name" value="${esc((l && l.name) || '')}" placeholder="Ex.: Posto X"></div>
-          <div class="col-4 mb-2"><label class="form-label small">Código</label>
-            <input class="form-control" id="lm-code" value="${esc((l && l.code) || '')}"></div>
         </div>
-        <div class="mb-2"><label class="form-label small">Endereço</label>
-          <input class="form-control" id="lm-address" value="${esc((l && l.address) || '')}"></div>
+        <div class="row">
+          <div class="col-4 mb-2"><label class="form-label small">CEP</label>
+            <input class="form-control" id="lm-cep" inputmode="numeric" maxlength="9" placeholder="00000-000" value="${esc((l && l.cep) || '')}"></div>
+          <div class="col-8 mb-2"><label class="form-label small">Endereço</label>
+            <input class="form-control" id="lm-address" value="${esc((l && l.address) || '')}" placeholder="Rua, número, bairro"></div>
+        </div>
         <div class="row">
           <div class="col-8 mb-2"><label class="form-label small">Cidade</label>
             <input class="form-control" id="lm-city" value="${esc((l && l.city) || '')}"></div>
@@ -1177,6 +1179,12 @@ Views.adminLocations = async function adminLocations(el) {
     const syncAcesso = () => { if (acesso) m.querySelector('#lm-acesso-box').style.display = acesso.checked ? '' : 'none'; };
     if (acesso) acesso.addEventListener('change', syncAcesso);
     syncAcesso();
+    // CEP: coloca o traço sozinho (00000-000)
+    const cepIn = m.querySelector('#lm-cep');
+    cepIn.addEventListener('input', () => {
+      const d = cepIn.value.replace(/\D/g, '').slice(0, 8);
+      cepIn.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    });
     // colar "-23.5505, -46.6333" (copiado do Google Maps) no campo Latitude separa os dois
     const latIn = m.querySelector('#lm-lat'); const lngIn = m.querySelector('#lm-lng');
     latIn.addEventListener('input', () => {
@@ -1192,7 +1200,7 @@ Views.adminLocations = async function adminLocations(el) {
     m.querySelector('#lm-save').onclick = async () => {
       const body = {
         name: m.querySelector('#lm-name').value.trim(),
-        code: m.querySelector('#lm-code').value.trim(),
+        cep: m.querySelector('#lm-cep').value.trim(),
         address: m.querySelector('#lm-address').value.trim(),
         city: m.querySelector('#lm-city').value.trim(),
         state: m.querySelector('#lm-state').value.trim().toUpperCase(),
@@ -1201,6 +1209,7 @@ Views.adminLocations = async function adminLocations(el) {
         active: m.querySelector('#lm-active').checked,
       };
       if (!body.name) { toast('Informe o nome.', 'warning'); return; }
+      if (body.cep && body.cep.replace(/\D/g, '').length !== 8) { toast('CEP inválido: use 8 números (ex.: 30516-120).', 'warning'); return; }
       if (acesso && acesso.checked) {
         const username = m.querySelector('#lm-user').value.trim();
         const password = m.querySelector('#lm-pass').value;
