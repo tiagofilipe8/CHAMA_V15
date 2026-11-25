@@ -313,7 +313,7 @@ const TicketModals = (() => {
 
   // ---------------- Quem abriu encerra o próprio chamado ----------------
   const AJUDA_ENCERRA = {
-    resolvido: 'Alguém da TI resolveu. O técnico confirma e fecha.',
+    resolvido: 'Um técnico resolveu. Diga qual: ele confirma e fecha.',
     sozinho: 'Conte como resolveu: ajuda em casos iguais.',
     engano: 'Não era um problema de TI ou abriu sem querer.',
     repetido: 'Já existe outro chamado para o mesmo problema.',
@@ -329,6 +329,9 @@ const TicketModals = (() => {
           <div class="small text-muted mb-2">${esc(t.title || '')}</div>
           <label class="form-label small fw-semibold mb-1">O que aconteceu? *</label>
           <div class="es-razoes">${Object.entries(LABELS.encerraUsuario).map(([k, v]) => `<label class="es-razao"><input type="radio" name="eu-motivo" value="${k}"><span><b>${esc(v)}</b><small>${esc(AJUDA_ENCERRA[k])}</small></span></label>`).join('')}</div>
+          <div class="mt-3 d-none" data-f="tec-box"><label class="form-label small fw-semibold mb-1">Qual técnico resolveu? *</label>
+            <select class="form-select form-select-sm" data-f="tec"><option value="">Carregando...</option></select>
+            <div class="form-text">Ele recebe um aviso para confirmar e fechar o chamado.</div></div>
           <div class="mt-3 d-none" data-f="ref-box"><label class="form-label small fw-semibold mb-1">Qual é o outro chamado? *</label>
             <input class="form-control form-control-sm" data-f="ref" placeholder="Ex.: #12"></div>
           <label class="form-label small fw-semibold mt-3 mb-1" data-f="nota-rot">Observação <span class="text-muted fw-normal">(opcional)</span></label>
@@ -343,6 +346,14 @@ const TicketModals = (() => {
       m.querySelectorAll('[name="eu-motivo"]').forEach((r) => r.addEventListener('change', () => {
         m.querySelectorAll('.es-razao').forEach((l) => l.classList.toggle('on', l.querySelector('input').checked));
         f('ref-box').classList.toggle('d-none', r.value !== 'repetido');
+        f('tec-box').classList.toggle('d-none', r.value !== 'resolvido');
+        if (r.value === 'resolvido' && !f('tec').dataset.carregado) {
+          f('tec').dataset.carregado = '1';
+          API.get(`/tickets/${t.id}/quem-pode-ter-resolvido`).then((lista) => {
+            f('tec').innerHTML = '<option value="">— escolha o técnico —</option>' + lista.map((p) => `<option value="${p.id}">${esc(p.name)}${String(p.id) === String(t.assigned_user_id) ? ' (técnico do chamado)' : ''}</option>`).join('');
+            if (t.assigned_user_id && lista.some((p) => String(p.id) === String(t.assigned_user_id))) f('tec').value = String(t.assigned_user_id);
+          }).catch(() => { f('tec').innerHTML = '<option value="">Não foi possível carregar</option>'; });
+        }
         f('nota-rot').innerHTML = r.value === 'sozinho' ? 'Como você resolveu? <span class="text-muted fw-normal">(opcional)</span>'
           : r.value === 'outro' ? 'Explique o motivo *' : 'Observação <span class="text-muted fw-normal">(opcional)</span>';
         f('save').innerHTML = r.value === 'resolvido' ? '<i class="bi bi-check2"></i> Avisar que resolveu' : '<i class="bi bi-check2"></i> Encerrar chamado';
@@ -350,7 +361,8 @@ const TicketModals = (() => {
       const enviar = async (confirmar) => {
         const motivo = motivoSel();
         if (!motivo) { toast('Escolha o que aconteceu.', 'warning'); return; }
-        const body = { motivo, nota: f('nota').value.trim(), ref: f('ref').value.trim(), confirmar };
+        const body = { motivo, nota: f('nota').value.trim(), ref: f('ref').value.trim(), confirmar, tecnico_id: f('tec').value || null };
+        if (motivo === 'resolvido' && !body.tecnico_id) { toast('Escolha o técnico que resolveu.', 'warning'); f('tec').focus(); return; }
         if (motivo === 'outro' && !body.nota) { toast('Explique o motivo.', 'warning'); return; }
         if (motivo === 'repetido' && !/^#?\d+$/.test(body.ref)) { toast('Informe o número do outro chamado (ex.: #12).', 'warning'); return; }
         try {

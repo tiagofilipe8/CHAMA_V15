@@ -907,6 +907,17 @@ router.post('/:id/assign', async (req, res) => {
 
 // Quem pode ficar com este chamado (Técnicos e Administrador Mestre), com a carga de cada um:
 // chamados em aberto por urgência e o que está atendendo agora. Usado na janela "Atribuir técnico".
+// Para quem abriu o chamado escolher "qual técnico resolveu" (só nomes)
+router.get('/:id/quem-pode-ter-resolvido', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!canViewTicket(req.user, ticket)) return res.status(403).json({ error: 'Acesso negado.' });
+  const { rows } = await query(
+    `SELECT id, name FROM users WHERE active AND role IN ('technician','admin','moderator')
+     ORDER BY (id = $1) DESC, (role = 'technician') DESC, name`, [ticket.assigned_user_id || 0]);
+  res.json(rows);
+});
+
 router.get('/:id/tecnicos', async (req, res) => {
   const ticket = await loadTicket(req.params.id);
   if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
@@ -1079,7 +1090,19 @@ router.post('/:id/encerrar-usuario', async (req, res) => {
   if (atendendo && !req.body?.confirmar) {
     return res.status(409).json({ error: `${atendendo.name} está atendendo este chamado agora (pode já estar a caminho).`, em_atendimento: true, tecnico: atendendo.name });
   }
+  // "Já foi resolvido": quem abriu diz qual técnico resolveu (ele fica com o chamado para avaliar e fechar)
+  let resolveu = null;
+  if (motivo === 'resolvido') {
+    const rid = String(req.body?.tecnico_id || '');
+    resolveu = /^\d+$/.test(rid) ? (await query(
+      `SELECT id, name FROM users WHERE id = $1 AND active AND role IN ('technician','admin','moderator')`, [rid])).rows[0] : null;
+    if (!resolveu) return res.status(422).json({ error: 'Escolha o técnico que resolveu.', tecnico_obrigatorio: true });
+  }
   const novo = motivo === 'resolvido' ? 5 : 6;
+  if (resolveu && String(resolveu.id) !== String(ticket.assigned_user_id || '')) {
+    await query('UPDATE tickets SET assigned_user_id = $2, assigned_at = COALESCE(assigned_at, now()) WHERE id = $1', [ticket.id, resolveu.id]);
+    await addHistory(ticket.id, user.id, 'technician', ticket.assigned_name || null, resolveu.name);
+  }
   await query(
     `UPDATE tickets SET status = $2::smallint, closed_at = CASE WHEN $2::smallint = 6 THEN now() ELSE NULL END,
             resolved_at = COALESCE(resolved_at, now()),
@@ -1093,15 +1116,16 @@ router.post('/:id/encerrar-usuario', async (req, res) => {
   await addHistory(ticket.id, user.id, novo === 5 ? 'marked_resolved' : 'closed_by_requester', notify.STATUS_LABELS[ticket.status], MOTIVOS_USUARIO[motivo]);
   const rotuloNota = motivo === 'sozinho' ? 'Como resolveu' : 'Observação';
   const texto = novo === 5
-    ? `${user.name} avisou que o problema foi resolvido. Falta o técnico avaliar para fechar.${nota ? `\n\n${rotuloNota}: ${nota}` : ''}`
+    ? `${user.name} avisou que ${resolveu.name} resolveu o problema. Falta o técnico avaliar para fechar.${nota ? `\n\n${rotuloNota}: ${nota}` : ''}`
     : `${user.name} encerrou o chamado: ${MOTIVOS_USUARIO[motivo]}${ref ? ` (é o mesmo do #${ref})` : ''}.${nota ? `\n\n${rotuloNota}: ${nota}` : ''}`;
   await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content, new_status) VALUES ($1, $2, 'comment', $3, $4)`,
     [ticket.id, user.id, texto, novo]);
   const updated = await loadTicket(ticket.id);
   await notify.statusChanged(updated, user, novo);
   // quem cuida do chamado: o técnico; sem técnico, a coordenação (admin e moderadores)
-  const quem = ticket.assigned_user_id
-    ? [ticket.assigned_user_id]
+  const responsavel = resolveu ? resolveu.id : ticket.assigned_user_id;
+  const quem = responsavel
+    ? [responsavel]
     : (await query(`SELECT id FROM users WHERE active AND role IN ('admin','moderator')`)).rows.map((r) => r.id);
   for (const id of quem) {
     if (String(id) === String(user.id)) continue;
