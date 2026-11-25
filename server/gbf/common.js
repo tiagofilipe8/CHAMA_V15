@@ -67,6 +67,13 @@ async function avisarEquipe(ator, aviso, { extras = [], excluir = [] } = {}) {
   await notificar(ids, aviso);
 }
 
+// Atividade reagendada, concluída ou cancelada: os avisos antigos de "atrasada" / "vence em breve"
+// dela deixam de valer (ficam como lidos; a tela mostra que não estão mais atrasados).
+async function limparAvisosPrazo(taskId) {
+  await query(`UPDATE gbf_notifications SET is_read = TRUE
+               WHERE kind IN ('atividade_atrasada','atividade_prazo') AND link = $1 AND is_read = FALSE`, [`#/atividades/${taskId}`]);
+}
+
 // "tecnico" inclui os gestores que também fazem visitas
 // Prazo de atividade a partir de data + horário opcional (fuso de São Paulo, UTC-3, sem horário de verão).
 // Sem horário = o dia todo: vence às 23:59:59 do dia. Devolve undefined se não veio due_date.
@@ -97,7 +104,7 @@ async function usuariosAtivos(role = null) {
 }
 
 module.exports = {
-  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA, prazoDe, textoPrazo, avisarEquipe,
+  ah, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA, prazoDe, textoPrazo, avisarEquipe, limparAvisosPrazo,
   getSetting, setSetting, entidadesAcompanhadas, escopoTickets, tabelaExiste,
   notificar, usuariosAtivos,
 };

@@ -3,7 +3,7 @@ const express = require('express');
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
 const {
-  ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets, prazoDe, textoPrazo, avisarEquipe,
+  ah, STATUS_TAREFA, PRIORIDADE_TAREFA, STATUS_CENTRAL, notificar, usuariosAtivos, escopoTickets, prazoDe, textoPrazo, avisarEquipe, limparAvisosPrazo,
 } = require('./common');
 
 const router = express.Router();
@@ -266,6 +266,7 @@ router.patch('/:id', ah(async (req, res) => {
   if (!sets.length) return res.status(422).json({ error: 'Nada para alterar.' });
   sets.push('updated_at = now()');
   await query(`UPDATE gbf_tasks SET ${sets.join(', ')} WHERE id = $1`, params);
+  if (sets.some((x) => /^due_at\b/.test(x)) || ['concluida', 'cancelada'].includes(b.status)) await limparAvisosPrazo(t.id);
   await evento(t.id, u.id, `${u.name} ${mudancas.length ? mudancas.join('; ') : 'editou a atividade'}.`);
 
   if (novoResponsavel && novoResponsavel !== u.id) {

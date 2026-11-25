@@ -6,7 +6,7 @@
 // GET  /api/gbf/reagendar?tipo=...&id=...   -> histórico daquele item
 const express = require('express');
 const { query } = require('../db');
-const { ah, notificar, usuariosAtivos } = require('./common');
+const { ah, notificar, usuariosAtivos, limparAvisosPrazo } = require('./common');
 
 const router = express.Router();
 const TZ = 'America/Sao_Paulo';
@@ -67,6 +67,7 @@ router.post('/', ah(async (req, res) => {
     await query(`UPDATE gbf_tasks SET due_at = (($2::date + $3::time)::timestamp AT TIME ZONE '${TZ}'), all_day = $4,
                    due_soon_notified = FALSE, overdue_notified = FALSE, updated_at = now() WHERE id = $1`,
     [a.id, b.data, b.hora || '23:59:59', !b.hora]);
+    await limparAvisosPrazo(a.id);
   }
   await query('INSERT INTO gbf_reschedules (kind, ref_id, old_date, new_date, reason, user_id) VALUES ($1, $2, $3, $4, $5, $6)',
     [tipo, a.id, a.data || null, b.data, motivo.slice(0, 1000), u.id]);

@@ -406,7 +406,29 @@
   const posFiltro = {}; // última posição do destaque de cada grupo (para deslizar de onde estava)
   let direcaoPeriodo = 0;
   const semMovimento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Ícone de cada título/número pelo assunto (o primeiro que combinar vale)
+  const ICONES_TITULO = [
+    [/precisa de você/i, 'exclamation-circle'], [/^hoje/i, 'sun'], [/×|resultado/i, 'graph-up'], [/técnico|funcionári|pessoa/i, 'person-badge'], [/últimos registros|registro/i, 'clock-history'],
+    [/por que|causa/i, 'question-circle'], [/equipamento/i, 'pc-display'], [/não ok|problema/i, 'exclamation-triangle'],
+    [/atrasad/i, 'alarm'], [/urgência/i, 'exclamation-octagon'], [/tempo|resposta/i, 'stopwatch'],
+    [/no prazo|na data/i, 'clock-history'], [/em aberto|idade/i, 'hourglass-split'], [/resolvid|concluíd|feit/i, 'check2-circle'],
+    [/abertos|chamados|orcim/i, 'inbox'], [/visita/i, 'geo-alt'], [/tarefa/i, 'ui-checks'], [/atividade/i, 'check2-square'],
+    [/pedid|solicita/i, 'megaphone'], [/entrega/i, 'box-seam'], [/posto/i, 'shop'], [/técnico|funcionári|pessoa/i, 'person-badge'],
+    [/planejado|reativo/i, 'diagram-3'], [/categoria|recorrente/i, 'tags'], [/calendário/i, 'calendar3'],
+    [/como foi|período|mês|semana|ano|dias/i, 'graph-up'],
+  ];
+  const iconeDe = (texto) => (ICONES_TITULO.find(([re]) => re.test(texto)) || [null, 'dot'])[1];
+  function iconizar() {
+    $$('.ac-head h2, .pg-bloco > h3, .pg-faixa .l', view()).forEach((el) => {
+      if (el.querySelector(':scope > i.bi')) return;
+      const txt = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.textContent : el.textContent).trim();
+      const ic = iconeDe(txt);
+      if (ic === 'dot') return;
+      el.insertAdjacentHTML('afterbegin', `<i class="bi bi-${ic} tit-ic"></i>`);
+    });
+  }
   function animarTela() {
+    iconizar();
     $$('.pg-seg, .pg-abas', view()).forEach((g) => {
       const chave = `${location.hash.split('?')[0]}|${g.getAttribute('aria-label') || g.className}`;
       g.classList.add('anim');
@@ -3336,9 +3358,10 @@ function itemHistorico(e) {
   }).join('')}</nav>
       <div class="d-flex justify-content-end mb-2"><button class="btn btn-sm btn-outline-secondary" id="nt-ler"><i class="bi bi-check2-all"></i> Marcar todas como lidas</button></div>
       ${itens.length ? [...dias.entries()].map(([d, lst]) => `<div class="nt-dia">${esc(nomeDia(d))}</div>
-        <div class="card-x p-0 nt-lista">${lst.map((n) => `<a class="nt-item ${n.is_read ? '' : 'nova'}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
+        <div class="card-x p-0 nt-lista">${lst.map((n) => `<a class="nt-item ${n.is_read ? '' : 'nova'}${n.atual && !n.atual.valida ? ' superada' : ''}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
           <span class="nt-ic"><i class="bi bi-${ICONE_NOTIF[n.kind] || 'bell'}"></i></span>
-          <span class="nt-txt"><span class="nt-t">${esc(n.title)}</span>${n.message ? `<span class="nt-m">${esc(n.message)}</span>` : ''}</span>
+          <span class="nt-txt"><span class="nt-t">${esc(n.title)}</span>${n.message ? `<span class="nt-m">${esc(n.message)}</span>` : ''}
+            ${n.atual && n.atual.texto ? `<span class="notif-atual ${n.atual.valida ? 'ruim' : 'ok'}"><i class="bi bi-${n.atual.valida ? 'alarm' : 'check2-circle'}"></i> ${esc(n.atual.texto)}</span>` : ''}</span>
           <span class="nt-w">${new Date(n.created_at).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })}</span>
         </a>`).join('')}</div>`).join('')
     : `<div class="card-x">${vazio(grupo === 'nao_lidas' ? 'Nenhuma notificação não lida.' : 'Nenhuma notificação aqui.', 'bell-slash')}</div>`}`;
@@ -4241,8 +4264,9 @@ function itemHistorico(e) {
     const sn = $('#side-notif-n');
     if (sn) { sn.textContent = badge.textContent; sn.classList.toggle('d-none', !r.nao_lidas); }
     $('#notif-list').innerHTML = r.itens.length ? r.itens.map((n) => `
-      <a class="notif-item ${n.is_read ? '' : 'unread'}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
+      <a class="notif-item ${n.is_read ? '' : 'unread'}${n.atual && !n.atual.valida ? ' superada' : ''}" href="${esc(n.link || '#/')}" data-nid="${n.id}">
         <div class="t">${esc(n.title)}</div>${n.message ? `<div class="m">${esc(n.message)}</div>` : ''}
+        ${n.atual && n.atual.texto ? `<div class="notif-atual ${n.atual.valida ? 'ruim' : 'ok'}"><i class="bi bi-${n.atual.valida ? 'alarm' : 'check2-circle'}"></i> ${esc(n.atual.texto)}</div>` : ''}
         <div class="w">${relativo(n.created_at)}</div></a>`).join('') : '<div class="notif-empty">Nenhuma notificação.</div>';
     $$('#notif-list [data-nid]').forEach((a) => a.addEventListener('click', () => {
       $('#notif-panel').classList.add('d-none');

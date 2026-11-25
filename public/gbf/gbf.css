@@ -1083,3 +1083,14 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 /* Causas de encerramento (Orcim) */
 .causa-hum { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ec7a1c; margin-right: 6px; vertical-align: middle; }
 .causa-leg { font-size: .72rem; margin-top: -6px; }
+
+/* Aviso de prazo que não vale mais (atividade reagendada, concluída ou cancelada) */
+.notif-atual { display: inline-flex; align-items: center; gap: 4px; margin-top: 3px; font-size: .74rem; font-weight: 600; border-radius: 6px; padding: 1px 6px; width: fit-content; }
+.notif-atual.ok { color: #0f766e; background: #ecfdf5; }
+.notif-atual.ruim { color: #b91c1c; background: #fef2f2; }
+.notif-item.superada .t, .nt-item.superada .nt-t { text-decoration: line-through; text-decoration-color: #cbd5e1; color: var(--muted); }
+
+/* Ícones nos títulos dos painéis (mesmo estilo do "Meu dia") */
+.tit-ic { color: var(--brand); font-size: .95em; }
+.ac-head h2, .pg-bloco > h3 { display: flex; align-items: center; gap: 7px; }
+.pg-faixa .l .tit-ic { font-size: .8rem; margin-right: 4px; color: #94a3b8; }

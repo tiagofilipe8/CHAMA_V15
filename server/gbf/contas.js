@@ -105,6 +105,25 @@ privado.get('/notificacoes', ah(async (req, res) => {
     query(`SELECT * FROM gbf_notifications WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT ${lim}`, params),
     query(`SELECT count(*)::int AS n FROM gbf_notifications WHERE user_id = $1 AND is_read = FALSE`, [req.gbfUser.id]),
   ]);
+  // aviso de prazo: confere se a atividade ainda está atrasada (pode ter sido reagendada ou concluída)
+  const deTarefa = lista.rows.filter((n) => ['atividade_atrasada', 'atividade_prazo'].includes(n.kind) && /^#\/atividades\/\d+$/.test(n.link || ''));
+  if (deTarefa.length) {
+    const ids = [...new Set(deTarefa.map((n) => n.link.split('/').pop()))];
+    const { rows } = await query(
+      `SELECT id, status, due_at, all_day, due_at < now() AS vencida FROM gbf_tasks WHERE id = ANY($1::bigint[])`, [ids]);
+    const porId = new Map(rows.map((t) => [String(t.id), t]));
+    const dataBr = (d) => new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+    for (const n of deTarefa) {
+      const t = porId.get(n.link.split('/').pop());
+      if (!t) n.atual = { valida: false, texto: 'A atividade foi apagada.' };
+      else if (t.status === 'concluida') n.atual = { valida: false, texto: 'Já foi concluída.' };
+      else if (t.status === 'cancelada') n.atual = { valida: false, texto: 'Foi cancelada.' };
+      else if (!t.due_at) n.atual = { valida: false, texto: 'Está sem prazo agora.' };
+      else if (n.kind === 'atividade_atrasada' && !t.vencida) n.atual = { valida: false, texto: `Não está mais atrasada: reagendada para ${dataBr(t.due_at)}${t.all_day ? ' (dia todo)' : ''}.` };
+      else if (n.kind === 'atividade_prazo' && new Date(t.due_at) - new Date(n.created_at) > 36 * 3600e3) n.atual = { valida: false, texto: `Prazo mudou para ${dataBr(t.due_at)}.` };
+      else n.atual = { valida: true, texto: n.kind === 'atividade_atrasada' ? 'Continua atrasada.' : '' };
+    }
+  }
   res.json({ nao_lidas: cont.rows[0].n, itens: lista.rows });
 }));
 
