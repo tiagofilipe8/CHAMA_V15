@@ -1911,3 +1911,11 @@ a.dp-ind:hover { background: var(--surface-2); }
 .ticket-table .knovo { font-size: .7rem; flex: none; }
 .ticket-table .tk-col { min-width: 200px; max-width: 340px; }
 .ticket-table td:not(.tk-col) { white-space: nowrap; }
+
+/* Relatório de inventário: ícone em cada card */
+.er-kpi { padding-left: 64px; min-height: 78px; justify-content: center; }
+.er-ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; }
+.er-ico.verde { background: #dcfce7; color: #15803d; } .er-ico.azul { background: #dbeafe; color: #1d4ed8; }
+.er-ico.ambar { background: #fef3c7; color: #b45309; } .er-ico.vermelho { background: #fee2e2; color: #b91c1c; } .er-ico.violeta { background: #ede9fe; color: #6d28d9; }
+[data-bs-theme="dark"] .er-ico { background: rgba(127,127,127,.18) !important; }
+.er-kpi > .er-ico { font-size: 1.3rem; }
