@@ -369,6 +369,7 @@ Views.assetDetail = async function assetDetail(id, el) {
   const user = API.user || {};
   const a = await API.get('/inventory/assets/' + id).catch(e=>{ el.innerHTML=emptyState('Erro', e.message,'bi-exclamation'); return null; });
   if (!a) return;
+  if (window.migalhaDetalhe) window.migalhaDetalhe(`${a.name}${a.asset_tag ? ` (${a.asset_tag})` : ''}`.slice(0, 70));
   el.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h4 class="mb-0"><i class="bi bi-hdd me-2"></i>${esc(a.name)} <small class="text-muted">${esc(a.asset_tag||'')}</small></h4>

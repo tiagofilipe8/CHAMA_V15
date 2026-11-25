@@ -14,6 +14,7 @@ Views.ticketDetail = function ticketDetail(id) {
     }
 
     const isRequester = String(t.requester_id) === String(user.id);
+    if (window.migalhaDetalhe) window.migalhaDetalhe(`${t.number} · ${t.title || ''}`.slice(0, 70));
     // O que este usuario pode fazer neste chamado (calculado no servidor
     // a partir das permissoes do perfil)
     const can = t.can || {};

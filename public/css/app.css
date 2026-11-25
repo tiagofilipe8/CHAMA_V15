@@ -1832,3 +1832,35 @@ a.dp-ind:hover { background: var(--surface-2); }
 [data-bs-theme="dark"] .ur-ch.u-slow { background: rgba(217,119,6,.12); } [data-bs-theme="dark"] .ur-ch.u-req { background: rgba(37,99,235,.12); }
 [data-bs-theme="dark"] .ur-tag-urg { background: rgba(127,127,127,.22) !important; }
 [data-bs-theme="dark"] .ur-tag-urg.u-stop { color: #fca5a5; } [data-bs-theme="dark"] .ur-tag-urg.u-soon { color: #fdba74; } [data-bs-theme="dark"] .ur-tag-urg.u-slow { color: #fcd34d; } [data-bs-theme="dark"] .ur-tag-urg.u-req { color: #93c5fd; }
+
+/* ---------- Migalhas (Início › Grupo › Página › Detalhe) ---------- */
+.migalhas { margin-bottom: 3px; min-width: 0; }
+.migalhas ol { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; flex-wrap: nowrap; gap: 2px; min-width: 0; }
+.migalhas li { display: inline-flex; align-items: center; min-width: 0; }
+.migalhas .mg-it > a, .migalhas .mg-it > span { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; line-height: 1;
+  color: var(--muted); text-decoration: none; padding: 4px 8px; border-radius: 999px; white-space: nowrap; transition: background .15s, color .15s; }
+.migalhas .mg-it > a:hover { background: var(--primary-soft); color: var(--primary); }
+.migalhas .mg-it i { font-size: .8rem; }
+.migalhas .mg-casa > a { padding-left: 6px; }
+.migalhas .mg-casa > a span { font-weight: 600; }
+/* o grupo aparece como selinho colorido (mesma cor do grupo no menu) */
+.migalhas .mg-grupo > a, .migalhas .mg-grupo > span { font-weight: 700; background: var(--tg-bg, rgba(127,127,127,.1)); }
+.migalhas .mg-grupo.tg-blue > * { background: var(--c-blue-bg); color: var(--c-blue-tx); }
+.migalhas .mg-grupo.tg-amber > * { background: var(--c-amber-bg); color: var(--c-amber-tx); }
+.migalhas .mg-grupo.tg-teal > * { background: var(--c-teal-bg, #ccfbf1); color: var(--c-teal-tx, #0f766e); }
+.migalhas .mg-grupo.tg-violet > * { background: var(--c-violet-bg, #ede9fe); color: var(--c-violet-tx, #6d28d9); }
+.migalhas .mg-grupo.tg-gray > * { background: var(--c-gray-bg); color: var(--c-gray-tx); }
+.migalhas .mg-grupo > a:hover { filter: brightness(.96); }
+/* página aberta: em destaque, e corta com "..." se o nome for grande */
+.migalhas .mg-atual { min-width: 0; flex: 0 1 auto; }
+.migalhas .mg-atual > span { color: var(--ink); font-weight: 600; overflow: hidden; }
+.migalhas .mg-atual > span > span { overflow: hidden; text-overflow: ellipsis; }
+.migalhas .mg-sep { color: var(--border); font-size: .62rem; padding: 0 1px; }
+.migalhas .mg-sep i { color: #a8b3bf; }
+/* o selinho do grupo ao lado do título fica repetido: some */
+.page-modulo { display: none !important; }
+@media (max-width: 575px) {
+  .migalhas .mg-it:not(.mg-casa):not(.mg-atual):not(.mg-grupo) { display: none; }
+  .migalhas .mg-it:not(.mg-casa):not(.mg-atual):not(.mg-grupo) + .mg-sep { display: none; }
+  .migalhas .mg-casa span { display: none; }
+}

@@ -244,7 +244,63 @@ function moduloAtual() {
   if (p === '/perfil') return ['Minha conta', 'tg-gray', 'bi-person'];
   return ['Atendimento', 'tg-blue', 'bi-headset'];
 }
+// ---------------- Migalhas (você está em: Início › Grupo › Página › Detalhe) ----------------
+let migalhaExtra = null; // texto do item aberto (ex.: título do chamado), preenchido pela própria tela
+function migalhasDoCaminho() {
+  const u = currentUser();
+  const can = (p) => Roles.can(u, p);
+  const path = (location.hash.replace(/^#/, '') || '/dashboard').split('?')[0];
+  const inicio = can('dashboard.view') ? '#/dashboard' : '#/tickets';
+  const [grupo, cor, icone] = moduloAtual();
+  const hrefGrupo = {
+    Atendimento: inicio,
+    Equipamentos: can('inventory.view') ? '#/inventory' : '#/estoque',
+    Locais: Roles.isMaster(u) ? '#/admin/entities' : '#/admin/locations',
+    Cadastros: can('users.manage') ? '#/admin/users' : null,
+    Sistema: Roles.isMaster(u) ? '#/admin/settings' : null,
+    Chat: '#/chat',
+    'Minha conta': '#/perfil',
+  }[grupo] || null;
+  const lista = [{ txt: 'Início', href: inicio, icon: 'bi-house-door-fill', casa: true }];
+  lista.push({ txt: grupo, href: hrefGrupo, icon: icone, cor });
+  let m;
+  if ((m = path.match(/^\/tickets\/(\d+)/))) {
+    lista.push({ txt: can('ticket.view_all') ? 'Chamados' : 'Meus chamados', href: '#/tickets' });
+    lista.push({ txt: migalhaExtra || `Chamado #${m[1]}` });
+  } else if ((m = path.match(/^\/inventory\/(\d+)/))) {
+    lista.push({ txt: 'Inventário', href: '#/inventory' });
+    lista.push({ txt: migalhaExtra || `Equipamento #${m[1]}` });
+  } else if (path === '/inventory/agents') {
+    lista.push({ txt: 'Inventário', href: '#/inventory' }, { txt: 'Agentes' });
+  } else if (path === '/estoque' && can('inventory.view')) {
+    lista.push({ txt: 'Inventário', href: '#/inventory' }, { txt: 'Estoque de T.I.' });
+  } else if (/^\/chat\/\d+/.test(path)) {
+    lista.push({ txt: migalhaExtra || 'Conversa' });
+  } else {
+    const titulo = pageTitleFromPath();
+    if (titulo && titulo !== grupo) lista.push({ txt: titulo });
+  }
+  // o último é a página aberta (sem link); itens repetidos em seguida saem
+  const out = lista.filter((it, i) => i === 0 || it.txt !== lista[i - 1].txt);
+  out[out.length - 1].atual = true;
+  return out;
+}
+function pintarMigalhas() {
+  const nav = document.getElementById('migalhas');
+  if (!nav) return;
+  const itens = migalhasDoCaminho();
+  nav.innerHTML = `<ol>${itens.map((it) => {
+    const conteudo = `${it.icon ? `<i class="bi ${it.icon}"></i>` : ''}<span>${esc(it.txt)}</span>`;
+    const cls = ['mg-it', it.casa ? 'mg-casa' : '', it.cor ? `mg-grupo ${it.cor}` : '', it.atual ? 'mg-atual' : ''].filter(Boolean).join(' ');
+    return `<li class="${cls}">${it.href && !it.atual ? `<a href="${it.href}">${conteudo}</a>` : `<span${it.atual ? ' aria-current="page"' : ''}>${conteudo}</span>`}</li>`;
+  }).join('<li class="mg-sep" aria-hidden="true"><i class="bi bi-chevron-right"></i></li>')}</ol>`;
+}
+// a tela aberta pode trocar o último item (ex.: "#16 · Impressora não liga")
+window.migalhaDetalhe = (texto) => { migalhaExtra = texto || null; pintarMigalhas(); };
+window.addEventListener('hashchange', () => { migalhaExtra = null; });
+
 function marcarModulo() {
+  pintarMigalhas();
   const el = document.getElementById('page-modulo');
   if (!el) return;
   const [nome, cor, icone] = moduloAtual();
