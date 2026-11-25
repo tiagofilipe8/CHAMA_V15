@@ -1098,6 +1098,12 @@ router.post('/:id/encerrar-usuario', async (req, res) => {
       `SELECT id, name FROM users WHERE id = $1 AND active AND role IN ('technician','admin','moderator')`, [rid])).rows[0] : null;
     if (!resolveu) return res.status(422).json({ error: 'Escolha o técnico que resolveu.', tecnico_obrigatorio: true });
   }
+  // "Resolvi sozinho" dito por alguém da equipe (técnico, moderador ou admin mestre): ele mesmo vira o
+  // técnico do chamado e fecha na hora, sem avaliação
+  if (motivo === 'sozinho' && ['technician', 'moderator', 'admin'].includes(user.role)) {
+    resolveu = { id: user.id, name: user.name };
+    await query('UPDATE tickets SET resolved_by_id = $2 WHERE id = $1', [ticket.id, user.id]);
+  }
   const novo = motivo === 'resolvido' ? 5 : 6;
   if (resolveu && String(resolveu.id) !== String(ticket.assigned_user_id || '')) {
     await query('UPDATE tickets SET assigned_user_id = $2, assigned_at = COALESCE(assigned_at, now()) WHERE id = $1', [ticket.id, resolveu.id]);
@@ -1123,10 +1129,12 @@ router.post('/:id/encerrar-usuario', async (req, res) => {
   const updated = await loadTicket(ticket.id);
   await notify.statusChanged(updated, user, novo);
   // quem cuida do chamado: o técnico; sem técnico, a coordenação (admin e moderadores)
-  const responsavel = resolveu ? resolveu.id : ticket.assigned_user_id;
+  // (equipe que resolveu sozinha: só avisa o técnico que estava antes, se tinha outro)
+  const equipeSozinha = motivo === 'sozinho' && resolveu;
+  const responsavel = equipeSozinha ? ticket.assigned_user_id : (resolveu ? resolveu.id : ticket.assigned_user_id);
   const quem = responsavel
     ? [responsavel]
-    : (await query(`SELECT id FROM users WHERE active AND role IN ('admin','moderator')`)).rows.map((r) => r.id);
+    : equipeSozinha ? [] : (await query(`SELECT id FROM users WHERE active AND role IN ('admin','moderator')`)).rows.map((r) => r.id);
   for (const id of quem) {
     if (String(id) === String(user.id)) continue;
     await notify.createInApp(id, novo === 5 ? `#${ticket.id}: o usuário avisou que resolveu. Avalie para fechar` : `#${ticket.id} encerrado pelo usuário`,
