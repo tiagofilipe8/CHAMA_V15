@@ -252,14 +252,14 @@ const Urgencia = (() => {
             const o = naOrcim[m.id];
             const daOrcim = o && o.disponivel >= Number(m.quantity || 1);
             return `
-          <div class="lv-item ${feito ? 'feito' : ''}" data-t="${c.id}" data-m="${m.id}" data-nome="${esc(m.name)}">
+          <div class="lv-item ${feito ? 'feito' : ''}" data-t="${c.id}" data-m="${m.id}" data-nome="${esc(m.name)}" ${m.status === 'rota' ? 'data-rota="1"' : ''}>
             <label class="lv-check" title="${feito ? 'Já entregue' : 'Entregar este item'}"><input type="checkbox" class="lv-marca" ${feito ? 'checked disabled' : ''} ${!feito && !podeEntregar ? 'disabled' : ''}></label>
             <span class="lv-qtd">${m.quantity} ${esc(m.unit || 'un')}</span>
             <span class="lv-nome">${esc(m.name)}</span>
-            <span class="lv-st">${feito ? `${pedidoTag('entregue')}${m.destino && m.destino !== 'nenhum' ? ` <small class="text-muted">${m.destino === 'estoque' ? 'no Estoque de T.I.' : 'no Inventário da Empresa'}</small>` : ''}` : (o ? tagOrcim(m) : pedidoTag(m.status))}</span>
+            <span class="lv-st">${feito ? `${pedidoTag('entregue')}${m.destino && m.destino !== 'nenhum' ? ` <small class="text-muted">${m.destino === 'estoque' ? 'no Estoque de T.I.' : 'no Inventário da Empresa'}</small>` : ''}` : m.status === 'rota' ? `${pedidoTag('rota')}${m.previsao ? ` <small class="text-muted">prev. ${esc(String(m.previsao).slice(8, 10))}/${esc(String(m.previsao).slice(5, 7))}</small>` : ''}` : (o ? tagOrcim(m) : pedidoTag(m.status))}</span>
             ${!feito && podeEntregar ? `<span class="lv-acao">
-              ${o ? `<label class="lv-origem" title="${daOrcim ? 'O item sai do Estoque da ORCIM e vai para a empresa' : 'A ORCIM não tem a quantidade toda'}"><input type="checkbox" class="lv-usa-orcim" ${daOrcim ? 'checked' : 'disabled'}> do Estoque da ORCIM</label>` : ''}
-              <select class="form-select form-select-sm lv-dest" aria-label="Para onde vai">${Object.entries(DESTINOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></span>` : ''}
+              ${o ? `<label class="lv-origem" title="${daOrcim ? 'O item sai do Estoque da ORCIM e vai para a empresa' : 'A ORCIM não tem a quantidade toda'}"><input type="checkbox" class="lv-usa-orcim" ${daOrcim && (m.status !== 'rota' || m.origem_orcim) ? 'checked' : ''} ${daOrcim ? '' : 'disabled'}> do Estoque da ORCIM</label>` : ''}
+              <select class="form-select form-select-sm lv-dest" aria-label="Para onde vai">${Object.entries(m.destino === 'nenhum' ? { ...DESTINOS, nenhum: 'Consumível (só entregar)' } : DESTINOS).map(([k, v]) => `<option value="${k}" ${k === (m.destino || 'inventario') ? 'selected' : ''}>${v}</option>`).join('')}</select></span>` : ''}
           </div>`;
           }).join('')}`).join('')}
       </div>`;
@@ -274,26 +274,30 @@ const Urgencia = (() => {
       <div class="modal-header"><h6 class="mb-0 d-flex align-items-center gap-2">${caixaPixel(26)} O que levar nesta rota</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         ${total.size ? `<div class="lv-total"><b>Para separar:</b> ${[...total.values()].map((x) => `<span class="tg tg-teal">${x.quantity} ${esc(x.unit || 'un')} · ${esc(x.name)}</span>`).join(' ')}</div>` : ''}
-        ${podeEntregar && pendentes.length ? `<div class="lv-instr"><i class="bi bi-check2-square"></i><span><b>Marque os itens que serão entregues</b> e escolha para onde cada um vai: <b>Inventário da Empresa</b> (já em uso no local) ou <b>Estoque de T.I.</b> do local.${Object.keys(naOrcim).length ? ' Os itens com <span class="pd-tag lv-orcim"><i class="bi bi-boxes"></i>Em estoque na ORCIM</span> saem do Estoque da ORCIM.' : ''}</span>
+        ${podeEntregar && pendentes.length ? `<div class="lv-instr"><i class="bi bi-check2-square"></i><span><b>Marque os itens que serão entregues</b> e escolha para onde cada um vai: <b>Inventário da Empresa</b> (já em uso no local) ou <b>Estoque de T.I.</b> do local. <b>Levar na rota</b> avisa quem pediu que o item está a caminho (entrega prevista para hoje); a entrega é <b>confirmada</b> por você no local ou por quem pediu.${Object.keys(naOrcim).length ? ' Os itens com <span class="pd-tag lv-orcim"><i class="bi bi-boxes"></i>Em estoque na ORCIM</span> saem do Estoque da ORCIM.' : ''}</span>
           <button type="button" class="btn btn-sm btn-link lv-todos">Marcar todos</button></div>` : ''}
         ${blocos || '<div class="dp-vazio">Nenhum material pedido nos chamados dessas paradas.</div>'}
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-        ${podeEntregar && pendentes.length ? '<button class="btn btn-success btn-sm" id="lv-entregar" disabled><i class="bi bi-box-arrow-in-down"></i> <span>Marque os itens</span></button>' : ''}
+        ${podeEntregar && pendentes.length ? '<button class="btn btn-outline-primary btn-sm" id="lv-rota" disabled><i class="bi bi-signpost-split"></i> <span>Levar na rota</span></button><button class="btn btn-success btn-sm" id="lv-entregar" disabled><i class="bi bi-check2-circle"></i> <span>Confirmar entrega</span></button>' : ''}
       </div></div></div>`;
     document.body.appendChild(m);
     const bm = new bootstrap.Modal(m);
     let mudou = false;
     m.addEventListener('hidden.bs.modal', () => { m.remove(); if (mudou && depois) depois(); });
     const btn = m.querySelector('#lv-entregar');
+    const btnRota = m.querySelector('#lv-rota');
     const marcados = () => [...m.querySelectorAll('.lv-item:not(.feito) .lv-marca:checked')].map((c) => c.closest('.lv-item'));
     const contar = () => {
       m.querySelectorAll('.lv-item:not(.feito)').forEach((it) => it.classList.toggle('marcado', it.querySelector('.lv-marca').checked));
       if (!btn) return;
       const n = marcados().length;
+      const naRota = marcados().filter((it) => !it.dataset.rota).length;
       btn.disabled = !n;
-      btn.querySelector('span').textContent = n ? `Entregar ${n} item${n === 1 ? '' : 's'}` : 'Marque os itens';
+      btn.querySelector('span').textContent = n ? `Confirmar entrega (${n})` : 'Confirmar entrega';
+      btnRota.disabled = !naRota;
+      btnRota.querySelector('span').textContent = naRota ? `Levar na rota (${naRota})` : 'Levar na rota';
     };
     m.querySelectorAll('.lv-marca').forEach((c) => c.addEventListener('change', contar));
     m.querySelector('.lv-todos')?.addEventListener('click', (e) => {
@@ -312,7 +316,7 @@ const Urgencia = (() => {
         const destino = it.querySelector('.lv-dest').value;
         const orcim = !!it.querySelector('.lv-usa-orcim:checked');
         try {
-          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/entregar`, { destino, orcim });
+          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/confirmar`, { destino, orcim });
           ok += 1; mudou = true;
           it.classList.remove('marcado'); it.classList.add('feito');
           const c = it.querySelector('.lv-marca'); c.checked = true; c.disabled = true;
@@ -321,6 +325,25 @@ const Urgencia = (() => {
         } catch (e) { showError(e); }
       }
       if (ok) toast(`${ok} item${ok === 1 ? '' : 's'} entregue${ok === 1 ? '' : 's'} e registrado${ok === 1 ? '' : 's'} no inventário.`, 'success');
+      contar();
+    });
+    // levar na rota: fica "a caminho do local" e quem pediu acompanha
+    btnRota?.addEventListener('click', async () => {
+      const lista = marcados().filter((it) => !it.dataset.rota);
+      if (!lista.length) return;
+      btnRota.disabled = true;
+      let ok = 0;
+      for (const it of lista) {
+        const destino = it.querySelector('.lv-dest').value;
+        const orcim = !!it.querySelector('.lv-usa-orcim:checked');
+        try {
+          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/rota`, { destino, orcim });
+          ok += 1; mudou = true;
+          it.dataset.rota = '1';
+          it.querySelector('.lv-st').innerHTML = `${pedidoTag('rota')} <small class="text-muted">prev. hoje</small>`;
+        } catch (e) { showError(e); }
+      }
+      if (ok) toast(`${ok} item${ok === 1 ? '' : 's'} a caminho do local. Quem pediu já pode acompanhar e confirmar quando receber.`, 'success');
       contar();
     });
     contar();

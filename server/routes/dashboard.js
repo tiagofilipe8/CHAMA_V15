@@ -363,7 +363,7 @@ router.get('/causas', async (req, res) => {
     veCusto ? query(
       `SELECT COALESCE(tm.location_id, t.location_id) AS location_id, sum(tm.price * tm.quantity)::float AS valor, sum(tm.quantity)::int AS n
        FROM ticket_materials tm JOIN tickets t ON t.id = tm.ticket_id
-       WHERE tm.price IS NOT NULL AND tm.status IN ('comprado','chegou','entregue') ${faixa('COALESCE(tm.status_at, t.created_at)')} ${base}
+       WHERE tm.price IS NOT NULL AND tm.status IN ('comprado','transito','chegou','rota','entregue') ${faixa('COALESCE(tm.status_at, t.created_at)')} ${base}
        GROUP BY 1`, params) : vazio,
     // retiradas do estoque (o que cada posto consumiu)
     veCusto ? query(
@@ -456,7 +456,7 @@ router.get('/urgencia', async (req, res) => {
             il.name AS impact_name, u.name AS assigned_name,
             COALESCE(sc.name, c.name) AS category_name,
             COALESCE((SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
-                                                         'status', m.status, 'destino', m.destino) ORDER BY m.id)
+                                                         'status', m.status, 'destino', m.destino, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim) ORDER BY m.id)
                       FROM ticket_materials m WHERE m.ticket_id = t.id), '[]') AS materiais
      FROM tickets t
      JOIN entities e ON e.id = t.entity_id

@@ -54,6 +54,7 @@ const PedidoUI = (() => {
         ${(locais || []).map((l) => `<option value="${l.id}" ${String(l.id) === String(localSel) ? 'selected' : ''}>${esc(l.name)}</option>`).join('') || `<option value="">${esc(t.location_name || '—')}</option>`}</select></label>
       <label class="pd-campo" title="Tipo do equipamento no inventário"><span><i class="bi bi-tag"></i></span><select class="form-select form-select-sm pd-tipo" ${bloqueado ? 'disabled' : ''}>
         ${Object.entries(INV_TYPES).map(([k, v]) => `<option value="${k}" ${k === (m.asset_type || 'PERIPHERAL') ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+      <label class="pd-campo" title="Entrega prevista no local (quem pediu vê em Meus pedidos)"><span><i class="bi bi-calendar-event"></i></span><input type="date" class="form-control form-control-sm pd-prev" value="${m.previsao ? String(m.previsao).slice(0, 10) : ''}" ${bloqueado ? 'disabled' : ''}></label>
       <select class="form-select form-select-sm pd-sel pd-${esc(st)}" title="Situação">${Object.entries(PEDIDO_STATUS).map(([k, v]) => `<option value="${k}" ${k === st ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
     </div>`;
   }
@@ -68,6 +69,7 @@ const PedidoUI = (() => {
       row.querySelector('.pd-preco')?.addEventListener('change', (e) => salvarCampos({ price: e.target.value === '' ? null : e.target.value }));
       row.querySelector('.pd-local')?.addEventListener('change', (e) => salvarCampos({ location_id: e.target.value || null }));
       row.querySelector('.pd-tipo')?.addEventListener('change', (e) => salvarCampos({ asset_type: e.target.value }));
+      row.querySelector('.pd-prev')?.addEventListener('change', (e) => salvarCampos({ previsao: e.target.value || null }));
       row.querySelector('.pd-sel')?.addEventListener('change', async (e) => {
         const status = e.target.value;
         const corpo = { status };
@@ -82,10 +84,15 @@ const PedidoUI = (() => {
         if (local && local.value) corpo.location_id = local.value;
         const tipo = row.querySelector('.pd-tipo');
         if (tipo) corpo.asset_type = tipo.value;
+        const prev = row.querySelector('.pd-prev');
+        if (status === 'rota') corpo.previsao = (prev && prev.value) || new Date().toLocaleDateString('sv-SE');
+        else if (prev && prev.value) corpo.previsao = prev.value;
         try {
           await API.post(`${url}/status`, corpo);
-          toast(status === 'comprado' ? 'Comprado: já está no inventário como "aguardando chegar".' : status === 'chegou' ? 'Chegou: no inventário como "pronto para entregar".'
-            : status === 'entregue' ? 'Entregue.' : 'Situação atualizada.', 'success');
+          toast({
+            comprado: 'Comprado: já está no inventário como "aguardando chegar".', transito: 'A caminho da ORCIM.', chegou: 'Na ORCIM: pronto para sair para o local.',
+            rota: 'A caminho do local: quem pediu acompanha e confirma quando receber.', entregue: 'Entregue e registrado.',
+          }[status] || 'Situação atualizada.', 'success');
         } catch (err) { showError(err); }
         if (depois) depois();
       });
@@ -112,7 +119,8 @@ Views.pedidos = async function pedidos(el) {
       <div class="iv-busca"><i class="bi bi-search"></i><input class="form-control form-control-sm" id="pd-q" placeholder="Buscar material ou chamado"></div>
     </div></div>
     ${podeMudar ? `<div class="pd-dica small text-muted mb-2"><i class="bi bi-info-circle"></i> Informe o preço e o posto de cada item. Ao marcar <b>Comprado</b>, ele já entra no inventário
-      (aguardando chegar) com o preço; <b>Chegou</b> deixa pronto para entregar; <b>Entregue</b> manda para o inventário ou o Estoque de T.I. do posto. Quem pediu é avisado.</div>` : ''}
+      (aguardando chegar) com o preço. Etapas: <b>Pedido → Comprado → A caminho da ORCIM → Na ORCIM → A caminho do local → Entregue</b>. Em <b>A caminho do local</b> quem pediu
+      vê a previsão e confirma quando receber (ou o técnico confirma). <b>Entregue</b> manda para o Inventário da Empresa ou o Estoque de T.I. do posto. Quem pediu é avisado a cada etapa.</div>` : ''}
     <div class="pd-resumo mb-2" id="pd-resumo"></div>
     <div id="pd-lista">${spinner()}</div>`;
   const selPosto = el.querySelector('#pd-posto');
@@ -173,16 +181,32 @@ Views.pedidos = async function pedidos(el) {
 Views.meusPedidos = async function meusPedidos(el) {
   const ETAPAS = [
     ['solicitado', 'Pedido', 'bi-hourglass-split'],
-    ['comprado', 'A caminho', 'bi-truck'],
-    ['chegou', 'Chegou', 'bi-box-seam'],
+    ['comprado', 'Comprado', 'bi-cart-check'],
+    ['transito', 'A caminho da ORCIM', 'bi-truck'],
+    ['chegou', 'Na ORCIM', 'bi-building-check'],
+    ['rota', 'A caminho do local', 'bi-signpost-split'],
     ['entregue', 'Entregue', 'bi-check2-circle'],
   ];
   const FRASE = {
     solicitado: 'Pedido recebido pela TI. Aguardando compra.',
-    comprado: 'Comprado: está a caminho.',
-    chegou: 'Chegou na TI. Logo vai ser entregue.',
+    comprado: 'Comprado. Aguardando o fornecedor enviar.',
+    transito: 'A caminho da ORCIM.',
+    chegou: 'Chegou na ORCIM. Logo sai para o seu local.',
+    rota: 'Saiu para entrega no seu local. Confirme quando receber.',
     entregue: 'Entregue.',
     cancelado: 'Este item foi cancelado.',
+  };
+  const hoje = () => new Date().toLocaleDateString('sv-SE');
+  const diaCurto = (v) => { const d = new Date(v); return isNaN(d) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const horaCurta = (v) => { const d = new Date(v); return isNaN(d) ? '' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+  // "Entrega prevista para hoje / amanhã / sex, 28/11" (e "atrasada" se já passou)
+  const previsto = (d) => {
+    if (!d) return '';
+    const dia = String(d).slice(0, 10);
+    const amanha = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE');
+    const txt = dia === hoje() ? 'hoje' : dia === amanha ? 'amanhã'
+      : new Date(`${dia}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
+    return `<span class="mp-prev ${dia < hoje() ? 'atraso' : dia === hoje() ? 'hoje' : ''}"><i class="bi bi-calendar-event"></i> Entrega prevista para <b>${txt}</b>${dia < hoje() ? ' (atrasada)' : ''}</span>`;
   };
   let filtro = 'andamento';
   try { filtro = localStorage.getItem('meus_pedidos_filtro') || 'andamento'; } catch { /* padrão */ }
@@ -197,11 +221,20 @@ Views.meusPedidos = async function meusPedidos(el) {
     </div>
     <div id="mp-corpo">${spinner()}</div>`;
 
-  const linhaTempo = (m) => {
-    if (m.status === 'cancelado') return `<div class="mp-cancel"><i class="bi bi-x-circle"></i> Cancelado</div>`;
+  // linha do tempo com a data embaixo de cada etapa (a de "Pedido" é quando o chamado foi aberto)
+  const linhaTempo = (p, m) => {
+    if (m.status === 'cancelado') return `<div class="mp-cancel"><i class="bi bi-x-circle"></i> Cancelado${m.status_at ? ` em ${diaCurto(m.status_at)}` : ''}</div>`;
     const atual = Math.max(0, ETAPAS.findIndex(([k]) => k === (m.status || 'solicitado')));
-    return `<ol class="mp-tempo" style="--p:${(atual / (ETAPAS.length - 1)) * 100}%">${ETAPAS.map(([k, nome, ic], i) => `
-      <li class="${i < atual ? 'feito' : i === atual ? 'agora' : ''}"><span class="mp-bola"><i class="bi ${ic}"></i></span><small>${nome}</small></li>`).join('')}</ol>`;
+    const etapas = m.etapas || {};
+    const quando = (k, i) => {
+      const v = k === 'solicitado' ? p.created_at : etapas[k];
+      if (v) return `<em title="${esc(fmt.dateTime(v))}">${diaCurto(v)} · ${horaCurta(v)}</em>`;
+      if (i < atual) return '<em class="pulou">—</em>';
+      if (k === 'entregue' && m.previsao) return `<em class="prev">prev. ${diaCurto(`${String(m.previsao).slice(0, 10)}T12:00:00`)}</em>`;
+      return '<em></em>';
+    };
+    return `<ol class="mp-tempo" style="--n:${ETAPAS.length};--p:${(atual / (ETAPAS.length - 1)) * 100}%">${ETAPAS.map(([k, nome, ic], i) => `
+      <li class="${i < atual ? 'feito' : i === atual ? 'agora' : ''}"><span class="mp-bola"><i class="bi ${ic}"></i></span><small>${nome}</small>${quando(k, i)}</li>`).join('')}</ol>`;
   };
 
   let lista = [];
@@ -219,19 +252,23 @@ Views.meusPedidos = async function meusPedidos(el) {
     corpo.innerHTML = ver.map((p) => {
       const ms = p.materiais || [];
       const entregues = ms.filter((m) => m.status === 'entregue').length;
+      const aCaminho = ms.filter((m) => m.status === 'rota').length;
       const ativos = ms.filter((m) => m.status !== 'cancelado').length;
       return `<div class="card panel-card mp-card ${window.pedidoTemNovidade?.(p.id) ? 'novo' : ''}" data-id="${p.id}">
         <div class="mp-cab">
           <span class="knovo ${window.pedidoTemNovidade?.(p.id) ? '' : 'd-none'}" data-pd-novidade="${p.id}" title="Mudou desde a última vez que você viu"><i class="bi bi-bell-fill"></i></span>
           <a class="mp-tit" href="#/tickets/${p.id}"><b>${esc(p.number)}</b> ${esc(p.title)}</a>
           <span class="mp-meta">${p.location_name ? `<i class="bi bi-geo-alt"></i> ${esc(p.location_name)} · ` : ''}pedido em ${fmt.date(p.created_at)}${p.assigned_name ? ` · com ${esc(p.assigned_name)}` : ''}</span>
-          <span class="mp-conta ${ativos && entregues === ativos ? 'ok' : ''}">${entregues}/${ativos} entregue(s)</span>
+          ${aCaminho ? `<span class="mp-conta rota"><i class="bi bi-signpost-split"></i> ${aCaminho} a caminho</span>` : ''}
+          <span class="mp-conta ${ativos && entregues === ativos ? 'ok' : ''} ${aCaminho ? 'ms-0' : ''}">${entregues}/${ativos} entregue(s)</span>
         </div>
         <div class="mp-itens">${ms.map((m) => `
           <div class="mp-item">
             <div class="mp-item-tx"><b>${esc(m.name)}</b> <span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span>
-              <small class="text-muted d-block">${esc(FRASE[m.status || 'solicitado'] || '')}${m.status_at && m.status && m.status !== 'solicitado' ? ` · ${fmt.timeAgo(m.status_at)}` : ''}${m.location_name && m.status !== 'cancelado' ? ` · vai para ${esc(m.location_name)}` : ''}</small></div>
-            ${linhaTempo(m)}
+              <small class="text-muted d-block">${esc(FRASE[m.status || 'solicitado'] || '')}${m.status_at && m.status && m.status !== 'solicitado' ? ` · ${fmt.timeAgo(m.status_at)}` : ''}${m.location_name && m.status !== 'cancelado' ? ` · vai para ${esc(m.location_name)}` : ''}</small>
+              ${!['entregue', 'cancelado'].includes(m.status) ? previsto(m.previsao) : ''}
+              ${m.status === 'rota' ? `<button type="button" class="btn btn-sm btn-success mp-recebi" data-t="${p.id}" data-m="${m.id}"><i class="bi bi-check2-circle"></i> Recebi</button>` : ''}</div>
+            ${linhaTempo(p, m)}
           </div>`).join('')}</div>
       </div>`;
     }).join('');
@@ -249,6 +286,20 @@ Views.meusPedidos = async function meusPedidos(el) {
   el.querySelector('#mp-corpo').addEventListener('click', (e) => {
     const a = e.target.closest('.mp-tit');
     if (a) API.post('/notifications/read', { pedidos: true, ticket_id: a.closest('.mp-card').dataset.id }).then(() => window.recarregarSino && window.recarregarSino()).catch(() => {});
+  });
+  // quem pediu confirma que recebeu
+  el.querySelector('#mp-corpo').addEventListener('click', async (e) => {
+    const b = e.target.closest('.mp-recebi');
+    if (!b) return;
+    const nome = b.closest('.mp-item').querySelector('.mp-item-tx b').textContent;
+    const ok = await confirmDialog({ title: 'Confirmar que recebeu', body: `Você confirma que recebeu "${nome}"? A TI é avisada e o item entra no inventário do seu local.`, confirmText: 'Recebi' });
+    if (!ok) return;
+    b.disabled = true;
+    try {
+      await API.post(`/tickets/${b.dataset.t}/materials/${b.dataset.m}/confirmar`, {});
+      toast('Entrega confirmada. Obrigado!', 'success');
+      carregar();
+    } catch (err) { b.disabled = false; showError(err); }
   });
   el.querySelector('#mp-vistos').addEventListener('click', async () => {
     try { await API.post('/notifications/read', { pedidos: true }); if (window.recarregarSino) await window.recarregarSino(); desenhar(); } catch (e) { showError(e); }

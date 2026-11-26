@@ -73,6 +73,11 @@ router.post('/', async (req, res) => {
     for (let i = 0; i < locais.length; i += 1) {
       await q('INSERT INTO route_plan_stops (plan_id, location_id, ordem) VALUES ($1, $2, $3)', [rows[0].id, locais[i], i + 1]);
     }
+    // os pedidos de material desses locais que ainda não foram entregues: entrega prevista para o dia da rota
+    await q(`UPDATE ticket_materials tm SET previsao = $1
+             FROM tickets t WHERE t.id = tm.ticket_id AND COALESCE(tm.location_id, t.location_id) = ANY($2::bigint[])
+               AND tm.status NOT IN ('entregue','cancelado') AND t.status NOT IN (5,6,7)
+               AND (tm.previsao IS NULL OR tm.previsao > $1 OR tm.previsao < CURRENT_DATE)`, [b.data, locais]);
     return rows[0];
   });
   // avisa quem é dos locais da rota (e o técnico escolhido)

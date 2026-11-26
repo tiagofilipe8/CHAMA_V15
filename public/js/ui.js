@@ -73,7 +73,8 @@ const CHECKLIST_NOTA = {
 
 // Situação de cada material pedido (Pedidos e no chamado): [nome, ícone]
 const PEDIDO_STATUS = {
-  solicitado: ['Pedido', 'bi-hourglass-split'], comprado: ['Comprado', 'bi-cart-check'], chegou: ['Chegou', 'bi-box-seam'],
+  solicitado: ['Pedido', 'bi-hourglass-split'], comprado: ['Comprado', 'bi-cart-check'], transito: ['A caminho da ORCIM', 'bi-truck'],
+  chegou: ['Na ORCIM', 'bi-building-check'], rota: ['A caminho do local', 'bi-signpost-split'],
   entregue: ['Entregue', 'bi-check2-circle'], cancelado: ['Cancelado', 'bi-x-circle'],
 };
 const pedidoTag = (st) => { const [nome, ic] = PEDIDO_STATUS[st || 'solicitado'] || [st, 'bi-dot']; return `<span class="pd-tag pd-${esc(st || 'solicitado')}"><i class="bi ${ic}"></i>${esc(nome)}</span>`; };

@@ -962,3 +962,26 @@ END $marco$;
 -- =====================================================================
 ALTER TABLE assets ALTER COLUMN entity_id DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_assets_orcim ON assets(id) WHERE entity_id IS NULL;
+
+-- =====================================================================
+-- Etapas do pedido de material (2026-11-26)
+--   Pedido -> Comprado -> A caminho da ORCIM -> Na ORCIM -> A caminho do local -> Entregue
+--   etapas: quando cada etapa aconteceu ({"comprado": "2026-11-26T10:00:00Z", ...})
+--   previsao: dia previsto para a entrega no local (da rota agendada ou informado pela TI)
+--   origem_orcim: o item vai sair do Estoque da ORCIM ao confirmar a entrega
+--   A entrega é confirmada por quem pediu ("Recebi") ou pelo técnico.
+-- =====================================================================
+ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_status_check;
+ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_status_check
+  CHECK (status IN ('solicitado','comprado','transito','chegou','rota','entregue','cancelado'));
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS etapas JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS previsao DATE;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS origem_orcim BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS confirmado_por BIGINT REFERENCES users(id) ON DELETE SET NULL;
+DO $marco$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_marcos WHERE nome = 'pedido_etapas') THEN
+    UPDATE ticket_materials SET etapas = jsonb_build_object(status, COALESCE(status_at, now()))
+      WHERE etapas = '{}'::jsonb AND status <> 'solicitado';
+    INSERT INTO schema_marcos (nome) VALUES ('pedido_etapas');
+  END IF;
+END $marco$;
