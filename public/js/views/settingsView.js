@@ -648,7 +648,7 @@ Views.adminCategories = async function adminCategories(el) {
         <tbody>${simple.map((c) => `
           <tr>
             <td class="text-muted">${c.sort_order}</td>
-            <td><span class="fs-5 me-1">${esc(c.icon || '')}</span><strong>${esc(c.name)}</strong>
+            <td><span class="fs-5 me-1">${esc(c.icon || '')}</span><strong>${esc(c.name)}</strong>${c.requires_asset ? ' <span class="tg tg-amber" title="Pede qual equipamento do inventário"><i class="bi bi-upc-scan"></i> pede equipamento</span>' : ''}
               ${c.examples ? `<br><small class="text-muted">Ex.: ${esc(c.examples)}</small>` : ''}</td>
             <td><span class="badge text-bg-${c.open_tickets > 0 ? 'warning' : 'secondary'}">${c.open_tickets}</span></td>
             <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
@@ -730,7 +730,12 @@ Views.adminCategories = async function adminCategories(el) {
           <div class="mb-2"><label class="form-label small">Exemplos (separe com ;)</label>
             <input class="form-control" id="c-examples" value="${esc((c && c.examples) || '')}" placeholder="Sem internet; Wi-Fi caiu"></div>
           <div class="mb-2"><label class="form-label small">Ordem na lista</label>
-            <input class="form-control" id="c-order" type="number" value="${esc(String((c && c.sort_order) || 0))}"></div>` : `
+            <input class="form-control" id="c-order" type="number" value="${esc(String((c && c.sort_order) || 0))}"></div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="c-req-asset" ${c && c.requires_asset ? 'checked' : ''}>
+            <label class="form-check-label small" for="c-req-asset"><b>Manutenção:</b> pedir qual equipamento do inventário</label>
+            <div class="form-text mt-0">Quem abre escolhe o item pela etiqueta da Orcim, ou marca "Não se aplica" (ex.: mouse) ou "Não encontrei a etiqueta" (a equipe marca depois).</div>
+          </div>` : `
           <div class="mb-2"><label class="form-label small">Categoria pai</label>
             <select class="form-select" id="c-parent">
               <option value="">— raiz —</option>
@@ -758,6 +763,7 @@ Views.adminCategories = async function adminCategories(el) {
         body.description = m.querySelector('#c-desc').value.trim();
         body.examples = m.querySelector('#c-examples').value.trim();
         body.sort_order = parseInt(m.querySelector('#c-order').value, 10) || 0;
+        body.requires_asset = m.querySelector('#c-req-asset').checked;
       } else {
         body.parent_id = parseInt(m.querySelector('#c-parent').value, 10) || null;
       }

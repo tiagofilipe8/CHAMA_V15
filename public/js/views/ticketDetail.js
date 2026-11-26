@@ -134,6 +134,15 @@ Views.ticketDetail = function ticketDetail(id) {
         ? `<div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>O prazo para reabrir acabou em ${esc(dataBR(t.reopen_until))}. Se o problema voltou, abra um chamado novo e cite o ${esc(t.number)}.</div>`
         : `<div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Se o problema não foi resolvido, você pode reabrir até ${esc(dataBR(t.reopen_until))}.</div>`);
     }
+    // equipamento sem etiqueta encontrada: a equipe marca qual é
+    if (t.asset_pendente && !t.asset_id) {
+      avisos.push(canEdit || can.resolve
+        ? `<div class="alert alert-warning small d-flex flex-wrap gap-2 align-items-center" id="aviso-equip"><i class="bi bi-upc-scan"></i>
+            <div class="flex-grow-1"><b>${esc(t.requester_name || 'O usuário')} não encontrou a etiqueta do equipamento.</b> Marque qual é:</div>
+            <select class="form-select form-select-sm" id="eq-pend" style="max-width:320px"><option value="">Carregando...</option></select>
+            <button class="btn btn-sm btn-warning" id="eq-pend-ok">Marcar</button></div>`
+        : '<div class="small text-muted mb-3"><i class="bi bi-upc-scan me-1"></i>Você não encontrou a etiqueta do equipamento: a TI vai identificar qual é.</div>');
+    }
     const avisosHtml = avisos.join('');
 
     // ---------------- Timeline ----------------
@@ -266,7 +275,7 @@ Views.ticketDetail = function ticketDetail(id) {
                   <tr><th>Precisa até</th><td>${t.needed_by ? fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00') : '<span class="text-muted">não informado</span>'}</td></tr>
                   <tr><th>Previsão</th><td>${t.estimated_at ? `<b>${fmt.dateTime(t.estimated_at)}</b>` : '<span class="text-muted">ainda não definida</span>'}</td></tr>
                   ${t.due_at ? `<tr><th>Prazo (SLA)</th><td>${fmt.dateTime(t.due_at)}</td></tr>` : ''}
-                  <tr><th>Equipamento</th><td>${t.asset_id ? `<a href="#/inventory/${t.asset_id}">${esc(t.asset_name || 'Ativo')} ${t.asset_tag ? `(${esc(t.asset_tag)})` : ''}</a>` : '<span class="text-muted">—</span>'}</td></tr>
+                  <tr><th>Equipamento</th><td>${t.asset_id ? `<a href="#/inventory/${t.asset_id}">${esc(t.asset_name || 'Ativo')} ${t.asset_tag ? `(${esc(t.asset_tag)})` : ''}</a>` : t.asset_pendente ? '<span class="tg tg-amber"><i class="bi bi-upc-scan"></i> etiqueta não encontrada</span>' : t.asset_nao_aplica ? '<span class="text-muted">Não se aplica (item sem etiqueta)</span>' : '<span class="text-muted">—</span>'}</td></tr>
                   <tr><th>Abertura</th><td>${fmt.dateTime(t.created_at)}</td></tr>
                   <tr><th>Tempo decorrido</th><td>${fmtDuration(t.created_at, t.closed_at || t.resolved_at)}</td></tr>
                   <tr><th>Atribuído em</th><td>${t.assigned_at ? fmt.dateTime(t.assigned_at) : '—'}</td></tr>
@@ -317,6 +326,20 @@ Views.ticketDetail = function ticketDetail(id) {
     }
     el.querySelector('#act-resolve')?.addEventListener('click', () => TicketModals.resolve(t, { toStatus: (fechaDireto || t.awaiting_evaluation) ? 6 : 5, onDone: () => afterReload() }));
     el.querySelector('#act-pause')?.addEventListener('click', () => TicketModals.pause(t, { onDone: () => afterReload() }));
+    const eqPend = el.querySelector('#eq-pend');
+    if (eqPend) {
+      API.get(`/inventory/assets?entity_id=${t.entity_id}&limit=500`).then((lista) => {
+        const aqui = lista.filter((a) => String(a.location_id) === String(t.location_id));
+        const outros = lista.filter((a) => String(a.location_id) !== String(t.location_id));
+        const opt = (a) => `<option value="${a.id}">${esc(a.asset_tag ? `${a.asset_tag} · ` : '')}${esc(a.name)}</option>`;
+        eqPend.innerHTML = '<option value="">— escolha —</option>' + (aqui.length ? `<optgroup label="${esc(t.location_name || 'Neste local')}">${aqui.map(opt).join('')}</optgroup>` : '')
+          + (outros.length ? `<optgroup label="Outros locais">${outros.map(opt).join('')}</optgroup>` : '');
+      }).catch(() => { eqPend.innerHTML = '<option value="">Não foi possível carregar</option>'; });
+      el.querySelector('#eq-pend-ok').addEventListener('click', async () => {
+        if (!eqPend.value) { toast('Escolha o equipamento.', 'warning'); return; }
+        try { await API.patch(`/tickets/${t.id}`, { asset_id: parseInt(eqPend.value, 10) }); toast('Equipamento marcado.', 'success'); afterReload(); } catch (e) { showError(e); }
+      });
+    }
     el.querySelector('#act-encerrar-usuario')?.addEventListener('click', () => TicketModals.encerrarUsuario(t, { onDone: () => afterReload() }));
     el.querySelector('#act-assign')?.addEventListener('click', () => TicketModals.assign(t, { onDone: () => afterReload() }));
 

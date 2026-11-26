@@ -60,6 +60,7 @@ function readBody(b = {}) {
     description: txt(b.description),
     examples: txt(b.examples),
     sort_order: b.sort_order === undefined ? undefined : (parseInt(b.sort_order, 10) || 0),
+    requires_asset: b.requires_asset === undefined ? undefined : !!b.requires_asset,
   };
 }
 
@@ -98,9 +99,9 @@ router.post('/', requireRoles('admin'), async (req, res) => {
   if (err) return res.status(422).json({ error: err });
   const kind = 'simple';
   const { rows } = await query(
-    `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order, profile_id)
-     VALUES ($1, NULL, COALESCE($2, TRUE), $3, NULL, $4, $5, $6, COALESCE($7, 0), $8) RETURNING id`,
-    [b.name, b.active, kind, b.icon || null, b.description || null, b.examples || null, b.sort_order, p.id]);
+    `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order, profile_id, requires_asset)
+     VALUES ($1, NULL, COALESCE($2, TRUE), $3, NULL, $4, $5, $6, COALESCE($7, 0), $8, COALESCE($9, FALSE)) RETURNING id`,
+    [b.name, b.active, kind, b.icon || null, b.description || null, b.examples || null, b.sort_order, p.id, b.requires_asset]);
   const full = await query(`${SELECT} WHERE c.id = $1`, [rows[0].id]);
   res.status(201).json(full.rows[0]);
 });
@@ -117,7 +118,7 @@ router.patch('/:id', requireRoles('admin'), async (req, res) => {
   if (err) return res.status(422).json({ error: err });
   const fields = [];
   const params = [req.params.id];
-  for (const k of ['name', 'parent_id', 'active', 'icon', 'description', 'examples', 'sort_order']) {
+  for (const k of ['name', 'parent_id', 'active', 'icon', 'description', 'examples', 'sort_order', 'requires_asset']) {
     if (b[k] !== undefined) { params.push(b[k]); fields.push(`${k} = $${params.length}`); }
   }
   if (b.name === null) return res.status(422).json({ error: 'O nome não pode ficar vazio.' });

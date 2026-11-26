@@ -87,8 +87,8 @@ router.post('/', requireRoles('admin'), async (req, res) => {
         'INSERT INTO option_profiles (name, description) VALUES ($1, $2) RETURNING *', [name, description]);
       const pid = rows[0].id;
       await q(
-        `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order, is_material, profile_id)
-         SELECT name, NULL, TRUE, kind, maps_to_id, icon, description, examples, sort_order, is_material, $1
+        `INSERT INTO categories (name, parent_id, active, kind, maps_to_id, icon, description, examples, sort_order, is_material, profile_id, requires_asset)
+         SELECT name, NULL, TRUE, kind, maps_to_id, icon, description, examples, sort_order, is_material, $1, requires_asset
          FROM categories WHERE profile_id IS NULL AND kind = 'simple' AND active`, [pid]);
       await q(
         `INSERT INTO impact_levels (name, description, examples, priority, sort_order, active, profile_id)

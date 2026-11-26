@@ -859,3 +859,21 @@ UPDATE locations
    SET cep = regexp_replace(substring(address from '(?i)CEP[:\s]*(\d{5}-?\d{3})'), '^(\d{5})-?(\d{3})$', '\1-\2'),
        address = NULLIF(btrim(regexp_replace(address, '\s*[·,|]?\s*CEP[:\s]*\d{5}-?\d{3}', '', 'i'), ' ·,|–-'), '')
  WHERE cep IS NULL AND address ~* 'CEP[:\s]*\d{5}-?\d{3}';
+
+-- =====================================================================
+-- Manutenção pede o equipamento (2026-11-26)
+--   categoria com requires_asset: quem abre escolhe o item do inventário, ou
+--   "Não se aplica" (sem etiqueta, ex.: mouse) ou "Não encontrei a etiqueta" (a TI marca depois)
+-- =====================================================================
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS requires_asset BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS asset_pendente BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS asset_nao_aplica BOOLEAN NOT NULL DEFAULT FALSE;
+-- uma vez só: as categorias que já são de equipamento passam a pedir o item (o admin muda depois em Categorias e opções)
+DO $marco$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_marcos WHERE nome = 'categorias_pedem_equipamento') THEN
+    UPDATE categories SET requires_asset = TRUE
+     WHERE kind = 'simple' AND NOT is_material
+       AND name ~* '(computador|impressora|monitor|notebook|equipamento|nobreak|celular|tablet|pdv|leitor|balan)';
+    INSERT INTO schema_marcos (nome) VALUES ('categorias_pedem_equipamento');
+  END IF;
+END $marco$;

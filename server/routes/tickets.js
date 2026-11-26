@@ -511,6 +511,15 @@ router.post('/', async (req, res) => {
   if (catMat.rows[0]?.is_material && !materiaisOk.length) {
     return res.status(422).json({ error: 'Escolha pelo menos um material da lista.' });
   }
+  // Categoria de manutenção: precisa dizer qual equipamento (ou "não se aplica" / "não encontrei a etiqueta")
+  const catEquip = await query('SELECT requires_asset FROM categories WHERE id = $1', [cat.simple_category_id || cat.category_id]);
+  const escolhaEquip = String(req.body?.asset_escolha || '');
+  let assetPendente = false; let assetNaoAplica = false;
+  if (catEquip.rows[0]?.requires_asset && !asset_id) {
+    if (escolhaEquip === 'nao_encontrei') assetPendente = true;
+    else if (escolhaEquip === 'nao_aplica') assetNaoAplica = true;
+    else return res.status(422).json({ error: 'Escolha qual é o equipamento (ou "Não se aplica" / "Não encontrei a etiqueta").', asset_obrigatorio: true });
+  }
 
   // Urgencia (obrigatoria). Compatibilidade: se vier so a prioridade antiga, converte.
   let impact = await resolveImpact(impact_id, perfilEnt);
@@ -598,6 +607,16 @@ router.post('/', async (req, res) => {
     await query(
       `INSERT INTO ticket_messages (ticket_id, user_id, kind, content)
        VALUES ($1, $2, 'comment', $3)`, [ticketId, user.id, description]);
+    if (assetPendente || assetNaoAplica) {
+      await query('UPDATE tickets SET asset_pendente = $2, asset_nao_aplica = $3 WHERE id = $1', [ticketId, assetPendente, assetNaoAplica]);
+    }
+    // não achou a etiqueta: a equipe é avisada para marcar depois qual é o equipamento
+    if (assetPendente) {
+      const equipe = await query(`SELECT id FROM users WHERE active AND role IN ('admin','moderator','technician') AND id <> $1`, [user.id]);
+      for (const r of equipe.rows) {
+        await notify.createInApp(r.id, `#${ticketId}: falta marcar o equipamento`, `${user.name} não encontrou a etiqueta. Veja qual é o equipamento e marque no chamado.`, ticketId).catch(() => {});
+      }
+    }
     for (const m of materiaisOk) {
       await query(`INSERT INTO ticket_materials (ticket_id, material_id, name, unit, quantity) VALUES ($1, $2, $3, $4, $5)`,
         [ticketId, m.id, m.name, m.unit || null, m.qtd]);
@@ -816,6 +835,8 @@ router.patch('/:id', async (req, res) => {
         add('asset_id = ?', asset_id);
         changes.push(['asset', ticket.asset_name, a.rows[0].name]);
       }
+      if (ticket.asset_pendente) add('asset_pendente = ?', false); // o técnico marcou o equipamento
+      if (ticket.asset_nao_aplica) add('asset_nao_aplica = ?', false);
     } else if (ticket.asset_id) {
       add('asset_id = ?', null);
       changes.push(['asset', ticket.asset_name, null]);

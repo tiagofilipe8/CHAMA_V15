@@ -304,6 +304,7 @@ Views.tickets = async function tickets(el, opts = {}) {
           ${late ? `<span class="kflag late" title="Prazo (SLA) vencido"><i class="bi bi-alarm-fill"></i></span>` : ''}
           ${needSoon ? `<span class="kflag need" title="Precisa até ${fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00')}"><i class="bi bi-calendar-event-fill"></i></span>` : ''}
           ${t.approval_status === 'pending' ? `<span class="kflag appr" title="Aguardando aprovação"><i class="bi bi-hourglass-split"></i></span>` : ''}
+          ${t.asset_pendente ? '<span class="kflag need" title="Falta marcar o equipamento: o usuário não encontrou a etiqueta"><i class="bi bi-upc-scan"></i></span>' : ''}
           ${canDrag(t) ? `<button type="button" class="kmove" data-move="${t.id}" title="Mover para outra coluna" aria-label="Mover chamado ${esc(t.number)} para outra coluna"><i class="bi bi-arrow-left-right"></i></button>` : ''}
           ${t.assigned_name
             ? `<span class="kavatar" title="Técnico: ${esc(t.assigned_name)}">${esc(initials(t.assigned_name))}</span>`

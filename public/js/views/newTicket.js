@@ -92,6 +92,12 @@ Views.newTicket = async function newTicket(el) {
                  <div class="small mt-2" id="nt-prazo-txt" aria-live="polite"></div>
                  <div id="nt-cal" class="mt-2" hidden></div>`)}
 
+              <div class="mb-4 nt-equip d-none" id="nt-equip-box">
+                <label class="form-label fw-semibold mb-1" for="nt-equip"><i class="bi bi-upc-scan me-1"></i>Qual equipamento? <span class="text-danger">*</span></label>
+                <select class="form-select" id="nt-equip"></select>
+                <div class="form-text">Procure a etiqueta da Orcim colada no equipamento (ex.: ORC-0101). Item sem etiqueta, como mouse, use "Não se aplica".</div>
+              </div>
+
               <details class="mb-4" id="nt-more">
                 <summary class="small text-primary" style="cursor:pointer">Mais detalhes (opcional): título e equipamento</summary>
                 <div class="row g-2 mt-1">
@@ -281,12 +287,16 @@ Views.newTicket = async function newTicket(el) {
             x.classList.toggle('btn-outline-secondary', x !== b);
           });
           modoMaterial(!!(catsData.find((c) => String(c.id) === String(b.dataset.id)) || {}).is_material);
+          atualizarEquip();
         }));
       } else {
+        catsData = data.categories;
         box.innerHTML = `<select class="form-select" id="nt-cat">
             <option value="">— escolha a categoria —</option>${categoryOptions(data.categories)}
           </select>`;
+        box.querySelector('#nt-cat').addEventListener('change', atualizarEquip);
       }
+      atualizarEquip();
     } catch (e) {
       box.innerHTML = `<div class="text-danger small">${esc(e.message)}</div>`;
     }
@@ -323,11 +333,41 @@ Views.newTicket = async function newTicket(el) {
     } catch { sel.innerHTML = '<option value="">—</option>'; }
   }
 
+  // Categoria de manutenção: pede qual equipamento (com "Não se aplica" e "Não encontrei a etiqueta")
+  let ativosCache = [];
+  function categoriaPedeEquipamento() {
+    const id = catMode === 'simple' ? pickedSimple : document.getElementById('nt-cat')?.value;
+    return !!((catsData || []).find((c) => String(c.id) === String(id)) || {}).requires_asset;
+  }
+  function atualizarEquip() {
+    const box = document.getElementById('nt-equip-box');
+    const pede = categoriaPedeEquipamento();
+    box.classList.toggle('d-none', !pede);
+    document.getElementById('nt-asset').closest('.col-12').classList.toggle('d-none', pede);
+    if (!pede) return;
+    const sel = document.getElementById('nt-equip');
+    const atual = sel.value;
+    const loc = document.getElementById('nt-location').value;
+    const opt = (a) => `<option value="${a.id}">${esc(a.asset_tag ? `${a.asset_tag} · ` : '')}${esc(a.name)}${a.location_name && !loc ? ` (${esc(a.location_name)})` : ''}</option>`;
+    const aqui = ativosCache.filter((a) => loc && String(a.location_id) === String(loc));
+    const outros = ativosCache.filter((a) => !(loc && String(a.location_id) === String(loc)));
+    sel.innerHTML = '<option value="">— escolha o equipamento —</option>'
+      + (aqui.length ? `<optgroup label="Neste local">${aqui.map(opt).join('')}</optgroup>` : '')
+      + (outros.length ? `<optgroup label="${loc ? 'Outros locais' : 'Equipamentos'}">${outros.map(opt).join('')}</optgroup>` : '')
+      + '<optgroup label="Sem etiqueta"><option value="nao_aplica">Não se aplica (item sem etiqueta, ex.: mouse, teclado)</option>'
+      + '<option value="nao_encontrei">Não encontrei a etiqueta (a TI marca depois)</option></optgroup>';
+    if ([...sel.options].some((o) => o.value === atual)) sel.value = atual;
+    else if (preAsset && [...sel.options].some((o) => o.value === String(preAsset))) sel.value = String(preAsset);
+  }
+  document.getElementById('nt-location').addEventListener('change', atualizarEquip);
+
   async function loadAssets(entityId) {
     const sel = document.getElementById('nt-asset');
-    if (!entityId) { sel.innerHTML = '<option value="">— nenhum / não sei —</option>'; return; }
+    if (!entityId) { sel.innerHTML = '<option value="">— nenhum / não sei —</option>'; ativosCache = []; return; }
     try {
       const assets = await API.get('/inventory/assets?entity_id=' + entityId);
+      ativosCache = assets.filter((a) => !['DISPOSED', 'LOST'].includes(a.status));
+      atualizarEquip();
       sel.innerHTML = '<option value="">— nenhum / não sei —</option>' + assets.map((a) =>
         `<option value="${a.id}">${esc(a.name)} ${a.asset_tag ? `(${esc(a.asset_tag)})` : ''}</option>`).join('');
       if (preAsset) sel.value = String(preAsset);
@@ -426,6 +466,9 @@ Views.newTicket = async function newTicket(el) {
     if (ehMaterial && !itens.length) { erroNo(document.getElementById('nt-step-2'), 'Escolha pelo menos um material.'); return; }
     if (!ehMaterial && !desc) { erroNo(document.getElementById('nt-step-2'), 'Conte o que está acontecendo.'); return; }
     if (!pickedImpact) { erroNo(document.getElementById('nt-step-3'), 'Diga se isso está afetando a operação.'); return; }
+    const pedeEquip = categoriaPedeEquipamento();
+    const equipSel = document.getElementById('nt-equip');
+    if (pedeEquip && !equipSel.value) { erroNo(document.getElementById('nt-equip-box'), 'Escolha qual é o equipamento (ou "Não se aplica" / "Não encontrei a etiqueta").'); return; }
 
     const payload = {
       title,
@@ -439,7 +482,10 @@ Views.newTicket = async function newTicket(el) {
     if (chooseEntity) payload.entity_id = parseInt(entityId, 10);
     if (locSel.value) payload.location_id = parseInt(locSel.value, 10);
     const assetSel = document.getElementById('nt-asset');
-    if (assetSel && assetSel.value) payload.asset_id = parseInt(assetSel.value, 10);
+    if (pedeEquip) {
+      if (['nao_aplica', 'nao_encontrei'].includes(equipSel.value)) payload.asset_escolha = equipSel.value;
+      else payload.asset_id = parseInt(equipSel.value, 10);
+    } else if (assetSel && assetSel.value) payload.asset_id = parseInt(assetSel.value, 10);
 
     const btn = document.getElementById('btn-submit');
     btn.disabled = true;
