@@ -310,9 +310,8 @@
       ['#/postos', 'geo-alt', 'Postos'],
       ['#/urgencia', 'speedometer2', 'Score de urgência'],
       ['#/rotas', 'signpost-split', 'Sugerir rota'],
-      ['#/inventario', 'pc-display', 'Inventário'],
       ['#/atividades', 'kanban', g ? 'Atividades' : 'Minhas atividades', 'atividades'],
-      ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
+      ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor'], ['#/inventario', 'pc-display', 'Inventário']] : []),
       ['grp', 'Orcim'],
       ['#/demandas', 'inboxes', 'Chamados'],
       ['#/orcim', 'speedometer2', 'Visão Orcim'],
@@ -4267,10 +4266,10 @@ function itemHistorico(e) {
       ],
     },
     {
-      id: 'inventario', cat: 'inventario', papeis: ['gestor', 'tecnico'], icone: 'pc-display', titulo: 'Usar o inventário',
+      id: 'inventario', cat: 'inventario', papeis: ['gestor'], icone: 'pc-display', titulo: 'Usar o inventário',
       resumo: 'Itens nossos (com origem, ex.: Setor de Compras) e os da Orcim, que são só consulta.',
       passos: [
-        { alvo: '.side-nav a[href="#/inventario"]', titulo: 'Inventário', texto: 'No menu, em Visitas. Todos os equipamentos dos postos num lugar só.' },
+        { alvo: '.side-nav a[href="#/inventario"]', titulo: 'Inventário', texto: 'No menu, em Painel do Gestor - Resultados (a parte amarela). Todos os equipamentos dos postos num lugar só.' },
         { rota: '#/inventario', alvo: '.pg-seg', titulo: 'Duas origens', texto: 'Nossos: cadastrados pela TI do Beija-Flor, com a origem que a gente escolhe (Setor de Compras, doação...). Da Orcim: vêm do sistema da Orcim e são só consulta (o cadeado indica).' },
         { alvo: '.inv-estados', titulo: 'Estados', texto: 'Operando, Em conserto, Estragado, Comprado (aguardando chegar), Pronto para entregar, Em estoque, Descartado e Extraviado. Clique num estado para filtrar.' },
         { alvo: '.filters', titulo: 'Buscar e filtrar', texto: 'Busque por nome, patrimônio, série ou modelo, e filtre por posto.' },
