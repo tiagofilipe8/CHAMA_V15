@@ -71,6 +71,7 @@ router.use('/visitas', require('./visitas'));
 router.use('/solicitacoes', require('./solicitacoes'));
 router.use('/reagendar', require('./reagendar')); // reagendar com motivo (avisa pelo sino)
 router.use('/urgencia', require('./urgencia')); // score de urgência por posto e sugestão de rota
+router.use('/inventario', require('./inventario')); // inventário: itens nossos + itens da Orcim (só consulta)
 router.use('/', require('./rotina'));
 
 router.use((req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));

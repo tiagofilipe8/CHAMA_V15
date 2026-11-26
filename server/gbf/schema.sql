@@ -286,3 +286,47 @@ BEGIN
     ALTER TABLE locations ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6);
   END IF;
 END $$;
+
+-- Inventário próprio da TI do Beija-Flor (os itens da Orcim vêm da cópia, tabela assets)
+CREATE TABLE IF NOT EXISTS gbf_inventario (
+    id            BIGSERIAL PRIMARY KEY,
+    nome          TEXT        NOT NULL,
+    tipo          TEXT,
+    marca         TEXT,
+    modelo        TEXT,
+    numero_serie  TEXT,
+    patrimonio    TEXT,
+    location_id   BIGINT      REFERENCES gbf_locations(id) ON DELETE SET NULL,
+    setor         TEXT,
+    responsavel   TEXT,
+    estado        TEXT        NOT NULL DEFAULT 'OPERATING'
+                  CHECK (estado IN ('OPERATING','REPAIR','BROKEN','ORDERED','READY','STOCK','DISPOSED','LOST')),
+    origem        TEXT        NOT NULL DEFAULT 'Setor de Compras',
+    preco         NUMERIC(12,2),
+    data_compra   DATE,
+    garantia_ate  DATE,
+    observacoes   TEXT,
+    created_by    BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_inventario_posto ON gbf_inventario(location_id);
+CREATE TABLE IF NOT EXISTS gbf_inventario_hist (
+    id         BIGSERIAL PRIMARY KEY,
+    item_id    BIGINT      NOT NULL REFERENCES gbf_inventario(id) ON DELETE CASCADE,
+    user_id    BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    texto      TEXT        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_inventario_hist ON gbf_inventario_hist(item_id, created_at DESC);
+-- Equipamentos da Orcim: posto e preço também vêm na cópia
+DO $$
+BEGIN
+  IF to_regclass('public.assets') IS NOT NULL THEN
+    ALTER TABLE assets ADD COLUMN IF NOT EXISTS location_id BIGINT;
+    ALTER TABLE assets ADD COLUMN IF NOT EXISTS price NUMERIC(12,2);
+    -- a Orcim nova tem outros estados (Operando, Em conserto...): a cópia aceita os dois jeitos
+    ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_status_check;
+    ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_type_check;
+  END IF;
+END $$;

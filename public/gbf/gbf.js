@@ -310,6 +310,7 @@
       ['#/postos', 'geo-alt', 'Postos'],
       ['#/urgencia', 'speedometer2', 'Score de urgência'],
       ['#/rotas', 'signpost-split', 'Sugerir rota'],
+      ['#/inventario', 'pc-display', 'Inventário'],
       ['#/atividades', 'kanban', g ? 'Atividades' : 'Minhas atividades', 'atividades'],
       ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
       ['grp', 'Orcim'],
@@ -391,6 +392,7 @@
     novo: 'Peça uma visita ao posto ou crie uma atividade. Só o essencial: o resto já vem preenchido.',
     urgencia: 'Os postos que mais precisam da TI agora: cada pendência vale pontos pela urgência, pelo atraso e pelo prazo.',
     rotas: 'Escolha quantos postos vai atender: o painel sugere os mais urgentes e a ordem de visita pela menor distância.',
+    inventario: 'Todos os equipamentos dos postos: os nossos (origem que a gente escolhe, ex.: Setor de Compras) e os que vêm da Orcim (só consulta).',
     notificacoes: 'Tudo o que aconteceu no painel e envolve você ou a equipe: pedidos, mudanças, comentários e reagendamentos.',
   };
   const DESC_PAINEL = {
@@ -537,6 +539,11 @@
       else if (a === 'novo') { marcarMenu('#/novo'); await vNovoPedido(qs, seq); }
       else if (a === 'urgencia') { marcarMenu('#/urgencia'); await vUrgencia(seq); }
       else if (a === 'rotas') { marcarMenu('#/rotas'); await vRotas(seq); }
+      else if (a === 'inventario' && b === 'novo') { marcarMenu('#/inventario'); await vInventarioForm(null, qs, seq); }
+      else if (a === 'inventario' && b === 'orcim' && partes[2]) { marcarMenu('#/inventario'); await vInventarioItem(`orcim/${partes[2]}`, seq); }
+      else if (a === 'inventario' && b && partes[2] === 'editar') { marcarMenu('#/inventario'); await vInventarioForm(b, qs, seq); }
+      else if (a === 'inventario' && b) { marcarMenu('#/inventario'); await vInventarioItem(b, seq); }
+      else if (a === 'inventario') { marcarMenu('#/inventario'); await vInventario(qs, seq); }
       else if (a === 'notificacoes') { marcarMenu('#/notificacoes'); await vNotificacoes(qs, seq); }
       else if (a === 'solicitacoes' && b === 'nova' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(null, qs, seq); }
       else if (a === 'solicitacoes' && b && partes[2] === 'editar' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(b, qs, seq); }
@@ -3581,6 +3588,128 @@ function itemHistorico(e) {
     pintarCands(); pintarRota();
   }
 
+  // ------------------------------------------------------------------
+  // Inventário: itens nossos (editáveis) + itens da Orcim (só consulta)
+  // ------------------------------------------------------------------
+  const COR_ESTADO = { OPERATING: 'tag-green', REPAIR: 'tag-amber', BROKEN: 'tag-red', ORDERED: 'tag-blue', READY: 'tag-teal', STOCK: 'tag-gray', DISPOSED: 'tag-gray', LOST: 'tag-red' };
+  const tagEstado = (i) => tag(COR_ESTADO[i.estado] || 'tag-gray', i.estado_txt || '—');
+  const tagOrigem = (i) => (i.somente_leitura ? `<span class="inv-origem orcim" title="Vem do sistema da Orcim: só consulta"><i class="bi bi-cloud-arrow-down"></i> Orcim</span>`
+    : `<span class="inv-origem nossa"><i class="bi bi-house"></i> ${esc(i.origem)}</span>`);
+  const linkItem = (i) => (i.somente_leitura ? `#/inventario/orcim/${i.orcim_id}` : `#/inventario/${i.id}`);
+  const reais = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+
+  async function vInventario(qs, seq) {
+    titulo('Inventário');
+    const [d, postos] = await Promise.all([API.get('/inventario'), API.get('/postos')]);
+    if (seq !== renderSeq) return;
+    const f = { origem: qs.get('origem') || 'todos', posto: qs.get('posto') || '', estado: qs.get('estado') || '', q: qs.get('q') || '' };
+    const ir = (x) => { location.hash = `#/inventario?${new URLSearchParams(Object.fromEntries(Object.entries({ ...f, ...x }).filter(([, v]) => v && v !== 'todos')))}`; };
+    const passa = (i) => (f.origem === 'todos' || (f.origem === 'nossos' ? !i.somente_leitura : i.somente_leitura))
+      && (!f.posto || String(i.location_id) === f.posto) && (!f.estado || i.estado === f.estado)
+      && (!f.q || [i.nome, i.tipo, i.marca, i.modelo, i.numero_serie, i.patrimonio, i.posto, i.origem].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+    const lista = d.itens.filter(passa);
+    const nossos = d.itens.filter((i) => !i.somente_leitura).length;
+    const contEstado = (e) => d.itens.filter((i) => i.estado === e && (f.origem === 'todos' || (f.origem === 'nossos' ? !i.somente_leitura : i.somente_leitura))).length;
+    view().innerHTML = `
+      <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+        <div class="pg-seg" role="group" aria-label="Origem">${[['todos', `Todos (${d.itens.length})`], ['nossos', `Nossos (${nossos})`], ['orcim', `Da Orcim (${d.itens.length - nossos})`]].map(([k, t]) => `<a href="#" data-origem="${k}" class="${f.origem === k ? 'on' : ''}">${t}</a>`).join('')}</div>
+        <a class="btn btn-brand btn-sm ms-auto" href="#/inventario/novo"><i class="bi bi-plus-lg"></i> Novo item</a>
+      </div>
+      <div class="inv-estados">${Object.entries(d.estados).map(([k, nome]) => { const n = contEstado(k); return n ? `<button type="button" class="inv-est ${f.estado === k ? 'on' : ''}" data-estado="${k}">${tag(COR_ESTADO[k], nome)} <b>${n}</b></button>` : ''; }).join('')}</div>
+      <div class="filters">
+        <input class="form-control form-control-sm grow" id="inv-q" placeholder="Buscar por nome, patrimônio, série, modelo…" value="${esc(f.q)}">
+        <select class="form-select form-select-sm" id="inv-posto" aria-label="Posto"><option value="">Todos os postos</option>${postos.map((p) => `<option value="${p.id}" ${String(p.id) === f.posto ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+      </div>
+      ${lista.length ? `<div class="card-x p-0"><div class="table-wrap"><table class="table-x">
+        <thead><tr><th>Item</th><th>Posto</th><th>Estado</th><th>Origem</th><th class="hide-mobile">Patrimônio / série</th></tr></thead><tbody>
+        ${lista.map((i) => `<tr class="click" data-href="${linkItem(i)}">
+          <td><div class="fw-semibold">${esc(i.nome)}</div><div class="small-muted">${esc([i.tipo, i.marca, i.modelo].filter(Boolean).join(' · ') || '—')}</div></td>
+          <td>${esc(i.posto || '—')}${i.setor ? `<div class="small-muted">${esc(i.setor)}</div>` : ''}</td>
+          <td>${tagEstado(i)}</td><td>${tagOrigem(i)}</td>
+          <td class="hide-mobile"><span class="num">${esc(i.patrimonio || '')}</span><div class="small-muted">${esc(i.numero_serie || '')}</div></td></tr>`).join('')}
+        </tbody></table></div></div>`
+    : `<div class="card-x">${vazio(d.itens.length ? 'Nenhum item com esses filtros.' : 'Nenhum item no inventário ainda. Cadastre o primeiro em "Novo item".', 'pc-display')}</div>`}
+      ${d.orcim_ok ? '' : '<div class="small-muted mt-2"><i class="bi bi-cloud-arrow-down"></i> Os equipamentos da Orcim aparecem aqui quando o envio de dados da Orcim estiver ligado.</div>'}`;
+    $$('[data-origem]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); ir({ origem: a.dataset.origem }); }));
+    $$('[data-estado]').forEach((b) => b.addEventListener('click', () => ir({ estado: f.estado === b.dataset.estado ? '' : b.dataset.estado })));
+    $('#inv-posto').addEventListener('change', (e) => ir({ posto: e.target.value }));
+    let t; const busca = $('#inv-q');
+    busca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => ir({ q: busca.value.trim() }), 450); });
+    if (f.q) { busca.focus(); busca.setSelectionRange(busca.value.length, busca.value.length); }
+    ligarCliques();
+  }
+
+  async function vInventarioItem(id, seq) {
+    const i = await API.get(`/inventario/${id}`);
+    if (seq !== renderSeq) return;
+    titulo(i.nome);
+    const campo = (r, v) => `<dt>${r}</dt><dd>${v || '—'}</dd>`;
+    view().innerHTML = `
+      <a href="#/inventario" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Inventário</a>
+      <div class="detail-head">
+        <div class="min-w-0"><div class="d-flex flex-wrap gap-2 mt-2">${tagEstado(i)} ${tagOrigem(i)}</div><h3>${esc(i.nome)}</h3></div>
+        ${i.somente_leitura ? '<div class="small-muted inv-ro"><i class="bi bi-lock"></i> Item da Orcim: só consulta. Alterações são feitas no sistema da Orcim.</div>'
+    : `<a class="btn btn-sm btn-outline-secondary" href="#/inventario/${i.id}/editar"><i class="bi bi-pencil"></i> Editar</a>`}
+      </div>
+      <div class="grid-2">
+        <div class="card-x"><dl class="kv">
+          ${campo('Tipo', esc(i.tipo))}${campo('Marca / modelo', esc([i.marca, i.modelo].filter(Boolean).join(' · ')))}
+          ${campo('Patrimônio', esc(i.patrimonio))}${campo('Nº de série', esc(i.numero_serie))}
+          ${campo('Posto', i.location_id ? `<a href="#/postos/${i.location_id}">${esc(i.posto)}</a>` : esc(i.posto))}${campo('Setor', esc(i.setor))}
+          ${i.somente_leitura ? '' : campo('Responsável', esc(i.responsavel))}
+          ${campo('Origem', i.somente_leitura ? 'Orcim (vem do sistema da Orcim)' : esc(i.origem))}
+          ${campo('Preço', reais(i.preco))}${campo('Data da compra', i.data_compra ? fmtDia(i.data_compra) : '')}
+          ${i.somente_leitura ? '' : campo('Garantia até', i.garantia_ate ? fmtDia(i.garantia_ate) : '')}
+        </dl>${i.observacoes ? `<hr><div style="white-space:pre-wrap">${esc(i.observacoes)}</div>` : ''}</div>
+        <div class="card-x"><h3><i class="bi bi-clock-history"></i>Histórico</h3>
+          <div class="hist">${(i.historico || []).length ? i.historico.map((h) => `<div class="hist-acao"><i class="bi bi-dot"></i><span class="hist-txt"><b>${esc(h.quem || 'Sistema')}</b> ${esc(h.texto)}</span><span class="hist-quando">${fmtData(h.created_at)}</span></div>`).join('') : '<div class="small-muted">Nada ainda.</div>'}</div>
+        </div>
+      </div>`;
+  }
+
+  async function vInventarioForm(id, qs, seq) {
+    const [op, postos, item] = await Promise.all([API.get('/inventario/opcoes'), API.get('/postos'), id ? API.get(`/inventario/${id}`) : null]);
+    if (seq !== renderSeq) return;
+    titulo(id ? 'Editar item' : 'Novo item do inventário');
+    const v = (k) => esc(item?.[k] ?? '');
+    view().innerHTML = `
+      <a href="${id ? `#/inventario/${id}` : '#/inventario'}" class="small-muted text-decoration-none"><i class="bi bi-arrow-left"></i> Voltar</a>
+      <form class="card-x mt-2" id="form-inv" style="max-width:760px" novalidate>
+        <div class="row g-3">
+          <div class="col-sm-8"><label class="form-label" for="iv-nome">Nome *</label><input class="form-control" id="iv-nome" name="nome" maxlength="160" required value="${v('nome')}" placeholder="Ex.: Computador do caixa 2"></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-tipo">Tipo</label><select class="form-select" id="iv-tipo" name="tipo"><option value="">—</option>${op.tipos.map((t) => `<option ${item?.tipo === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-marca">Marca</label><input class="form-control" id="iv-marca" name="marca" value="${v('marca')}"></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-modelo">Modelo</label><input class="form-control" id="iv-modelo" name="modelo" value="${v('modelo')}"></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-estado">Estado</label><select class="form-select" id="iv-estado" name="estado">${Object.entries(op.estados).map(([k, n]) => `<option value="${k}" ${(item?.estado || 'OPERATING') === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-pat">Patrimônio</label><input class="form-control" id="iv-pat" name="patrimonio" value="${v('patrimonio')}"></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-serie">Nº de série</label><input class="form-control" id="iv-serie" name="numero_serie" value="${v('numero_serie')}"></div>
+          <div class="col-sm-4"><label class="form-label" for="iv-origem">Origem</label>
+            <input class="form-control" id="iv-origem" name="origem" list="iv-origens" value="${esc(item?.origem || op.origens[0])}">
+            <datalist id="iv-origens">${op.origens.map((o) => `<option value="${esc(o)}">`).join('')}</datalist>
+            <div class="form-text">De onde veio. Escolha da lista ou escreva outra. "Orcim" é só dos itens que vêm da Orcim.</div></div>
+          <div class="col-sm-6"><label class="form-label" for="iv-posto">Posto</label><select class="form-select" id="iv-posto" name="location_id"><option value="">Nenhum (estoque central)</option>${postos.map((p) => `<option value="${p.id}" ${String(item?.location_id ?? qs.get('posto') ?? '') === String(p.id) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label" for="iv-setor">Setor</label><input class="form-control" id="iv-setor" name="setor" value="${v('setor')}" placeholder="Ex.: Caixa, Escritório, Pista"></div>
+          <div class="col-sm-6"><label class="form-label" for="iv-resp">Responsável</label><input class="form-control" id="iv-resp" name="responsavel" value="${v('responsavel')}"></div>
+          <div class="col-sm-6"><label class="form-label" for="iv-preco">Preço (R$)</label><input class="form-control" id="iv-preco" name="preco" inputmode="decimal" value="${item?.preco ?? ''}"></div>
+          <div class="col-sm-6"><label class="form-label" for="iv-compra">Data da compra</label><input class="form-control" type="date" id="iv-compra" name="data_compra" value="${v('data_compra')}"></div>
+          <div class="col-sm-6"><label class="form-label" for="iv-garantia">Garantia até</label><input class="form-control" type="date" id="iv-garantia" name="garantia_ate" value="${v('garantia_ate')}"></div>
+          <div class="col-12"><label class="form-label" for="iv-obs">Observações</label><textarea class="form-control" id="iv-obs" name="observacoes" rows="3">${v('observacoes')}</textarea></div>
+        </div>
+        <div class="alert alert-danger py-2 mt-3 d-none" id="iv-erro"></div>
+        <button class="btn btn-brand mt-3" type="submit">${id ? 'Salvar' : 'Cadastrar item'}</button>
+      </form>`;
+    $('#form-inv').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const body = Object.fromEntries([...fd.entries()].map(([k, x]) => [k, String(x)]));
+      try {
+        const r = id ? await API.patch(`/inventario/${id}`, body) : await API.post('/inventario', body);
+        toast(id ? 'Item salvo.' : 'Item cadastrado.');
+        location.hash = `#/inventario/${id || r.id}`;
+      } catch (e) { $('#iv-erro').textContent = e.message; $('#iv-erro').classList.remove('d-none'); }
+    });
+  }
+
   async function vNovoPedido(qs, seq) {
     titulo('Novo pedido');
     const g = ehGestor();
@@ -4037,6 +4166,7 @@ function itemHistorico(e) {
     ['pedidos', 'Pedidos e atividades', 'kanban'],
     ['visitas', 'Visitas', 'geo-alt'],
     ['resultados', 'Acompanhar e resultados', 'graph-up-arrow'],
+    ['inventario', 'Inventário', 'pc-display'],
   ];
   const primeiraAtividade = async () => {
     const l = await API.get('/atividades?situacao=abertas').catch(() => []);
@@ -4134,6 +4264,17 @@ function itemHistorico(e) {
         { alvo: '[data-pop]', titulo: 'Passe o mouse', texto: 'Num item, aparece um resumo: responsável, quem pediu, urgência e detalhes. Clique para abrir.' },
         { alvo: '.cal-add', titulo: '"+" do dia', texto: 'Abre o Novo pedido já com aquela data.' },
         { alvo: '.arrastavel', titulo: 'Arrastar para outro dia', texto: 'Visitas previstas, pedidos e atividades em aberto podem ser arrastados para outro dia. Pede o motivo e avisa a equipe.' },
+      ],
+    },
+    {
+      id: 'inventario', cat: 'inventario', papeis: ['gestor', 'tecnico'], icone: 'pc-display', titulo: 'Usar o inventário',
+      resumo: 'Itens nossos (com origem, ex.: Setor de Compras) e os da Orcim, que são só consulta.',
+      passos: [
+        { alvo: '.side-nav a[href="#/inventario"]', titulo: 'Inventário', texto: 'No menu, em Visitas. Todos os equipamentos dos postos num lugar só.' },
+        { rota: '#/inventario', alvo: '.pg-seg', titulo: 'Duas origens', texto: 'Nossos: cadastrados pela TI do Beija-Flor, com a origem que a gente escolhe (Setor de Compras, doação...). Da Orcim: vêm do sistema da Orcim e são só consulta (o cadeado indica).' },
+        { alvo: '.inv-estados', titulo: 'Estados', texto: 'Operando, Em conserto, Estragado, Comprado (aguardando chegar), Pronto para entregar, Em estoque, Descartado e Extraviado. Clique num estado para filtrar.' },
+        { alvo: '.filters', titulo: 'Buscar e filtrar', texto: 'Busque por nome, patrimônio, série ou modelo, e filtre por posto.' },
+        { alvo: 'a[href="#/inventario/novo"]', titulo: 'Novo item', texto: 'Cadastre um item nosso. A origem já vem "Setor de Compras" e dá para trocar. Toda mudança fica no histórico do item.' },
       ],
     },
     {
