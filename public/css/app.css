@@ -2078,3 +2078,12 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 @media (max-width: 575px) { .ag-dia { min-height: 42px; padding: 2px 4px; } .ag-chip { font-size: .6rem; padding: 0 4px; } }
 .card.ag-rota { flex-direction: row; }
 .card.lv-card { flex-direction: row; }
+
+/* Fechar chamado em 2 passos: encerramento e avaliação do usuário */
+.rs-passos { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: .76rem; color: var(--muted); }
+.rs-passos span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; background: rgba(127,127,127,.08); }
+.rs-passos span b { width: 20px; height: 20px; border-radius: 50%; background: #cbd5e1; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; }
+.rs-passos span.on { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.rs-passos span.on b { background: var(--primary); }
+.rs-passo2 { animation: rs-entra .2s ease-out; }
+@keyframes rs-entra { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }

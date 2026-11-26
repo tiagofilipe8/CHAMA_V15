@@ -97,6 +97,8 @@ const TicketModals = (() => {
           <button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
           <div class="small text-muted mb-2">${esc(t.title || '')}</div>
+          <div class="rs-passos" data-f="passos"><span class="on" data-p="1"><b>1</b> Encerramento</span><i class="bi bi-chevron-right"></i><span data-p="2"><b>2</b> Avaliação do usuário</span></div>
+          <div data-f="passo1">
           ${precisaEmpresa ? `
           <div class="alert alert-warning mb-3" data-f="empresa-box">
             <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
@@ -131,17 +133,24 @@ const TicketModals = (() => {
               </select>
               <div class="invalid-feedback">Escolha uma opção.</div>
               ${t.asset_id ? `<div class="form-text">Fica registrado também no histórico de manutenção de <b>${esc(t.asset_name || 'equipamento')}</b>.</div>` : ''}</div>
-          <div class="mb-2"><label class="form-label mb-1">4. Nota para o usuário <b>${esc(t.requester_name || '')}</b> neste chamado <span class="text-danger" data-obrig>*</span></label>
+          </div>
+          <div data-f="passo2" class="d-none rs-passo2">
+          <div class="mb-2"><div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-1">
+              <label class="form-label mb-0">Como foi o atendimento com <b>${esc(t.requester_name || 'o usuário')}</b> neste chamado? <span class="text-danger" data-obrig>*</span></label>
+              <button type="button" class="btn btn-sm btn-outline-success" data-f="marcar-tudo"><i class="bi bi-check2-all"></i> Marcar tudo</button></div>
             <div class="form-text mt-0 mb-2">Cada item marcado vale 1 estrela. Passe o mouse no item para ver quando marcar. <i class="bi bi-magic"></i> = o sistema já marcou pelo que aconteceu no chamado; confira.</div>
             <div class="ck-lista" data-f="ck"><div class="text-muted small">Carregando...</div></div>
             <div class="ck-total" data-f="ck-total"></div>
             <input class="form-control form-control-sm mt-2" data-f="rating-comment" maxlength="300" placeholder="Comentário sobre o usuário (opcional)">
             <div class="form-text"><i class="bi bi-lock me-1"></i>A causa e a nota só são vistas pela equipe — o usuário não vê.</div>
           </div>
+          </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button class="btn btn-success" data-f="save"><i class="bi bi-check2-circle"></i> ${verbo}</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal" data-f="cancelar">Cancelar</button>
+          <button class="btn btn-outline-secondary d-none" data-f="voltar"><i class="bi bi-arrow-left"></i> Voltar</button>
+          <button class="btn btn-outline-success d-none" data-f="save"><i class="bi bi-check2-circle"></i> ${verbo}</button>
+          <button class="btn btn-primary" data-f="proximo">Próximo: avaliar o usuário <i class="bi bi-arrow-right"></i></button>
         </div>
       </div></div></div>`;
     return open(html, (m, finish) => {
@@ -197,6 +206,44 @@ const TicketModals = (() => {
       });
       ['notes', 'action'].forEach((k) => f(k).addEventListener('input', () => f(k).classList.remove('is-invalid')));
 
+      // Dois passos: 1) encerramento (causa, o que foi feito, equipamento)  2) avaliação do usuário (checklist)
+      let passo = 1;
+      const irPara = (n) => {
+        passo = n;
+        f('passo1').classList.toggle('d-none', n !== 1);
+        f('passo2').classList.toggle('d-none', n !== 2);
+        f('passos').querySelectorAll('[data-p]').forEach((s) => s.classList.toggle('on', Number(s.dataset.p) === n));
+        f('voltar').classList.toggle('d-none', n !== 2);
+        f('cancelar').classList.toggle('d-none', n === 2);
+        f('proximo').classList.toggle('d-none', n === 2);
+        // na causa neutra (sem problema) dá para fechar já no passo 1, sem avaliar
+        f('save').classList.toggle('d-none', n === 1 && !ehNeutra());
+        f('save').className = `btn ${n === 2 ? 'btn-success' : 'btn-outline-success'}${n === 1 && !ehNeutra() ? ' d-none' : ''}`;
+        f('save').innerHTML = n === 1 ? `<i class="bi bi-check2-circle"></i> ${verbo} sem avaliar` : `<i class="bi bi-check2-circle"></i> ${verbo}`;
+        m.querySelector('.modal-body').scrollTop = 0;
+      };
+      causeSel.addEventListener('change', () => irPara(passo));
+      f('proximo').addEventListener('click', () => {
+        if (!empresaOk) { toast('Atribua a empresa antes de resolver este chamado do WhatsApp.', 'warning'); f('empresa-panel')?.classList.remove('d-none'); return; }
+        const neutra = ehNeutra(); const erros = [];
+        if (!causeSel.value) { causeSel.classList.add('is-invalid'); erros.push(causeSel); }
+        if (!neutra && f('notes').value.trim().length < 5) { f('notes').classList.add('is-invalid'); erros.push(f('notes')); }
+        if (!neutra && !f('action').value) { f('action').classList.add('is-invalid'); erros.push(f('action')); }
+        if (erros.length) { erros[0].focus(); erros[0].scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+        irPara(2);
+      });
+      f('voltar').addEventListener('click', () => irPara(1));
+      // "Marcar tudo" / "Desmarcar tudo" no checklist
+      f('marcar-tudo').addEventListener('click', () => {
+        const caixas = [...f('ck').querySelectorAll('input[data-k]')];
+        const marcar = caixas.some((i) => !i.checked);
+        caixas.forEach((i) => { i.checked = marcar; i.closest('.ck-it').classList.toggle('on', marcar); });
+        checklistTocado = true;
+        pintarTotal();
+        f('marcar-tudo').innerHTML = marcar ? '<i class="bi bi-x-square"></i> Desmarcar tudo' : '<i class="bi bi-check2-all"></i> Marcar tudo';
+      });
+      irPara(1);
+
       // Empresa obrigatoria para chamados do WhatsApp ainda sem empresa real
       let empresaOk = !precisaEmpresa;
       if (precisaEmpresa) {
@@ -250,7 +297,7 @@ const TicketModals = (() => {
         if (!neutra && body.resolution_notes.length < 5) { f('notes').classList.add('is-invalid'); erros.push(f('notes')); }
         if (!neutra && !body.equipment_action) { f('action').classList.add('is-invalid'); erros.push(f('action')); }
         if (!neutra && !body.requester_rating_criteria) { toast('Espere o checklist da nota carregar.', 'warning'); return; }
-        if (erros.length) { erros[0].focus(); erros[0].scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+        if (erros.length) { irPara(1); erros[0].focus(); erros[0].scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
         try {
           try {
             await API.post(`/tickets/${t.id}/status`, body);
