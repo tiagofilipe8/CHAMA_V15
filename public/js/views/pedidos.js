@@ -90,7 +90,7 @@ const PedidoUI = (() => {
         try {
           await API.post(`${url}/status`, corpo);
           toast({
-            comprado: 'Comprado: já está no inventário como "aguardando chegar".', transito: 'A caminho da ORCIM.', chegou: 'Na ORCIM: pronto para sair para o local.',
+            comprado: 'Comprado: a caminho da ORCIM (no inventário como "aguardando chegar").', chegou: 'Na ORCIM: pronto para sair para o local.',
             rota: 'A caminho do local: quem pediu acompanha e confirma quando receber.', entregue: 'Entregue e registrado.',
           }[status] || 'Situação atualizada.', 'success');
         } catch (err) { showError(err); }
@@ -119,7 +119,7 @@ Views.pedidos = async function pedidos(el) {
       <div class="iv-busca"><i class="bi bi-search"></i><input class="form-control form-control-sm" id="pd-q" placeholder="Buscar material ou chamado"></div>
     </div></div>
     ${podeMudar ? `<div class="pd-dica small text-muted mb-2"><i class="bi bi-info-circle"></i> Informe o preço e o posto de cada item. Ao marcar <b>Comprado</b>, ele já entra no inventário
-      (aguardando chegar) com o preço. Etapas: <b>Pedido → Comprado → A caminho da ORCIM → Na ORCIM → A caminho do local → Entregue</b>. Em <b>A caminho do local</b> quem pediu
+      (aguardando chegar) com o preço. Etapas: <b>Pedido → Comprado (a caminho da ORCIM) → Na ORCIM → A caminho do local → Entregue</b>. Em <b>A caminho do local</b> quem pediu
       vê a previsão e confirma quando receber (ou o técnico confirma). <b>Entregue</b> manda para o Inventário da Empresa ou o Estoque de T.I. do posto. Quem pediu é avisado a cada etapa.</div>` : ''}
     <div class="pd-resumo mb-2" id="pd-resumo"></div>
     <div id="pd-lista">${spinner()}</div>`;
@@ -181,16 +181,14 @@ Views.pedidos = async function pedidos(el) {
 Views.meusPedidos = async function meusPedidos(el) {
   const ETAPAS = [
     ['solicitado', 'Pedido', 'bi-hourglass-split'],
-    ['comprado', 'Comprado', 'bi-cart-check'],
-    ['transito', 'A caminho da ORCIM', 'bi-truck'],
+    ['comprado', 'Comprado · a caminho da ORCIM', 'bi-truck'],
     ['chegou', 'Na ORCIM', 'bi-building-check'],
     ['rota', 'A caminho do local', 'bi-signpost-split'],
     ['entregue', 'Entregue', 'bi-check2-circle'],
   ];
   const FRASE = {
     solicitado: 'Pedido recebido pela TI. Aguardando compra.',
-    comprado: 'Comprado. Aguardando o fornecedor enviar.',
-    transito: 'A caminho da ORCIM.',
+    comprado: 'Comprado: está a caminho da ORCIM.',
     chegou: 'Chegou na ORCIM. Logo sai para o seu local.',
     rota: 'Saiu para entrega no seu local. Confirme quando receber.',
     entregue: 'Entregue.',

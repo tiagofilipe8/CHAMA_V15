@@ -363,7 +363,7 @@ router.get('/causas', async (req, res) => {
     veCusto ? query(
       `SELECT COALESCE(tm.location_id, t.location_id) AS location_id, sum(tm.price * tm.quantity)::float AS valor, sum(tm.quantity)::int AS n
        FROM ticket_materials tm JOIN tickets t ON t.id = tm.ticket_id
-       WHERE tm.price IS NOT NULL AND tm.status IN ('comprado','transito','chegou','rota','entregue') ${faixa('COALESCE(tm.status_at, t.created_at)')} ${base}
+       WHERE tm.price IS NOT NULL AND tm.status IN ('comprado','chegou','rota','entregue') ${faixa('COALESCE(tm.status_at, t.created_at)')} ${base}
        GROUP BY 1`, params) : vazio,
     // retiradas do estoque (o que cada posto consumiu)
     veCusto ? query(

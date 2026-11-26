@@ -2300,8 +2300,8 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .lv-acao select { min-width: 200px; }
 
 /* ===== Pedido: 6 etapas, datas e previsão ===== */
-.pd-transito { background: #fef3c7; color: #b45309; } .pd-rota { background: #cffafe; color: #0e7490; }
-[data-bs-theme="dark"] .pd-transito, [data-bs-theme="dark"] .pd-rota { background: rgba(127,127,127,.2); color: var(--ink); }
+.pd-rota { background: #cffafe; color: #0e7490; }
+[data-bs-theme="dark"] .pd-rota { background: rgba(127,127,127,.2); color: var(--ink); }
 .mp-item { grid-template-columns: minmax(0, 1fr) minmax(420px, 1.6fr); }
 .mp-tempo { grid-template-columns: repeat(var(--n, 4), 1fr); }
 .mp-tempo::before, .mp-tempo::after { left: calc(50% / var(--n, 4)); }

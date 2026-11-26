@@ -965,6 +965,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_orcim ON assets(id) WHERE entity_id IS NUL
 
 -- =====================================================================
 -- Etapas do pedido de material (2026-11-26)
+--   (Comprado = a caminho da ORCIM: o que estava em 'transito' vira 'comprado')
 --   Pedido -> Comprado -> A caminho da ORCIM -> Na ORCIM -> A caminho do local -> Entregue
 --   etapas: quando cada etapa aconteceu ({"comprado": "2026-11-26T10:00:00Z", ...})
 --   previsao: dia previsto para a entrega no local (da rota agendada ou informado pela TI)
@@ -972,8 +973,17 @@ CREATE INDEX IF NOT EXISTS idx_assets_orcim ON assets(id) WHERE entity_id IS NUL
 --   A entrega é confirmada por quem pediu ("Recebi") ou pelo técnico.
 -- =====================================================================
 ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_status_check;
+DO $junta$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ticket_materials' AND column_name = 'etapas') THEN
+    UPDATE ticket_materials SET etapas = (etapas - 'transito') || CASE WHEN etapas ? 'comprado' OR NOT etapas ? 'transito' THEN '{}'::jsonb
+                                            ELSE jsonb_build_object('comprado', etapas->'transito') END
+      WHERE etapas ? 'transito';
+  END IF;
+  UPDATE ticket_materials SET status = 'comprado' WHERE status = 'transito';
+END $junta$;
 ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_status_check
-  CHECK (status IN ('solicitado','comprado','transito','chegou','rota','entregue','cancelado'));
+  CHECK (status IN ('solicitado','comprado','chegou','rota','entregue','cancelado'));
+-- "Comprado" e "A caminho da ORCIM" são a mesma etapa (o que estava em trânsito volta para comprado)
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS etapas JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS previsao DATE;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS origem_orcim BOOLEAN NOT NULL DEFAULT FALSE;

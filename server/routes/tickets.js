@@ -1321,10 +1321,10 @@ router.get('/:id/mencionaveis', async (req, res) => {
 //   O solicitante é avisado a cada mudança (sem o preço).
 // ---------------------------------------------------------------------
 const SITUACAO_MATERIAL = {
-  solicitado: 'Pedido', comprado: 'Comprado', transito: 'A caminho da ORCIM', chegou: 'Na ORCIM',
+  solicitado: 'Pedido', comprado: 'Comprado (a caminho da ORCIM)', chegou: 'Na ORCIM',
   rota: 'A caminho do local', entregue: 'Entregue', cancelado: 'Cancelado',
 };
-const ESTADO_DO_PEDIDO = { comprado: 'ORDERED', transito: 'ORDERED', chegou: 'READY', rota: 'READY' };
+const ESTADO_DO_PEDIDO = { comprado: 'ORDERED', chegou: 'READY', rota: 'READY' };
 const TIPOS_EQUIP = ['COMPUTER', 'NOTEBOOK', 'SERVER', 'PRINTER', 'MONITOR', 'UPS', 'NETWORK_DEVICE', 'MOBILE_DEVICE', 'PERIPHERAL', 'OTHER'];
 const podeMexerPedido = (user, ticket) => canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket));
 
@@ -1455,7 +1455,7 @@ async function atualizarItemPedido(req, res, forcar = {}) {
     try { const r2 = await concluirEntrega(ticket, { ...atual, ...novo, status: atual.status }, { destino: novo.destino, orcim: !!novo.origem_orcim }, user); return res.json({ ok: true, asset_ids: r2.ids }); }
     catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); throw e; }
   }
-  const mexeInventario = ['comprado', 'transito', 'chegou', 'rota'].includes(novo.status) || (novo.status === 'entregue' && novo.destino !== 'nenhum');
+  const mexeInventario = ['comprado', 'chegou', 'rota'].includes(novo.status) || (novo.status === 'entregue' && novo.destino !== 'nenhum');
   if (mexeInventario && !has(user, 'inventory.manage')) {
     return res.status(403).json({ error: 'Seu perfil não cadastra itens no inventário. Peça a quem cuida do inventário.' });
   }

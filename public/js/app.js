@@ -136,7 +136,7 @@ function pageDescFromPath() {
     '/visitas': 'Os dias em que a TI vai passar no seu local (rotas planejadas pelos técnicos).',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
-    '/meus-pedidos': 'Acompanhe cada material que você pediu: pedido, comprado, a caminho da ORCIM, na ORCIM, a caminho do local e entregue. Confirme quando receber.',
+    '/meus-pedidos': 'Acompanhe cada material que você pediu: pedido, comprado (a caminho da ORCIM), na ORCIM, a caminho do local e entregue. Confirme quando receber.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
     '/new': 'Conte o problema e onde ele está. A equipe de TI recebe o chamado na hora.',
     '/inventory': 'Computadores, impressoras e outros equipamentos de cada empresa: o que são, onde estão, quanto custaram e em que estado estão.',
