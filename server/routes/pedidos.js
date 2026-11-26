@@ -1,6 +1,6 @@
 const express = require('express');
 const { query } = require('../db');
-const { requireAuth, scopeConditions } = require('../middleware/auth');
+const { requireAuth, scopeConditions, has } = require('../middleware/auth');
 
 // ---------------------------------------------------------------------
 // Pedidos (Equipamentos > Pedidos): chamados com pedido de material e a situação de cada item
@@ -29,8 +29,10 @@ router.get('/', async (req, res) => {
     `SELECT t.id, t.title, t.status, t.created_at, t.needed_by, t.entity_id, t.location_id, t.requester_id,
             e.name AS entity_name, l.name AS location_name, u.name AS requester_name, a.name AS assigned_name,
             (SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
-                     'status', m.status, 'status_at', m.status_at, 'destino', m.destino, 'asset_id', m.asset_id) ORDER BY m.id)
-               FROM ticket_materials m WHERE m.ticket_id = t.id) AS materiais
+                     'status', m.status, 'status_at', m.status_at, 'destino', m.destino, 'asset_id', m.asset_id,
+                     'asset_ids', m.asset_ids, 'asset_type', m.asset_type, 'price', m.price,
+                     'location_id', m.location_id, 'location_name', lm.name) ORDER BY m.id)
+               FROM ticket_materials m LEFT JOIN locations lm ON lm.id = m.location_id WHERE m.ticket_id = t.id) AS materiais
      FROM tickets t
      JOIN entities e ON e.id = t.entity_id
      LEFT JOIN locations l ON l.id = t.location_id
@@ -38,7 +40,12 @@ router.get('/', async (req, res) => {
      LEFT JOIN users a ON a.id = t.assigned_user_id
      WHERE ${conds.join(' AND ')}
      ORDER BY t.created_at DESC LIMIT 300`, params);
-  res.json(rows.map((r) => ({ ...r, number: `#${r.id}` })));
+  // preço só para quem pode ver (gestor, técnico, admin mestre)
+  const vePreco = has(req.user, 'inventory.secrets');
+  res.json(rows.map((r) => ({
+    ...r, number: `#${r.id}`,
+    materiais: vePreco ? r.materiais : (r.materiais || []).map(({ price, ...m }) => m),
+  })));
 });
 
 module.exports = router;

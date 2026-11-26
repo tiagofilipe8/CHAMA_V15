@@ -660,8 +660,10 @@ router.get('/:id', async (req, res) => {
            FROM ticket_watchers w JOIN users u ON u.id = w.user_id
            LEFT JOIN locations l ON l.id = u.location_id
            WHERE w.ticket_id = $1 ORDER BY w.created_at`, [id]),
-    query(`SELECT m.id, m.name, m.unit, m.quantity, m.status, m.status_at, m.destino, m.asset_id, u.name AS status_by_name
-           FROM ticket_materials m LEFT JOIN users u ON u.id = m.status_by WHERE m.ticket_id = $1 ORDER BY m.id`, [id]),
+    query(`SELECT m.id, m.name, m.unit, m.quantity, m.status, m.status_at, m.destino, m.asset_id, m.asset_ids, m.asset_type,
+                  m.price, m.location_id, l.name AS location_name, u.name AS status_by_name
+           FROM ticket_materials m LEFT JOIN users u ON u.id = m.status_by LEFT JOIN locations l ON l.id = m.location_id
+           WHERE m.ticket_id = $1 ORDER BY m.id`, [id]),
   ]);
   let requesterRating = null;
   if (seesRating) {
@@ -678,7 +680,7 @@ router.get('/:id', async (req, res) => {
     status_history: history.rows,
     history: events.rows,
     watchers: [], // observadores foram tirados do sistema
-    materials: mats.rows,
+    materials: has(req.user, 'inventory.secrets') ? mats.rows : mats.rows.map(({ price, ...m }) => m), // preço só para quem pode ver
     attachments: atts.rows,
     can: ticketAbilities(req.user, ticket),
   });
@@ -1307,79 +1309,131 @@ router.get('/:id/mencionaveis', async (req, res) => {
 //   - demais: kind 'comment'
 // ---------------------------------------------------------------------
 // ---------------------------------------------------------------------
-// Situação de cada material pedido: pedido -> comprado -> chegou -> entregue (ou cancelado)
-//   quem atende o chamado ou cuida do inventário muda; o solicitante é avisado
+// Pedido de material ligado ao inventário e ao Estoque de T.I.
+//   cada item pedido tem: preço unitário, posto de destino e situação
+//   pedido    -> nada no inventário ainda
+//   comprado  -> cada unidade entra no inventário como "Comprado - aguardando chegar", com preço e posto
+//   chegou    -> "Pronto para entregar"
+//   entregue  -> "Em estoque" (Estoque de T.I. do posto) ou "Operando" (inventário do posto),
+//                ou sai do inventário se for "só marcar entregue" (consumível)
+//   cancelado -> sai do inventário (o que ainda não tinha sido entregue)
+//   O solicitante é avisado a cada mudança (sem o preço).
 // ---------------------------------------------------------------------
 const SITUACAO_MATERIAL = { solicitado: 'Pedido', comprado: 'Comprado', chegou: 'Chegou', entregue: 'Entregue', cancelado: 'Cancelado' };
-router.post('/:id/materials/:mid/status', async (req, res) => {
-  const ticket = await loadTicket(req.params.id);
-  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
-  const user = req.user;
-  if (!(canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket)))) {
-    return res.status(403).json({ error: 'Seu perfil não pode mudar a situação dos materiais.' });
-  }
-  const st = String(req.body?.status || '');
-  if (!SITUACAO_MATERIAL[st]) return res.status(422).json({ error: 'Situação inválida.' });
-  const { rows } = await query('SELECT * FROM ticket_materials WHERE id = $1 AND ticket_id = $2', [req.params.mid, ticket.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Material não encontrado.' });
-  const m = rows[0];
-  if (m.status === st) return res.json({ ok: true });
-  await query('UPDATE ticket_materials SET status = $2, status_at = now(), status_by = $3 WHERE id = $1', [m.id, st, user.id]);
-  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: ${SITUACAO_MATERIAL[st]}`;
-  await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`, [ticket.id, user.id, `Pedido de material — ${texto}`]);
-  if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
-    await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: ${SITUACAO_MATERIAL[st].toLowerCase()}`, texto, ticket.id).catch(() => {});
-  }
-  res.json({ ok: true });
-});
+const ESTADO_DO_PEDIDO = { comprado: 'ORDERED', chegou: 'READY' };
+const TIPOS_EQUIP = ['COMPUTER', 'NOTEBOOK', 'SERVER', 'PRINTER', 'MONITOR', 'UPS', 'NETWORK_DEVICE', 'MOBILE_DEVICE', 'PERIPHERAL', 'OTHER'];
+const podeMexerPedido = (user, ticket) => canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket));
 
-// Entregar um material pedido: vira equipamento no Estoque de T.I. do local, no Inventário (operando),
-// ou só fica marcado como entregue. { destino: 'estoque' | 'inventario' | 'nenhum', type? }
-router.post('/:id/materials/:mid/entregar', async (req, res) => {
-  const ticket = await loadTicket(req.params.id);
-  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
-  const user = req.user;
-  if (!(canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket)))) {
-    return res.status(403).json({ error: 'Seu perfil não pode entregar materiais.' });
+// Deixa os equipamentos do item iguais à situação do pedido (dentro de uma transação)
+async function sincronizarEquipamentos(q, ticket, m, situacao, user) {
+  const ids = (m.asset_ids || []).map(String);
+  const vivos = ids.length ? (await q('SELECT id, status FROM assets WHERE id = ANY($1::bigint[])', [ids])).rows : [];
+  const apagar = async (lista) => { if (lista.length) await q('DELETE FROM assets WHERE id = ANY($1::bigint[])', [lista.map((a) => a.id)]); };
+  if (situacao === 'solicitado' || situacao === 'cancelado' || (situacao === 'entregue' && m.destino === 'nenhum')) {
+    // não entra (ou sai) do inventário: só o que ainda não foi entregue
+    await apagar(vivos.filter((a) => ['ORDERED', 'READY'].includes(a.status) || situacao === 'entregue'));
+    return [];
   }
-  const destino = String(req.body?.destino || '');
-  if (!['estoque', 'inventario', 'nenhum'].includes(destino)) return res.status(422).json({ error: 'Escolha para onde vai o item.' });
-  if (destino !== 'nenhum' && !has(user, 'inventory.manage')) return res.status(403).json({ error: 'Seu perfil não cadastra itens no inventário. Use "Só marcar entregue".' });
-  const { rows } = await query('SELECT * FROM ticket_materials WHERE id = $1 AND ticket_id = $2', [req.params.mid, ticket.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Material não encontrado.' });
-  const m = rows[0];
-  if (m.status === 'entregue') return res.status(422).json({ error: 'Esse item já foi entregue.' });
-  const TIPOS = ['COMPUTER', 'NOTEBOOK', 'SERVER', 'PRINTER', 'MONITOR', 'UPS', 'NETWORK_DEVICE', 'MOBILE_DEVICE', 'PERIPHERAL', 'OTHER'];
-  const tipo = TIPOS.includes(req.body?.type) ? req.body.type : 'PERIPHERAL';
-  let primeiro = null;
-  await withTransaction(async (q) => {
-    if (destino !== 'nenhum') {
-      const qtd = Math.min(Math.max(Number(m.quantity) || 1, 1), 20);
-      for (let i = 0; i < qtd; i += 1) {
-        const a = await q(
-          `INSERT INTO assets (entity_id, name, type, status, location_id, notes, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-          [ticket.entity_id, String(m.name).toUpperCase(), tipo, destino === 'estoque' ? 'STOCK' : 'OPERATING', ticket.location_id,
-            `Entregue pelo pedido #${ticket.id}`, user.id]);
-        if (!primeiro) primeiro = a.rows[0].id;
-        await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`,
-          [a.rows[0].id, user.id, `pedido #${ticket.id}`]);
-        if (destino === 'estoque') {
-          await q(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, note)
-                   VALUES ($1,'entry',$2,$3,$4,$5)`, [a.rows[0].id, user.id, ticket.entity_id, ticket.location_id, `Entregue pelo pedido #${ticket.id}`]);
-        }
+  const estado = situacao === 'entregue' ? (m.destino === 'estoque' ? 'STOCK' : 'OPERATING') : ESTADO_DO_PEDIDO[situacao];
+  const qtd = Math.min(Math.max(Number(m.quantity) || 1, 1), 20);
+  const local = m.location_id || ticket.location_id || null;
+  const tipo = TIPOS_EQUIP.includes(m.asset_type) ? m.asset_type : 'PERIPHERAL';
+  const atuais = vivos.map((a) => String(a.id));
+  for (const a of vivos) {
+    await q(`UPDATE assets SET status = $2, price = $3, location_id = $4, type = $5 WHERE id = $1`, [a.id, estado, m.price, local, tipo]);
+    if (a.status !== estado) {
+      await q(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','status',$3,$4)`,
+        [a.id, user.id, a.status, estado]);
+      if (estado === 'STOCK') {
+        await q(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, price, note) VALUES ($1,'entry',$2,$3,$4,$5,$6)`,
+          [a.id, user.id, ticket.entity_id, local, m.price, `Entregue pelo pedido #${ticket.id}`]);
       }
     }
-    await q('UPDATE ticket_materials SET status = $2, status_at = now(), status_by = $3, destino = $4, asset_id = $5 WHERE id = $1',
-      [m.id, 'entregue', user.id, destino, primeiro]);
-  });
-  const ondeTxt = destino === 'estoque' ? 'no Estoque de T.I.' : destino === 'inventario' ? 'no inventário (operando)' : '';
-  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: Entregue${ondeTxt ? ` e registrado ${ondeTxt}` : ''}`;
-  await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`, [ticket.id, user.id, `Pedido de material — ${texto}`]);
-  if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
-    await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: entregue`, texto, ticket.id).catch(() => {});
   }
-  res.json({ ok: true, asset_id: primeiro });
+  for (let i = atuais.length; i < qtd; i += 1) {
+    const { rows } = await q(
+      `INSERT INTO assets (entity_id, name, type, status, location_id, price, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [ticket.entity_id, String(m.name).toUpperCase(), tipo, estado, local, m.price, `Pedido #${ticket.id}`, user.id]);
+    atuais.push(String(rows[0].id));
+    await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`,
+      [rows[0].id, user.id, `pedido #${ticket.id}`]);
+    if (estado === 'STOCK') {
+      await q(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, price, note) VALUES ($1,'entry',$2,$3,$4,$5,$6)`,
+        [rows[0].id, user.id, ticket.entity_id, local, m.price, `Entregue pelo pedido #${ticket.id}`]);
+    }
+  }
+  return atuais;
+}
+
+// Muda o item: { status?, price?, location_id?, destino?, asset_type? } — o que vier é gravado e o inventário acompanha
+async function atualizarItemPedido(req, res, forcar = {}) {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  const user = req.user;
+  if (!podeMexerPedido(user, ticket)) return res.status(403).json({ error: 'Seu perfil não pode mudar os pedidos de material.' });
+  const b = { ...(req.body || {}), ...forcar };
+  const { rows } = await query('SELECT * FROM ticket_materials WHERE id = $1 AND ticket_id = $2', [req.params.mid, ticket.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Material não encontrado.' });
+  const atual = rows[0];
+  const novo = { ...atual };
+  if (b.status !== undefined) {
+    if (!SITUACAO_MATERIAL[b.status]) return res.status(422).json({ error: 'Situação inválida.' });
+    novo.status = b.status;
+  }
+  if (b.price !== undefined) {
+    if (!has(user, 'inventory.secrets')) return res.status(403).json({ error: 'Seu perfil não pode informar preço.' });
+    const p = b.price === null || b.price === '' ? null : Number(String(b.price).replace(',', '.'));
+    if (p !== null && (!Number.isFinite(p) || p < 0 || p >= 1e10)) return res.status(422).json({ error: 'Preço inválido.' });
+    novo.price = p;
+  }
+  if (b.location_id !== undefined) {
+    if (b.location_id) {
+      const ok = await query('SELECT id FROM locations WHERE id = $1 AND entity_id = $2', [b.location_id, ticket.entity_id]);
+      if (!ok.rows.length) return res.status(422).json({ error: 'Esse posto não é da empresa do chamado.' });
+      novo.location_id = ok.rows[0].id;
+    } else novo.location_id = null;
+  }
+  if (b.destino !== undefined) {
+    if (!['estoque', 'inventario', 'nenhum'].includes(b.destino)) return res.status(422).json({ error: 'Destino inválido.' });
+    novo.destino = b.destino;
+  }
+  if (b.asset_type !== undefined && TIPOS_EQUIP.includes(b.asset_type)) novo.asset_type = b.asset_type;
+  if (novo.status === 'entregue' && !novo.destino) novo.destino = 'inventario';
+  const mexeInventario = ['comprado', 'chegou'].includes(novo.status) || (novo.status === 'entregue' && novo.destino !== 'nenhum');
+  if (mexeInventario && !has(user, 'inventory.manage')) {
+    return res.status(403).json({ error: 'Seu perfil não cadastra itens no inventário. Peça a quem cuida do inventário.' });
+  }
+  const mudouSituacao = novo.status !== atual.status;
+  let ids = atual.asset_ids || [];
+  await withTransaction(async (q) => {
+    // o inventário acompanha (também quando só o preço, o posto ou o destino mudam)
+    if (mudouSituacao || ids.length || mexeInventario) ids = await sincronizarEquipamentos(q, ticket, novo, novo.status, user);
+    await q(`UPDATE ticket_materials SET status = $2, price = $3, location_id = $4, destino = $5, asset_type = $6, asset_ids = $7::bigint[],
+                    asset_id = $8, status_at = CASE WHEN $9 THEN now() ELSE status_at END,
+                    status_by = CASE WHEN $9 THEN $10 ELSE status_by END WHERE id = $1`,
+      [atual.id, novo.status, novo.price, novo.location_id, novo.destino || null, novo.asset_type || null, ids, ids[0] || null, mudouSituacao, user.id]);
+  });
+  if (mudouSituacao) {
+    const posto = novo.location_id ? (await query('SELECT name FROM locations WHERE id = $1', [novo.location_id])).rows[0]?.name : ticket.location_name;
+    const onde = novo.status === 'entregue' && novo.destino === 'estoque' ? ' (Estoque de T.I.)' : '';
+    const texto = `${atual.quantity} ${atual.unit || 'un'} · ${atual.name}: ${SITUACAO_MATERIAL[novo.status]}${posto && novo.status !== 'cancelado' ? ` · vai para ${posto}${onde}` : ''}`;
+    await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`, [ticket.id, user.id, `Pedido de material — ${texto}`]);
+    if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
+      await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: ${SITUACAO_MATERIAL[novo.status].toLowerCase()}`, texto, ticket.id).catch(() => {});
+    }
+  }
+  res.json({ ok: true, asset_ids: ids, asset_id: ids[0] || null });
+}
+
+// Situação (e o que mais vier junto: preço, posto, destino)
+router.post('/:id/materials/:mid/status', (req, res) => atualizarItemPedido(req, res));
+// Só preço, posto, destino ou categoria do equipamento (sem mudar a situação)
+router.patch('/:id/materials/:mid', (req, res) => { const { status, ...resto } = req.body || {}; req.body = resto; return atualizarItemPedido(req, res); });
+// Entregar (usado no "O que levar" das rotas): { destino }
+router.post('/:id/materials/:mid/entregar', (req, res) => {
+  if (!['estoque', 'inventario', 'nenhum'].includes(String(req.body?.destino || ''))) return res.status(422).json({ error: 'Escolha para onde vai o item.' });
+  return atualizarItemPedido(req, res, { status: 'entregue' });
 });
 
 router.post('/:id/messages', async (req, res) => {

@@ -915,3 +915,10 @@ CREATE TABLE IF NOT EXISTS route_plan_stops (
 );
 CREATE INDEX IF NOT EXISTS idx_route_plan_stops_plan ON route_plan_stops(plan_id);
 CREATE INDEX IF NOT EXISTS idx_route_plan_stops_loc ON route_plan_stops(location_id);
+
+-- Pedido ligado ao inventário: preço unitário, posto de destino, categoria e os equipamentos criados (2026-11-26)
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS price NUMERIC(12,2);
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS location_id BIGINT REFERENCES locations(id) ON DELETE SET NULL;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS asset_type TEXT;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS asset_ids BIGINT[] NOT NULL DEFAULT '{}';
+UPDATE ticket_materials SET asset_ids = ARRAY[asset_id] WHERE asset_id IS NOT NULL AND asset_ids = '{}';

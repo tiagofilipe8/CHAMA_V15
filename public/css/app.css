@@ -2087,3 +2087,12 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .rs-passos span.on b { background: var(--primary); }
 .rs-passo2 { animation: rs-entra .2s ease-out; }
 @keyframes rs-entra { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+/* Pedidos ligados ao inventário: campos por item */
+.pd-editavel { flex-wrap: wrap; }
+.pd-nome small { display: block; font-size: .68rem; color: var(--muted); }
+.pd-inv { display: inline-block; margin-left: 6px; font-size: .68rem; text-decoration: none; }
+.pd-campo { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: .7rem; color: var(--muted); }
+.pd-campo .form-control, .pd-campo .form-select { width: auto; max-width: 150px; font-size: .74rem; padding-top: 1px; padding-bottom: 1px; }
+.pd-preco { width: 90px !important; }
+.pd-total { font-weight: 700; color: var(--ink); }
+.pd-posto { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; font-weight: 700; color: #0f766e; background: #ccfbf1; border-radius: 999px; padding: 1px 9px; }
