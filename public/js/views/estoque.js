@@ -327,12 +327,13 @@ const Estoque = (() => {
       const maxMot = Math.max(0, ...r.por_motivo.map((x) => (v ? x.custo : x.n)));
       const maxMes = Math.max(0, ...r.por_mes.map((x) => x.n));
       const maxCat = Math.max(0, ...r.por_categoria.map((x) => (v ? x.valor : x.n)));
+      const maxPosto = Math.max(0, ...r.valor_por_posto.map((x) => (v ? x.valor : x.n)));
       const periodo = dias >= 3650 ? 'desde o início' : `nos últimos ${dias} dias`;
       corpo.innerHTML = `
         <div class="er-kpis">
           ${v ? `<div class="er-kpi"><span class="er-ico verde" aria-hidden="true"><i class="bi ${r.escopo === 'estoque' ? 'bi-box-seam' : 'bi-cash-coin'}"></i></span>${ajuda(r.escopo === 'estoque'
     ? 'Soma do preço dos itens guardados no estoque de T.I. (em estoque, prontos para entregar e comprados que ainda não chegaram). Itens sem preço cadastrado não entram na soma.'
-    : 'Soma do preço de todos os equipamentos cadastrados, menos os descartados e extraviados. Itens sem preço cadastrado não entram na soma: o texto embaixo mostra quantos têm preço.')}<small>${r.escopo === 'estoque' ? 'Valor do estoque de T.I.' : 'Valor do inventário'}</small><b>${invMoeda(r.inventario.valor)}</b><span>${r.inventario.com_preco} de ${r.inventario.itens} itens com preço</span></div>` : ''}
+    : 'Soma do preço (× quantidade) de todos os equipamentos que existem e funcionam. Estragados, extraviados e descartados saem da soma: o valor cai quando um item quebra, some ou é descartado. Itens sem preço cadastrado não entram na soma.')}<small>${r.escopo === 'estoque' ? 'Valor do estoque de T.I.' : 'Valor do inventário'}</small><b>${invMoeda(r.inventario.valor)}</b><span>${r.inventario.com_preco} de ${r.inventario.itens} itens com preço</span></div>` : ''}
           <div class="er-kpi"><span class="er-ico azul" aria-hidden="true"><i class="bi ${r.escopo === 'estoque' ? 'bi-boxes' : 'bi-pc-display-horizontal'}"></i></span>${ajuda(r.escopo === 'estoque'
     ? 'Quantos itens estão no estoque de T.I. agora: em estoque, prontos para entregar e comprados que ainda não chegaram.'
     : 'Quantos equipamentos estão cadastrados agora, de todas as categorias e estados, menos os descartados e extraviados.')}<small>${r.escopo === 'estoque' ? 'Itens no estoque de T.I.' : 'Equipamentos no inventário'}</small><b>${r.inventario.itens}</b><span>${r.escopo === 'estoque' ? 'em estoque, prontos ou a caminho' : 'sem os descartados e extraviados'}</span></div>
@@ -359,6 +360,17 @@ const Estoque = (() => {
             ${r.por_posto.map((x) => `<tr><td>${esc(x.posto)}<small class="text-muted multi-empresa"> · ${esc(x.empresa || '')}</small></td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap">${invMoeda(x.custo)}</td>` : ''}</tr>`).join('')}
             </tbody></table>` : '<div class="dp-vazio">Nenhuma retirada no período.</div>'}</div>
         </div>
+        <div class="er-grade mt-3">
+          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-trophy"></i> Valor por posto ${ajuda('Quanto vale o que cada posto tem agora (preço × quantidade), do maior para o menor. Estragados e extraviados saem da soma e aparecem em "Perdido". Clique num posto para ver os itens dele.')}</span><small class="text-muted">hoje</small></div>
+            ${r.valor_por_posto.length ? `<table class="table table-sm table-hover align-middle mb-0 er-tab er-click"><thead><tr><th>#</th><th>Posto</th><th></th><th class="text-end">Itens</th>${v ? '<th class="text-end">Valor</th><th class="text-end">Perdido</th>' : ''}</tr></thead><tbody>
+            ${r.valor_por_posto.map((x, i) => `<tr data-loc="${x.location_id || ''}" class="${String(x.location_id || '') === String(loc) && loc ? 'table-active' : ''}"><td class="text-muted">${i + 1}º</td><td>${esc(x.posto)}<small class="text-muted multi-empresa"> · ${esc(x.empresa || '')}</small></td>
+              <td class="w-25">${barra(v ? x.valor : x.n, maxPosto)}</td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap"><b>${invMoeda(x.valor)}</b></td><td class="text-end text-nowrap ${x.perdido ? 'text-danger' : 'text-muted'}">${x.perdido ? invMoeda(x.perdido) : '—'}</td>` : ''}</tr>`).join('')}
+            </tbody></table>` : '<div class="dp-vazio">Nenhum equipamento.</div>'}</div>
+          <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-list-ol"></i> ${loc ? `Itens de ${esc((r.valor_por_posto.find((x) => String(x.location_id) === String(loc)) || {}).posto || 'posto')}` : 'Itens do posto'} ${ajuda('Os itens do posto escolhido, do mais caro para o mais barato. Itens contados por quantidade mostram o total (preço por unidade × quantidade).')}</span>${loc ? '<a href="javascript:void 0" id="er-limpa-loc">todos os postos</a>' : ''}</div>
+            ${!loc ? '<div class="dp-vazio">Escolha um posto no filtro ou clique num posto ao lado.</div>' : r.itens_posto.length ? `<div class="er-itens">${r.itens_posto.map((a) => `<a href="#/inventory/${a.id}" class="er-item ${['LOST', 'BROKEN'].includes(a.status) ? 'perdido' : ''}">
+              <span><b>${esc(a.name)}</b> <small class="text-muted">${a.controle === 'quantidade' ? `×${a.quantity}` : esc(a.asset_tag || 'sem etiqueta')}</small><br>${invEstado(a.status)}</span>
+              ${v ? `<span class="text-end text-nowrap"><b>${a.total !== null ? invMoeda(a.total) : '—'}</b>${a.controle === 'quantidade' && a.price !== null ? `<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : ''}</span>` : ''}</a>`).join('')}</div>` : '<div class="dp-vazio">Nenhum item nesse posto.</div>'}</div>
+        </div>
         <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-palette"></i> Equipamentos por estado ${ajuda('Quantos equipamentos estão em cada estado agora (operando, em conserto, estragado, comprado, pronto para entregar, em estoque...) e quanto valem.')}</span><small class="text-muted">hoje</small></div>
           <div class="er-estados">${r.por_status.map((x) => `<span>${invEstado(x.status)} <b>${x.n}</b>${v ? ` <small class="text-muted">${invMoeda(x.valor)}</small>` : ''}</span>`).join('') || '<div class="dp-vazio">—</div>'}</div></div>
         <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-clock-history"></i> Últimas movimentações ${ajuda('As últimas baixas, devoluções, transferências e entradas do período, com quem fez e para onde foi. O log completo fica em Estoque de T.I. > Movimentações.')}</span><a href="#/estoque" onclick="try{sessionStorage.setItem('estoque_aba','log')}catch(e){}">ver todas</a></div>
@@ -381,6 +393,12 @@ const Estoque = (() => {
     };
     el.querySelector('#er-ent').addEventListener('change', async (e) => { ent = e.target.value; await carregarLocais(); carregar(); });
     selLoc.addEventListener('change', () => { loc = selLoc.value; carregar(); });
+    // clicar num posto do ranking filtra por ele
+    el.addEventListener('click', (e) => {
+      const tr = e.target.closest('.er-click tr[data-loc]');
+      if (tr && tr.dataset.loc) { loc = tr.dataset.loc; selLoc.value = loc; carregar(); return; }
+      if (e.target.closest('#er-limpa-loc')) { loc = ''; selLoc.value = ''; carregar(); }
+    });
     el.querySelectorAll('[data-escopo]').forEach((b) => b.addEventListener('click', () => {
       escopo = b.dataset.escopo;
       el.querySelectorAll('[data-escopo]').forEach((x) => x.classList.toggle('active', x === b));

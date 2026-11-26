@@ -259,19 +259,21 @@ router.get('/report', async (req, res) => {
   // ?escopo=estoque: só os itens do Estoque de T.I. (Em estoque, Pronto para entregar, Comprado)
   const soEstoque = req.query.escopo === 'estoque';
   if (soEstoque) fA += ` AND a.status IN ('STOCK','READY','ORDERED')`;
+  // o ranking de valor por posto compara todos os postos (não usa o filtro de posto)
+  const fRank = fA; const pRank = [...pA];
   // ?location_id=: uma localidade (posto)
   if (/^\d+$/.test(String(req.query.location_id || ''))) {
     pA.push(req.query.location_id); fA += ` AND a.location_id = $${pA.length}`;
     pM.push(req.query.location_id); fM += ` AND (m.to_location_id = $${pM.length} OR m.from_location_id = $${pM.length})`;
   }
   const periodo = `m.created_at >= now() - ($1::int * interval '1 day')`;
-  const [inv, porStatus, porCategoria, porMotivo, porPosto, porMes, totais, recentes] = await Promise.all([
+  const [inv, porStatus, porCategoria, porMotivo, porPosto, porMes, totais, recentes, valorPosto, itensPosto] = await Promise.all([
     query(`SELECT COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS itens, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.price IS NOT NULL),0)::int AS com_preco
-           FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST') ${fA}`, pA),
+           FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN') ${fA}`, pA),
     query(`SELECT a.status, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS n, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor FROM assets a WHERE TRUE ${fA} GROUP BY a.status`, pA),
     query(`SELECT a.type, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS n, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor,
                   COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status = 'STOCK'),0)::int AS em_estoque
-           FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST') ${fA} GROUP BY a.type ORDER BY valor DESC, n DESC`, pA),
+           FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN') ${fA} GROUP BY a.type ORDER BY valor DESC, n DESC`, pA),
     query(`SELECT COALESCE(m.reason_name, 'Sem motivo') AS motivo, sum(m.quantity)::int AS n, COALESCE(sum(m.price),0)::float AS custo
            FROM stock_movements m WHERE m.kind = 'withdraw' AND ${periodo} ${fM} GROUP BY 1 ORDER BY n DESC, custo DESC`, pM),
     query(`SELECT COALESCE(l.name, 'Sem local') AS posto, e.name AS empresa, sum(m.quantity)::int AS n, COALESCE(sum(m.price),0)::float AS custo
@@ -292,6 +294,17 @@ router.get('/report', async (req, res) => {
            FROM stock_movements m JOIN assets a ON a.id = m.asset_id LEFT JOIN users u ON u.id = m.user_id
            LEFT JOIN locations lt ON lt.id = m.to_location_id LEFT JOIN locations lf ON lf.id = m.from_location_id
            WHERE ${periodo} ${fM} ORDER BY m.created_at DESC LIMIT 25`, pM),
+    // valor por posto (o que existe e funciona) e quanto já se perdeu (estragado/extraviado)
+    query(`SELECT a.location_id, COALESCE(l.name, 'Sem local') AS posto, e.name AS empresa,
+                  COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN')),0)::int AS n,
+                  COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN')),0)::float AS valor,
+                  COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status IN ('LOST','BROKEN')),0)::float AS perdido
+           FROM assets a LEFT JOIN locations l ON l.id = a.location_id JOIN entities e ON e.id = a.entity_id
+           WHERE a.status <> 'DISPOSED' ${fRank} GROUP BY 1, 2, 3 ORDER BY valor DESC, n DESC LIMIT 100`, pRank),
+    // com um posto escolhido: os itens dele, do mais caro para o mais barato
+    /^\d+$/.test(String(req.query.location_id || '')) ? query(`SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.controle, a.quantity, a.price,
+                  (a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END))::float AS total
+           FROM assets a WHERE a.status <> 'DISPOSED' ${fA} ORDER BY total DESC NULLS LAST, a.name LIMIT 300`, pA) : Promise.resolve({ rows: [] }),
   ]);
   const ver = veSegredos(req.user);
   const semPreco = (lista, campos) => (ver ? lista : lista.map((r) => { const o = { ...r }; campos.forEach((c) => delete o[c]); return o; }));
@@ -307,6 +320,8 @@ router.get('/report', async (req, res) => {
     por_mes: semPreco(porMes.rows, ['custo']),
     totais: semPreco([totais.rows[0]], ['custo_retiradas', 'prejuizo'])[0],
     recentes: semPreco(recentes.rows, ['price']),
+    valor_por_posto: semPreco(valorPosto.rows, ['valor', 'perdido']),
+    itens_posto: semPreco(itensPosto.rows, ['price', 'total']),
   });
 });
 

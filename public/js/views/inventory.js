@@ -257,6 +257,7 @@ Views.inventory = async function inventory(el) {
           <option value="">Todos os estados</option>
           ${Object.entries(INV_STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
+        ${invVeSegredos() ? `<select class="form-select form-select-sm" id="inv-ordem" title="Ordem dos locais"><option value="nome">Locais por nome</option><option value="valor">Locais por valor (maior primeiro)</option></select>` : ''}
         <span class="ms-auto d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm" id="btn-agents"><i class="bi bi-cpu"></i> Agentes</button>
           <button class="btn btn-primary btn-sm" id="btn-new-asset"><i class="bi bi-plus-lg"></i> Novo equipamento</button>
@@ -325,9 +326,11 @@ Views.inventory = async function inventory(el) {
       if (!locais.has(k)) locais.set(k, { nome: a.location_name || 'Sem local definido', empresa: a.entity_name, tipos: new Map(), n: 0, valor: 0 });
       const L = locais.get(k);
       if (!L.tipos.has(a.type)) L.tipos.set(a.type, []);
-      L.tipos.get(a.type).push(a); L.n += 1; L.valor += Number(a.price || 0) * (a.controle === 'quantidade' ? Number(a.quantity || 0) : 1);
+      L.tipos.get(a.type).push(a); L.n += a.controle === 'quantidade' ? Number(a.quantity || 0) : 1;
+      if (!['DISPOSED', 'LOST', 'BROKEN'].includes(a.status)) L.valor += Number(a.price || 0) * (a.controle === 'quantidade' ? Number(a.quantity || 0) : 1);
     });
-    const ordem = [...locais.entries()].sort((x, y) => (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || x[1].nome.localeCompare(y[1].nome));
+    const ordem = [...locais.entries()].sort((x, y) => (prefs.ordem === 'valor' && invVeSegredos() ? y[1].valor - x[1].valor : 0)
+      || (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || x[1].nome.localeCompare(y[1].nome));
     grid.innerHTML = ordem.map(([k, L]) => {
       const aberto = prefs.abertos[k] !== false;
       return `<details class="card panel-card iv-local mb-2" data-k="${esc(k)}" ${aberto ? 'open' : ''}>
@@ -350,6 +353,8 @@ Views.inventory = async function inventory(el) {
   let espera = null;
   document.getElementById('inv-q').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(load, 300); });
   ['inv-type', 'inv-status', 'inv-loc'].forEach((id) => document.getElementById(id).addEventListener('change', load));
+  const selOrdem = document.getElementById('inv-ordem');
+  if (selOrdem) { selOrdem.value = prefs.ordem === 'valor' ? 'valor' : 'nome'; selOrdem.addEventListener('change', () => { prefs.ordem = selOrdem.value; salvar(); load(); }); }
   selEnt.addEventListener('change', async () => { await carregarLocais(); load(); });
   document.getElementById('btn-new-asset').onclick = () => openAssetModal(null, load);
   document.getElementById('btn-agents').onclick = () => { location.hash = '#/inventory/agents'; };
