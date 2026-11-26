@@ -2282,3 +2282,19 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .oc-env:hover { background: rgba(127,127,127,.06); }
 .oc-env-ico { color: #16a34a; font-size: 1.1rem; }
 .oc-env-tx { flex: 1; min-width: 0; }
+
+/* O que levar: marcar para entregar, destino e Estoque da ORCIM */
+.lv-instr { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; margin: 10px 0; border-radius: 10px; background: rgba(22,163,74,.07); border: 1px solid rgba(22,163,74,.25); font-size: .82rem; }
+.lv-instr > .bi { color: #16a34a; font-size: 1.05rem; margin-top: 1px; }
+.lv-instr span { flex: 1; }
+.lv-instr .lv-todos { white-space: nowrap; padding: 0 4px; font-size: .78rem; }
+.lv-item.marcado { background: rgba(22,163,74,.06); }
+.lv-item .lv-marca { width: 18px; height: 18px; cursor: pointer; accent-color: #16a34a; }
+.lv-item .lv-st { margin-left: auto; }
+.pd-tag.lv-orcim { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+.pd-tag.lv-orcim b { margin-left: 3px; }
+.pd-tag.lv-orcim.pouco { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+[data-bs-theme="dark"] .pd-tag.lv-orcim { background: rgba(124,58,237,.2); color: #c4b5fd; }
+.lv-origem { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; color: #6d28d9; white-space: nowrap; cursor: pointer; }
+.lv-origem input { accent-color: #7c3aed; }
+.lv-acao select { min-width: 200px; }

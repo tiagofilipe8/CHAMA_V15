@@ -1,6 +1,7 @@
 const express = require('express');
 const { query, withTransaction } = require('../db');
 const { requireAuth, has, entityIdsOf } = require('../middleware/auth');
+const orcimEstoque = require('../services/orcimEstoque');
 
 // ---------------------------------------------------------------------
 // Estoque da ORCIM: itens que a ORCIM registra no próprio estoque (sem empresa ainda)
@@ -79,6 +80,12 @@ function lerCorpo(b, atual = null) {
   return { out };
 }
 
+// Para os materiais pedidos: o que já existe no Estoque da ORCIM ({ materiais: [{ id, name }] })
+router.post('/procurar', async (req, res) => {
+  const lista = Array.isArray(req.body?.materiais) ? req.body.materiais.slice(0, 300).filter((m) => m && m.id && m.name) : [];
+  res.json(await orcimEstoque.procurar(lista));
+});
+
 // Registrar item no Estoque da ORCIM
 router.post('/', async (req, res) => {
   const b = req.body || {};
@@ -156,44 +163,12 @@ router.post('/:id/transferir', async (req, res) => {
   const loc = /^\d+$/.test(String(b.location_id || '')) ? (await query('SELECT id, name FROM locations WHERE id = $1 AND entity_id = $2', [b.location_id, ent.id])).rows[0] : null;
   if (!loc) return res.status(422).json({ error: 'Escolha o posto da empresa.' });
   const destino = b.destino === 'uso' ? 'uso' : 'estoque';
-  const estado = destino === 'uso' ? 'OPERATING' : 'STOCK';
   const porQtd = item.controle === 'quantidade';
   const qtd = porQtd ? parseInt(b.quantidade, 10) || item.quantity : 1;
   if (porQtd && (qtd < 1 || qtd > item.quantity)) return res.status(422).json({ error: `Tem ${item.quantity} no Estoque da ORCIM. Escolha de 1 a ${item.quantity}.` });
   const nota = String(b.note || '').trim().slice(0, 500) || null;
   const texto = `Transferido do Estoque da ORCIM para ${ent.name} · ${loc.name} (${destino === 'uso' ? 'em uso' : 'Estoque de T.I.'})${nota ? ` — ${nota}` : ''}`;
-  const custo = item.price == null ? null : Number(item.price) * qtd;
-  const resultado = await withTransaction(async (q) => {
-    let alvo = item.id;
-    const tudo = !porQtd || qtd === item.quantity;
-    // no estoque do posto, item por quantidade soma com o mesmo item que já está lá
-    const igual = porQtd && destino === 'estoque' ? (await q(
-      `SELECT id FROM assets WHERE entity_id = $1 AND location_id = $2 AND controle = 'quantidade' AND status = 'STOCK' AND upper(name) = upper($3) ORDER BY id LIMIT 1`,
-      [ent.id, loc.id, item.name])).rows[0] : null;
-    if (igual) {
-      await q(`UPDATE assets SET price = CASE WHEN $3::numeric IS NULL THEN price WHEN price IS NULL OR quantity = 0 THEN $3::numeric
-                 ELSE round((price * quantity + $3::numeric * $2) / (quantity + $2), 2) END, quantity = quantity + $2, updated_at = now() WHERE id = $1`,
-        [igual.id, qtd, item.price]);
-      alvo = igual.id;
-      if (tudo) await q(`UPDATE assets SET quantity = 0, status = 'DISPOSED', notes = concat_ws(' · ', notes, $2::text) WHERE id = $1`, [item.id, `Somado ao estoque de ${loc.name}`]);
-      else await q('UPDATE assets SET quantity = quantity - $2 WHERE id = $1', [item.id, qtd]);
-    } else if (tudo) {
-      await q(`UPDATE assets SET entity_id = $2, location_id = $3, status = $4, updated_at = now() WHERE id = $1`, [item.id, ent.id, loc.id, estado]);
-    } else {
-      await q('UPDATE assets SET quantity = quantity - $2 WHERE id = $1', [item.id, qtd]);
-      const { rows } = await q(
-        `INSERT INTO assets (entity_id, location_id, name, type, status, manufacturer, model, notes, price, controle, quantity, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'quantidade',$10,$11) RETURNING id`,
-        [ent.id, loc.id, item.name, item.type, estado, item.manufacturer, item.model, 'Veio do Estoque da ORCIM', item.price, qtd, req.user.id]);
-      alvo = rows[0].id;
-      await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`, [alvo, req.user.id, `${item.name} (do Estoque da ORCIM)`]);
-    }
-    await q(`INSERT INTO stock_movements (asset_id, kind, user_id, from_entity_id, to_entity_id, from_location_id, to_location_id, price, note, quantity)
-             VALUES ($1,'transfer',$2,NULL,$3,NULL,$4,$5,$6,$7)`, [alvo, req.user.id, ent.id, loc.id, custo, texto, qtd]);
-    await q(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'OrcimTransfer','entity_id','Estoque da ORCIM',$3)`,
-      [alvo, req.user.id, `${porQtd ? `${qtd} un · ` : ''}${ent.name} · ${loc.name}`]);
-    return alvo;
-  });
+  const resultado = await withTransaction((q) => orcimEstoque.transferir(q, { item, ent, loc, destino, qtd, userId: req.user.id, nota: texto }));
   res.json({ ok: true, asset_id: resultado });
 });
 
