@@ -79,6 +79,13 @@ function dadosPosto(b, novo) {
     if (b.next_visit_time && !/^\d{2}:\d{2}$/.test(b.next_visit_time)) return { erro: 'Horário inválido.' };
     out.next_visit_time = b.next_visit_time || null;
   }
+  for (const [k, lim] of [['latitude', 90], ['longitude', 180]]) {
+    if (b[k] === undefined) continue;
+    if (b[k] === null || b[k] === '') { out[k] = null; continue; }
+    const v = Number(String(b[k]).replace(',', '.'));
+    if (!Number.isFinite(v) || Math.abs(v) > lim) return { erro: `${k === 'latitude' ? 'Latitude' : 'Longitude'} inválida.` };
+    out[k] = Math.round(v * 1e6) / 1e6;
+  }
   if (b.active !== undefined) out.active = !!b.active;
   return { out };
 }

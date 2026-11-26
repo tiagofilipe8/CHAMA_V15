@@ -275,3 +275,14 @@ BEGIN
     ALTER TABLE resolution_causes DROP CONSTRAINT IF EXISTS resolution_causes_name_key;
   END IF;
 END $$;
+
+-- Coordenadas do posto (rotas). A localização da Orcim também guarda as dela (vêm na cópia).
+ALTER TABLE gbf_locations ADD COLUMN IF NOT EXISTS latitude NUMERIC(9,6);
+ALTER TABLE gbf_locations ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6);
+DO $$
+BEGIN
+  IF to_regclass('public.locations') IS NOT NULL THEN
+    ALTER TABLE locations ADD COLUMN IF NOT EXISTS latitude NUMERIC(9,6);
+    ALTER TABLE locations ADD COLUMN IF NOT EXISTS longitude NUMERIC(9,6);
+  END IF;
+END $$;

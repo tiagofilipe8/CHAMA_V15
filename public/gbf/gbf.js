@@ -308,6 +308,8 @@
       ['#/agenda', 'calendar3', 'Agenda'],
       ['#/solicitacoes', 'megaphone', 'Visitas pedidas', 'visitas_pedidas'],
       ['#/postos', 'geo-alt', 'Postos'],
+      ['#/urgencia', 'speedometer2', 'Score de urgência'],
+      ['#/rotas', 'signpost-split', 'Sugerir rota'],
       ['#/atividades', 'kanban', g ? 'Atividades' : 'Minhas atividades', 'atividades'],
       ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor']] : []),
       ['grp', 'Orcim'],
@@ -387,6 +389,8 @@
     conta: 'Seus dados e sua senha.',
     tudo: 'Todas as tabelas copiadas da Orcim, só para consulta.',
     novo: 'Peça uma visita ao posto ou crie uma atividade. Só o essencial: o resto já vem preenchido.',
+    urgencia: 'Os postos que mais precisam da TI agora: cada pendência vale pontos pela urgência, pelo atraso e pelo prazo.',
+    rotas: 'Escolha quantos postos vai atender: o painel sugere os mais urgentes e a ordem de visita pela menor distância.',
     notificacoes: 'Tudo o que aconteceu no painel e envolve você ou a equipe: pedidos, mudanças, comentários e reagendamentos.',
   };
   const DESC_PAINEL = {
@@ -531,6 +535,8 @@
       else if (a === 'checklists' && b) { marcarMenu('#/checklists'); await vFormChecklist(b === 'novo' ? null : b, seq); }
       else if (a === 'checklists') { marcarMenu('#/checklists'); await vChecklists(seq); }
       else if (a === 'novo') { marcarMenu('#/novo'); await vNovoPedido(qs, seq); }
+      else if (a === 'urgencia') { marcarMenu('#/urgencia'); await vUrgencia(seq); }
+      else if (a === 'rotas') { marcarMenu('#/rotas'); await vRotas(seq); }
       else if (a === 'notificacoes') { marcarMenu('#/notificacoes'); await vNotificacoes(qs, seq); }
       else if (a === 'solicitacoes' && b === 'nova' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(null, qs, seq); }
       else if (a === 'solicitacoes' && b && partes[2] === 'editar' && ehGestor()) { marcarMenu('#/solicitacoes'); await vFormSolicitacao(b, qs, seq); }
@@ -2928,6 +2934,11 @@ function itemHistorico(e) {
       <form class="card-x mt-2 form-grande" id="form-posto" style="max-width:760px">
         <div class="mb-3"><label class="form-label" for="fp-nome">Nome do posto *</label><input class="form-control" id="fp-nome" name="name" required value="${v('name')}"></div>
         <div class="mb-3"><label class="form-label" for="fp-end">Endereço</label><input class="form-control" id="fp-end" name="address" value="${v('address')}"></div>
+        <div class="row g-2 mb-3">
+          <div class="col-6 col-sm-4"><label class="form-label" for="fp-lat">Latitude</label><input class="form-control" id="fp-lat" name="latitude" inputmode="decimal" placeholder="-19.9245" value="${p?.latitude ?? ''}"></div>
+          <div class="col-6 col-sm-4"><label class="form-label" for="fp-lng">Longitude</label><input class="form-control" id="fp-lng" name="longitude" inputmode="decimal" placeholder="-43.9352" value="${p?.longitude ?? ''}"></div>
+          <div class="col-12 col-sm-4 d-flex align-items-end"><div class="form-text">Para a rota. No Google Maps, clique com o botão direito no posto e copie os números; pode colar os dois juntos na latitude.</div></div>
+        </div>
         <div class="row g-3 mb-3">
           <div class="col-sm-6"><label class="form-label" for="fp-resp">Responsável no posto</label><input class="form-control" id="fp-resp" name="contact_name" value="${v('contact_name')}"></div>
           <div class="col-sm-6"><label class="form-label" for="fp-tel">Telefone</label><input class="form-control" id="fp-tel" name="phone" type="tel" value="${v('phone')}"></div>
@@ -2960,6 +2971,11 @@ function itemHistorico(e) {
         <div class="alert alert-danger py-2 d-none" id="fp-erro"></div>
         <button class="btn btn-brand btn-lg" type="submit">${id ? 'Salvar' : 'Cadastrar posto'}</button>
       </form>`;
+    // colar "-19.92, -43.93" na latitude preenche os dois
+    $('#fp-lat').addEventListener('input', (e) => {
+      const m = e.target.value.match(/^\s*(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)\s*$/);
+      if (m && /[,;\s]\s*-?\d/.test(e.target.value.replace(/^\s*-?\d+[.,]\d+/, ''))) { e.target.value = m[1].replace(',', '.'); $('#fp-lng').value = m[2].replace(',', '.'); }
+    });
     const caixaDias = () => { $('#fp-dias-box').style.display = $('#fp-freq').value === 'dias' ? '' : 'none'; };
     $('#fp-freq').addEventListener('change', caixaDias);
     caixaDias();
@@ -2971,6 +2987,7 @@ function itemHistorico(e) {
         frequency: f.frequency.value, frequency_days: f.frequency_days.value, next_visit_date: f.next_visit_date.value || null,
         next_visit_time: f.next_visit_time.value || null, checklist_id: f.checklist_id.value || null,
         entity_id: f.entity_id.value || null, notes: f.notes.value,
+        latitude: f.latitude.value.trim() || null, longitude: f.longitude.value.trim() || null,
       };
       if (id) body.active = f.active.checked;
       try {
@@ -3390,6 +3407,178 @@ function itemHistorico(e) {
     $$('.nt-item[data-nid]').forEach((a) => a.addEventListener('click', () => {
       API.post('/notificacoes/lidas', { ids: [Number(a.dataset.nid)] }).then(buscarNotificacoes).catch(() => {});
     }));
+  }
+
+  // ------------------------------------------------------------------
+  // Score de urgência e Sugerir rota
+  // ------------------------------------------------------------------
+  const n1 = (x) => String(Math.round(Number(x) * 100) / 100).replace('.', ',');
+  const TIPO_URG = { atividade: ['check2-square', 'Atividade'], pedido: ['megaphone', 'Pedido de visita'], rotina: ['arrow-repeat', 'Rotina'], chamado: ['inbox', 'Chamado Orcim'] };
+  const situacaoPrazo = (c) => (c.dias_atraso > 0 ? tag('tag-red', `${c.dias_atraso} dia(s) atrasado`)
+    : c.dias_para_prazo === 0 ? tag('tag-amber', 'vence hoje')
+      : c.dias_para_prazo !== null ? tag('tag-gray', `vence ${c.prazo.slice(8, 10)}/${c.prazo.slice(5, 7)} (em ${c.dias_para_prazo} dia${c.dias_para_prazo > 1 ? 's' : ''})`)
+        : tag('tag-gray', 'sem data'));
+  const contaScore = (c) => `${n1(c.peso)} × ${n1(c.fator_atraso)} × ${n1(c.fator_prazo)}`;
+  const regrasUrg = (r) => `<details class="ur-regras">
+      <summary><i class="bi bi-calculator"></i> Como o score é calculado</summary>
+      <div class="ur-regras-corpo">
+        <p><b>Score de cada pendência = peso da urgência × fator de atraso × fator de prazo.</b> O score do posto é a soma das pendências dele
+          (atividades, pedidos de visita, visita de rotina e chamados da Orcim quando chegarem).</p>
+        <div class="ur-regras-grade">
+          <div><b>Peso da urgência</b>${[1, 2, 3, 4].map((p) => `<div><i class="ur-dot urg-${p}"></i>${esc(r.nomes[p])} <b>×${n1(r.peso_urgencia[p])}</b></div>`).join('')}</div>
+          <div><b>Fator de atraso</b><div>1 + 1 por dia de atraso</div><div class="small-muted">1 dia atrasado ×2 · 3 dias ×4 · conta até ${r.atraso_max} dias</div></div>
+          <div><b>Fator de prazo</b> <span class="small-muted">(o que é para agora pesa mais)</span>
+            <div>atrasado ou vence hoje/amanhã ×1</div>${r.faixas_prazo.slice(1).map((f, i) => `<div>vence em ${r.faixas_prazo[i].ate + 1}${f.ate ? `–${f.ate}` : '+'} dias ×${n1(f.fator)}</div>`).join('')}
+            <div>sem data ×${n1(r.fator_sem_prazo)}</div></div>
+        </div>
+      </div></details>`;
+  const linhaUrg = (c) => `<a class="ur-ch urg-borda-${c.prioridade}" href="${c.link}">
+      <span class="ur-ch-ic"><i class="bi bi-${(TIPO_URG[c.tipo] || ['dot'])[0]}"></i></span>
+      <span class="ur-ch-tx"><b>${esc(c.titulo)}</b><small>${esc((TIPO_URG[c.tipo] || ['', ''])[1])} · ${esc(PRIO_TAREFA[c.prioridade] || '')} · ${esc(c.detalhe || '')}</small></span>
+      <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
+      <span class="ur-ch-score" title="${contaScore(c)}"><b>${n1(c.score)}</b><small>${contaScore(c)}</small></span></a>`;
+
+  async function vUrgencia(seq) {
+    titulo('Score de urgência');
+    const d = await API.get('/urgencia');
+    if (seq !== renderSeq) return;
+    const max = Math.max(1, ...d.postos.map((p) => p.score));
+    view().innerHTML = `
+      <div class="d-flex justify-content-end mb-2"><a class="btn btn-brand btn-sm" href="#/rotas"><i class="bi bi-signpost-split"></i> Sugerir rota</a></div>
+      <div class="card-x">
+        <h3><i class="bi bi-sort-down"></i>Postos por urgência</h3>
+        ${d.postos.length ? d.postos.map((p, i) => `<details class="ur-loc" ${i === 0 ? 'open' : ''}>
+          <summary>
+            <span class="ur-pos">${i + 1}º</span>
+            <span class="ur-loc-tx"><b>${esc(p.nome)}</b><small>${plural(p.itens.length, 'pendência', 'pendências')}${p.atrasados ? ` · <span class="text-danger">${p.atrasados} atrasada(s)</span>` : ''}${p.lat === null ? ' · sem coordenadas' : ''}</small></span>
+            <span class="ur-barra"><i style="width:${Math.round((p.score / max) * 100)}%"></i></span>
+            <span class="ur-loc-score"><b>${n1(p.score)}</b><small>score</small></span>
+          </summary>
+          <div class="ur-chs">${p.itens.map(linhaUrg).join('')}</div>
+        </details>`).join('') : vazio('Nenhum posto com pendência em aberto.', 'emoji-smile')}
+      </div>
+      <div class="mt-3">${regrasUrg(d.regras)}</div>`;
+    ligarCliques();
+  }
+
+  // distância em linha reta (km) e a ordem pela menor distância a partir do ponto de saída
+  const FATOR_ESTRADA = 1.3; const VELOCIDADE = 60;
+  const km = (a, b) => {
+    const R = 6371; const rad = (x) => (x * Math.PI) / 180;
+    const dLat = rad(b.lat - a.lat); const dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  };
+  function ordenarRota(paradas, inicio) {
+    const resto = [...paradas]; const ordem = [];
+    let atual = inicio || null;
+    if (!atual) { ordem.push(resto.shift()); atual = ordem[0]; } // sem ponto de saída: começa pelo mais urgente
+    while (resto.length) {
+      let melhor = 0;
+      resto.forEach((p, i) => { if (km(atual, p) < km(atual, resto[melhor])) melhor = i; });
+      atual = resto.splice(melhor, 1)[0];
+      ordem.push(atual);
+    }
+    return ordem;
+  }
+
+  async function vRotas(seq) {
+    titulo('Sugerir rota');
+    const d = await API.get('/urgencia');
+    if (seq !== renderSeq) return;
+    const comCoord = d.postos.filter((p) => p.lat !== null && p.lng !== null);
+    const semCoord = d.postos.filter((p) => p.lat === null || p.lng === null);
+    const saidas = d.todos.filter((p) => p.lat !== null && p.lng !== null);
+    let prefs = { n: 2, inicio: '' };
+    try { prefs = { ...prefs, ...JSON.parse(store.get('gbf_rotas') || '{}') }; } catch { /* padrão */ }
+    let escolhidos = new Set(comCoord.slice(0, prefs.n).map((p) => String(p.id)));
+    let meuGps = null;
+    view().innerHTML = `
+      <div class="card-x mb-3 ur-form">
+        <label>Quantos postos quer atender?
+          <input type="number" class="form-control form-control-sm" id="rt-n" min="1" max="10" value="${prefs.n}"></label>
+        <label>Saindo de
+          <select class="form-select form-select-sm" id="rt-inicio">
+            <option value="">— começar pelo mais urgente —</option>
+            <option value="gps">📍 Minha localização agora</option>
+            ${saidas.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}
+          </select></label>
+        <button class="btn btn-sm btn-outline-secondary" id="rt-sugerir"><i class="bi bi-magic"></i> Sugerir de novo</button>
+        <span class="small-muted ms-auto">${plural(comCoord.length, 'posto', 'postos')} com pendências e coordenadas</span>
+      </div>
+      <div class="ur-rota-grade">
+        <div class="card-x">
+          <h3><i class="bi bi-list-ol"></i>Postos (por score) <span class="sub">marque os que vai atender</span></h3>
+          <div id="rt-cands" class="ur-cands"></div>
+          ${semCoord.length ? `<div class="ur-sem">Sem coordenadas (ficam fora da rota): ${semCoord.map((p) => `<a href="#/postos/${p.id}/editar">${esc(p.nome)}</a> <b>${n1(p.score)}</b>`).join(' · ')}.
+            Cadastre a latitude e a longitude na edição do posto.</div>` : ''}
+        </div>
+        <div class="card-x ur-rota" id="rt-rota"></div>
+      </div>
+      <div class="mt-3">${regrasUrg(d.regras)}</div>`;
+    $('#rt-inicio').value = prefs.inicio;
+    const salvar = () => store.set('gbf_rotas', JSON.stringify(prefs));
+    const pontoInicio = () => {
+      if (prefs.inicio === 'gps') return meuGps;
+      const p = saidas.find((x) => String(x.id) === String(prefs.inicio));
+      return p ? { lat: p.lat, lng: p.lng, nome: p.nome } : null;
+    };
+    const pintarCands = () => {
+      $('#rt-cands').innerHTML = comCoord.length ? comCoord.map((p, i) => `<label class="ur-cand ${escolhidos.has(String(p.id)) ? 'sel' : ''}">
+          <input type="checkbox" data-posto="${p.id}" ${escolhidos.has(String(p.id)) ? 'checked' : ''}>
+          <span class="ur-pos">${i + 1}º</span>
+          <span class="ur-loc-tx"><b>${esc(p.nome)}</b><small>${plural(p.itens.length, 'pendência', 'pendências')}${p.atrasados ? ` · ${p.atrasados} atrasada(s)` : ''}</small></span>
+          <span class="ur-loc-score"><b>${n1(p.score)}</b></span></label>`).join('')
+        : vazio('Nenhum posto com pendência e coordenadas.', 'geo');
+      $$('#rt-cands [data-posto]').forEach((c) => c.addEventListener('change', () => {
+        if (c.checked) escolhidos.add(c.dataset.posto); else escolhidos.delete(c.dataset.posto);
+        pintarCands(); pintarRota();
+      }));
+    };
+    const pintarRota = () => {
+      const box = $('#rt-rota');
+      const paradas = comCoord.filter((p) => escolhidos.has(String(p.id)));
+      if (!paradas.length) { box.innerHTML = vazio('Marque ao menos um posto para montar a rota.', 'signpost'); return; }
+      const inicio = pontoInicio();
+      const ordem = ordenarRota(paradas, inicio);
+      let total = 0; let antes = inicio;
+      const trechos = ordem.map((p) => { const dd = antes ? km(antes, p) * FATOR_ESTRADA : 0; total += dd; antes = p; return dd; });
+      const horas = total / VELOCIDADE;
+      const pt = (p) => `${p.lat},${p.lng}`;
+      const destino = ordem[ordem.length - 1]; const meio = ordem.slice(0, -1);
+      const url = `https://www.google.com/maps/dir/?api=1${inicio ? `&origin=${encodeURIComponent(pt(inicio))}` : ''}&destination=${encodeURIComponent(pt(destino))}${meio.length ? `&waypoints=${encodeURIComponent(meio.map(pt).join('|'))}` : ''}&travelmode=driving`;
+      // o que fazer/levar: tarefas dos pedidos de visita e as atividades das paradas
+      box.innerHTML = `<h3><i class="bi bi-signpost-split"></i>Rota sugerida
+          <span class="sub d-flex gap-1"><a class="btn btn-sm btn-brand" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Abrir no Google Maps</a>
+          <button class="btn btn-sm btn-outline-secondary" id="rt-imprimir"><i class="bi bi-printer"></i> Relatório</button></span></h3>
+        <div class="ur-resumo">${plural(ordem.length, 'parada', 'paradas')} · ~${n1(Math.round(total))} km · ~${horas < 1 ? `${Math.round(horas * 60)} min` : `${n1(Math.round(horas * 10) / 10)} h`} de estrada
+          <small>estimativa pela distância em linha reta × ${n1(FATOR_ESTRADA)} a ${VELOCIDADE} km/h; o Google Maps calcula o trânsito real</small></div>
+        <ol class="ur-paradas">
+          ${inicio ? `<li class="ur-inicio"><i class="bi bi-geo-fill"></i> Saída: ${esc(inicio.nome || 'sua localização')}</li>` : ''}
+          ${ordem.map((p, i) => `<li class="ur-parada">
+            <div class="ur-parada-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.nome)}</b><span class="ur-loc-score"><b>${n1(p.score)}</b><small>score</small></span></div>
+            <div class="ur-parada-sub">${esc(p.endereco || '')}${trechos[i] ? ` · ~${n1(Math.round(trechos[i]))} km do ponto anterior` : ''}</div>
+            <div class="ur-chs">${p.itens.map(linhaUrg).join('')}</div>
+            ${p.itens.some((x) => x.levar.length) ? `<div class="ur-levar"><b><i class="bi bi-list-check"></i> Fazer lá</b><ul>${p.itens.flatMap((x) => x.levar).map((t) => `<li><input type="checkbox"> ${esc(t)}</li>`).join('')}</ul></div>` : ''}
+          </li>`).join('')}
+        </ol>`;
+      $('#rt-imprimir').addEventListener('click', () => { document.body.classList.add('imprimindo-rota'); window.print(); setTimeout(() => document.body.classList.remove('imprimindo-rota'), 500); });
+      ligarCliques();
+    };
+    const sugerir = () => { escolhidos = new Set(comCoord.slice(0, prefs.n).map((p) => String(p.id))); pintarCands(); pintarRota(); };
+    $('#rt-n').addEventListener('change', (e) => { prefs.n = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)); e.target.value = prefs.n; salvar(); sugerir(); });
+    $('#rt-sugerir').addEventListener('click', sugerir);
+    $('#rt-inicio').addEventListener('change', (e) => {
+      prefs.inicio = e.target.value; salvar();
+      if (prefs.inicio === 'gps' && !meuGps) {
+        if (!navigator.geolocation) { toast('Este navegador não informa a localização.', true); return; }
+        navigator.geolocation.getCurrentPosition((pos) => { meuGps = { lat: pos.coords.latitude, lng: pos.coords.longitude, nome: 'sua localização' }; pintarRota(); },
+          () => toast('Não foi possível pegar a sua localização (permissão negada?).', true), { enableHighAccuracy: true, timeout: 10000 });
+        return;
+      }
+      pintarRota();
+    });
+    pintarCands(); pintarRota();
   }
 
   async function vNovoPedido(qs, seq) {
@@ -3945,6 +4134,18 @@ function itemHistorico(e) {
         { alvo: '[data-pop]', titulo: 'Passe o mouse', texto: 'Num item, aparece um resumo: responsável, quem pediu, urgência e detalhes. Clique para abrir.' },
         { alvo: '.cal-add', titulo: '"+" do dia', texto: 'Abre o Novo pedido já com aquela data.' },
         { alvo: '.arrastavel', titulo: 'Arrastar para outro dia', texto: 'Visitas previstas, pedidos e atividades em aberto podem ser arrastados para outro dia. Pede o motivo e avisa a equipe.' },
+      ],
+    },
+    {
+      id: 'urgencia-rotas', cat: 'visitas', papeis: ['gestor', 'tecnico'], icone: 'signpost-split', titulo: 'Score de urgência e Sugerir rota',
+      resumo: 'Ver os postos que mais precisam da TI e montar a rota do dia.',
+      passos: [
+        { alvo: '.side-nav a[href="#/urgencia"]', titulo: 'Score de urgência', texto: 'No menu, em Visitas. Cada pendência do posto (atividade, pedido de visita, rotina, chamado da Orcim) vale pontos: urgência × atraso × prazo.' },
+        { rota: '#/urgencia', alvo: '.ur-loc', titulo: 'Ranking dos postos', texto: 'O posto do topo é o que mais precisa de atenção. Clique para ver as pendências e a conta de cada uma.' },
+        { alvo: '.ur-regras', titulo: 'Como é calculado', texto: 'Rotineira ×1, Programada ×1,5, Impeditiva ×2, Emergencial ×3; cada dia de atraso soma; o que é para daqui a muitos dias pesa menos.' },
+        { rota: '#/rotas', alvo: '.ur-form', titulo: 'Sugerir rota', texto: 'Diga quantos postos vai atender e de onde sai (um posto ou a sua localização). O painel escolhe os de maior score.' },
+        { alvo: '#rt-rota', titulo: 'A rota', texto: 'A ordem pela menor distância, o tempo estimado, o botão para abrir no Google Maps e o relatório para imprimir com o que fazer em cada posto.' },
+        { titulo: 'Coordenadas', texto: 'A rota precisa da latitude e longitude de cada posto: cadastre na edição do posto (dá para colar do Google Maps).' },
       ],
     },
     {
