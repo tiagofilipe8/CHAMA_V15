@@ -55,8 +55,17 @@ async function openAssetModal(asset, cb) {
         <div class="col-md-4 mb-2 multi-empresa"><label class="form-label small">Empresa *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Local (posto) para onde vai</label><select class="form-select" id="a-loc"><option value="">— sem local —</option></select></div>
       </div>
+      <div class="row">
+        <div class="col-md-8 mb-2"><label class="form-label small">Como é contado</label>
+          <select class="form-select" id="a-controle">
+            <option value="unidade" ${(a?.controle || 'unidade') === 'unidade' ? 'selected' : ''}>Por unidade — tem etiqueta (monitor, PC, impressora, nobreak)</option>
+            <option value="quantidade" ${a?.controle === 'quantidade' ? 'selected' : ''}>Por quantidade — sem etiqueta, contados juntos (mouse, teclado, cabo)</option>
+          </select></div>
+        <div class="col-md-4 mb-2 ${a?.controle === 'quantidade' ? '' : 'd-none'}" id="a-qtd-box"><label class="form-label small">Quantidade</label>
+          <input class="form-control" id="a-qtd" type="number" min="0" step="1" value="${a?.quantity ?? 1}"></div>
+      </div>
       ${invVeSegredos() ? `<div class="row">
-        <div class="col-md-4 mb-2"><label class="form-label small">Preço (R$) <i class="bi bi-lock" title="Só gestores, técnicos e o admin mestre veem"></i></label>
+        <div class="col-md-4 mb-2"><label class="form-label small">Preço (R$) <span class="text-muted" id="a-price-un">${a?.controle === 'quantidade' ? 'por unidade' : ''}</span> <i class="bi bi-lock" title="Só gestores, técnicos e o admin mestre veem"></i></label>
           <input class="form-control" id="a-price" type="number" min="0" step="0.01" value="${a?.price ?? ''}" placeholder="0,00"></div>
       </div>` : ''}
       <div class="inv-acesso ${INV_COM_ACESSO.includes(a?.type || 'COMPUTER') ? '' : 'd-none'}" id="a-acesso">
@@ -153,7 +162,16 @@ async function openAssetModal(asset, cb) {
   m.querySelector('#a-entity').addEventListener('change', () => { selLoc.value = ''; carregarLocais(); });
   carregarLocais();
   // AnyDesk e acesso mestre: só para computador e notebook
-  m.querySelector('#a-type').addEventListener('change', (e) => m.querySelector('#a-acesso').classList.toggle('d-none', !INV_COM_ACESSO.includes(e.target.value)));
+  m.querySelector('#a-type').addEventListener('change', (e) => {
+    m.querySelector('#a-acesso').classList.toggle('d-none', !INV_COM_ACESSO.includes(e.target.value));
+    // periférico novo, sem etiqueta: sugere contar por quantidade
+    if (!isEdit && e.target.value === 'PERIPHERAL' && !m.querySelector('#a-tag').value.trim()) { m.querySelector('#a-controle').value = 'quantidade'; m.querySelector('#a-controle').dispatchEvent(new Event('change')); }
+  });
+  m.querySelector('#a-controle').addEventListener('change', (e) => {
+    const q = e.target.value === 'quantidade';
+    m.querySelector('#a-qtd-box').classList.toggle('d-none', !q);
+    const pu = m.querySelector('#a-price-un'); if (pu) pu.textContent = q ? 'por unidade' : '';
+  });
   m.querySelector('#a-save').onclick = async ()=>{
     const val = (sel) => m.querySelector(sel).value.trim().toUpperCase() || null;
     const body = {
@@ -185,6 +203,11 @@ async function openAssetModal(asset, cb) {
       webcam: (() => { const el = m.querySelector('input[name="a-webcam"]:checked'); return el ? el.value === '1' : null; })(),
       eth_port: (() => { const el = m.querySelector('input[name="a-eth"]:checked'); return el ? el.value === '1' : null; })(),
     };
+    body.controle = m.querySelector('#a-controle').value;
+    if (body.controle === 'quantidade') {
+      body.quantity = parseInt(m.querySelector('#a-qtd').value, 10);
+      if (!(body.quantity >= 0)) { toast('Informe a quantidade.', 'warning'); return; }
+    }
     if (!body.name || !body.entity_id) { toast('Nome e empresa são obrigatórios','warning'); return; }
     if (invVeSegredos()) {
       const pr = m.querySelector('#a-price');
@@ -263,7 +286,7 @@ Views.inventory = async function inventory(el) {
       .filter(Boolean).join(' · ');
     return `<a class="iv-item est-borda-${esc(a.status)}" href="#/inventory/${a.id}">
       <span class="iv-ico"><i class="bi ${INV_ICONES[a.type] || 'bi-box'}"></i></span>
-      <span class="iv-tx"><b>${esc(a.name)}</b>${a.asset_tag ? `<code class="iv-tag" title="Etiqueta Orcim">${esc(a.asset_tag)}</code>` : '<code class="iv-tag sem" title="Sem etiqueta Orcim">sem etiqueta</code>'}
+      <span class="iv-tx"><b>${esc(a.name)}</b>${a.controle === 'quantidade' ? `<code class="iv-tag iv-qtd ${a.quantity > 0 ? '' : 'zero'}" title="Sem etiqueta, contado por quantidade">×${Number(a.quantity) || 0}</code>` : a.asset_tag ? `<code class="iv-tag" title="Etiqueta Orcim">${esc(a.asset_tag)}</code>` : '<code class="iv-tag sem" title="Sem etiqueta Orcim">sem etiqueta</code>'}
         <small>${esc(detalhe || INV_TYPES[a.type] || '')}</small></span>
       <span class="iv-marcas">
         ${a.display_photo_id || a.photos_count ? '<i class="bi bi-camera" title="Tem foto"></i>' : ''}
@@ -360,15 +383,19 @@ function invLogHtml(a) {
     else if (h.action === 'SecretViewed') titulo = `Viu ${h.field === 'mestre' ? 'o acesso mestre' : h.field === 'anydesk' ? 'a senha do AnyDesk' : 'as senhas'}`;
     else if (h.action === 'SecretChanged') titulo = `${INV_CAMPOS[h.field] || h.field} ${h.new_value || 'alterada'}`;
     else if (h.action === 'AssetTransferred') titulo = 'Mudou de empresa';
+    else if (h.action === 'StockReplaced') { titulo = 'Foi substituído por outro item'; detalhe = esc(h.new_value || ''); }
+    else if (h.field === 'quantity') { titulo = 'Quantidade'; detalhe = h.old_value ? `${esc(h.old_value)} → ${esc(h.new_value)}` : esc(h.new_value || ''); }
     else { titulo = `Alterou ${INV_CAMPOS[h.field] || h.field || 'dados'}`; detalhe = `${esc(invValor(h.field, h.old_value))} → ${esc(invValor(h.field, h.new_value))}`; }
-    eventos.push({ quando: h.created_at, icone: h.action.startsWith('Secret') ? 'bi-key' : 'bi-pencil', titulo, detalhe, quem: h.user_name || 'Agente' });
+    eventos.push({ quando: h.created_at, icone: h.action.startsWith('Secret') ? 'bi-key' : h.action === 'StockReplaced' ? 'bi-arrow-repeat' : 'bi-pencil', titulo, detalhe, quem: h.user_name || 'Agente' });
   });
   (a.movements || []).forEach((m) => {
     const de = m.from_location_name || m.from_entity_name; const para = m.to_location_name || m.to_entity_name;
     const tipo = { withdraw: ['bi-box-arrow-up', 'Baixa no estoque (pegou o item)'], return: ['bi-box-arrow-in-down', 'Devolvido ao estoque'],
       transfer: ['bi-arrow-left-right', 'Transferido de unidade'], entry: ['bi-box-seam', 'Entrou no estoque'] }[m.kind] || ['bi-dot', m.kind];
     const partes = [];
+    if (m.quantity > 1) partes.push(`<b>${m.quantity} un</b>`);
     if (m.reason_name) partes.push(`<b>Motivo:</b> ${esc(m.reason_name)}`);
+    if (m.replaced_asset_id) partes.push(`<b>Substitui:</b> <a href="#/inventory/${m.replaced_asset_id}">${esc([m.replaced_tag, m.replaced_name].filter(Boolean).join(' · ') || 'item')}</a>`);
     if (m.kind === 'transfer' || (m.kind === 'withdraw' && de !== para)) partes.push(`${esc(de || '—')} → ${esc(para || '—')}`);
     else if (para) partes.push(`<b>Onde:</b> ${esc(para)}`);
     if (m.note) partes.push(`<i>${esc(m.note)}</i>`);

@@ -1338,6 +1338,42 @@ async function sincronizarEquipamentos(q, ticket, m, situacao, user) {
   const qtd = Math.min(Math.max(Number(m.quantity) || 1, 1), 20);
   const local = m.location_id || ticket.location_id || null;
   const tipo = TIPOS_EQUIP.includes(m.asset_type) ? m.asset_type : 'PERIPHERAL';
+  // periférico (mouse, teclado, cabo...): sem etiqueta, um registro só com a quantidade
+  if (tipo === 'PERIPHERAL') {
+    const n = Math.max(Number(m.quantity) || 1, 1);
+    const extras = vivos.slice(1);
+    await apagar(extras);
+    let a = vivos[0];
+    if (a) {
+      await q(`UPDATE assets SET status = $2, price = $3, location_id = $4, type = $5, controle = 'quantidade', quantity = $6 WHERE id = $1`, [a.id, estado, m.price, local, tipo, n]);
+      if (a.status !== estado) {
+        await q(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','status',$3,$4)`, [a.id, user.id, a.status, estado]);
+      }
+    } else {
+      const { rows } = await q(
+        `INSERT INTO assets (entity_id, name, type, status, location_id, price, notes, created_by, controle, quantity)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'quantidade', $9) RETURNING id, status`,
+        [ticket.entity_id, String(m.name).toUpperCase(), tipo, estado, local, m.price, `Pedido #${ticket.id}`, user.id, n]);
+      a = rows[0];
+      await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`, [a.id, user.id, `pedido #${ticket.id} (${n} un)`]);
+    }
+    if (estado === 'STOCK') {
+      // chegou no estoque: soma com o mesmo item que já está no estoque do posto (contado junto)
+      const igual = (await q(
+        `SELECT id FROM assets WHERE entity_id = $1 AND location_id IS NOT DISTINCT FROM $2 AND controle = 'quantidade' AND status = 'STOCK'
+           AND upper(name) = upper($3) AND id <> $4 ORDER BY id LIMIT 1`, [ticket.entity_id, local, m.name, a.id])).rows[0];
+      const alvo = igual ? igual.id : a.id;
+      if (igual) {
+        await q('UPDATE assets SET quantity = quantity + $2, price = COALESCE($3, price) WHERE id = $1', [igual.id, n, m.price]);
+        await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetUpdated','quantity',$3)`, [igual.id, user.id, `+${n} (pedido #${ticket.id})`]);
+        await q('DELETE FROM assets WHERE id = $1', [a.id]);
+      }
+      await q(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, price, note, quantity) VALUES ($1,'entry',$2,$3,$4,$5,$6,$7)`,
+        [alvo, user.id, ticket.entity_id, local, m.price === null || m.price === undefined ? null : Number(m.price) * n, `Entregue pelo pedido #${ticket.id}`, n]);
+      return igual ? [] : [String(a.id)];
+    }
+    return [String(a.id)];
+  }
   const atuais = vivos.map((a) => String(a.id));
   for (const a of vivos) {
     await q(`UPDATE assets SET status = $2, price = $3, location_id = $4, type = $5 WHERE id = $1`, [a.id, estado, m.price, local, tipo]);
@@ -1408,7 +1444,9 @@ async function atualizarItemPedido(req, res, forcar = {}) {
   let ids = atual.asset_ids || [];
   await withTransaction(async (q) => {
     // o inventário acompanha (também quando só o preço, o posto ou o destino mudam)
-    if (mudouSituacao || ids.length || mexeInventario) ids = await sincronizarEquipamentos(q, ticket, novo, novo.status, user);
+    // periférico entregue no estoque já foi somado ao que tinha lá (sem registro próprio): não cria de novo
+    const jaSomado = !mudouSituacao && atual.status === 'entregue' && !ids.length && atual.destino === novo.destino;
+    if (!jaSomado && (mudouSituacao || ids.length || mexeInventario)) ids = await sincronizarEquipamentos(q, ticket, novo, novo.status, user);
     await q(`UPDATE ticket_materials SET status = $2, price = $3, location_id = $4, destino = $5, asset_type = $6, asset_ids = $7::bigint[],
                     asset_id = $8, status_at = CASE WHEN $9 THEN now() ELSE status_at END,
                     status_by = CASE WHEN $9 THEN $10 ELSE status_by END WHERE id = $1`,

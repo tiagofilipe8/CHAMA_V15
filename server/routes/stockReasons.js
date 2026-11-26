@@ -24,6 +24,7 @@ function readBody(b = {}) {
     description: b.description !== undefined ? (String(b.description).trim().slice(0, 500) || null) : undefined,
     sort_order: b.sort_order !== undefined ? (parseInt(b.sort_order, 10) || 0) : undefined,
     active: b.active !== undefined ? !!b.active : undefined,
+    efeito: b.efeito !== undefined ? (['BROKEN', 'REPAIR', 'LOST', 'STOCK'].includes(b.efeito) ? b.efeito : null) : undefined,
   };
 }
 
@@ -35,9 +36,9 @@ router.post('/', requireRoles('admin'), async (req, res) => {
   if (!p.id) return res.status(403).json({ error: PADRAO_TRAVADO });
   try {
     const { rows } = await query(
-      `INSERT INTO stock_reasons (name, description, sort_order, active, profile_id)
-       VALUES ($1, $2, COALESCE($3, 0), COALESCE($4, TRUE), $5) RETURNING *`,
-      [b.name, b.description || null, b.sort_order, b.active, p.id]);
+      `INSERT INTO stock_reasons (name, description, sort_order, active, profile_id, efeito)
+       VALUES ($1, $2, COALESCE($3, 0), COALESCE($4, TRUE), $5, $6) RETURNING *`,
+      [b.name, b.description || null, b.sort_order, b.active, p.id, b.efeito || null]);
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(400).json({ error: 'Não foi possível criar (o nome já existe neste perfil?).', details: err.message });
@@ -51,8 +52,8 @@ router.patch('/:id', requireRoles('admin'), async (req, res) => {
   if (b.name === '') return res.status(422).json({ error: 'O nome não pode ficar vazio.' });
   const fields = [];
   const params = [req.params.id];
-  for (const k of ['name', 'description', 'sort_order', 'active']) {
-    if (b[k] !== undefined) { params.push(b[k]); fields.push(`${k} = $${params.length}`); }
+  for (const k of ['name', 'description', 'sort_order', 'active', 'efeito']) {
+    if (b[k] !== undefined || (k === 'efeito' && req.body && 'efeito' in req.body)) { params.push(b[k]); fields.push(`${k} = $${params.length}`); }
   }
   if (!fields.length) return res.status(422).json({ error: 'Nenhum campo para atualizar.' });
   try {

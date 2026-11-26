@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------
 
 // O que cada cargo faz (aparece no cadastro de usuário e em Perfis e permissões)
+const SR_EFEITOS = { BROKEN: 'Estragado', REPAIR: 'Em conserto', LOST: 'Extraviado (furto/perda)', STOCK: 'Volta ao estoque' };
 const CARGO_DESC = {
   admin: 'Governa tudo.',
   moderator: 'Auxilia a manutenção do sistema.',
@@ -830,7 +831,7 @@ Views.adminCategories = async function adminCategories(el) {
         <tbody>${lista.map((c) => `
           <tr>
             <td class="text-muted">${c.sort_order}</td>
-            <td><strong>${esc(c.name)}</strong><br><small class="text-muted">${esc(c.description || '')}</small></td>
+            <td><strong>${esc(c.name)}</strong>${c.efeito ? ` <span class="tg tg-amber" title="Pede o item substituído e muda o estado dele"><i class="bi bi-arrow-repeat"></i> ${esc(SR_EFEITOS[c.efeito] || c.efeito)}</span>` : ''}<br><small class="text-muted">${esc(c.description || '')}</small></td>
             <td class="small text-muted">${c.usos ? `${c.usos} vez(es)` : '—'}</td>
             <td>${c.active ? '<span class="tg tg-green">Ativa</span>' : '<span class="tg tg-gray">Inativa</span>'}</td>
             <td class="text-end">
@@ -847,6 +848,10 @@ Views.adminCategories = async function adminCategories(el) {
         <div class="modal-body">
           <div class="mb-2"><label class="form-label small">Nome *</label><input class="form-control" id="sr-name" maxlength="120" value="${esc((c && c.name) || '')}"></div>
           <div class="mb-2"><label class="form-label small">Explicação</label><input class="form-control" id="sr-desc" maxlength="500" value="${esc((c && c.description) || '')}"></div>
+          <div class="mb-2"><label class="form-label small">O que acontece com o item que foi substituído</label>
+            <select class="form-select" id="sr-efeito"><option value="">Nada (não pergunta qual item foi substituído)</option>
+              ${Object.entries(SR_EFEITOS).map(([k, v]) => `<option value="${k}" ${c && c.efeito === k ? 'selected' : ''}>Pergunta qual item e marca como: ${v}</option>`).join('')}</select>
+            <div class="form-text">Ex.: "Perda, furto ou roubo" → o item antigo fica Extraviado no inventário.</div></div>
           <div class="mb-2"><label class="form-label small">Ordem</label><input class="form-control" id="sr-order" type="number" value="${esc(String((c && c.sort_order) || 0))}"></div>
           <div class="form-check"><input class="form-check-input" type="checkbox" id="sr-active" ${!c || c.active ? 'checked' : ''}><label class="form-check-label small">Ativa</label></div>
           <div class="form-text">Uma razão chamada "Outro" obriga a pessoa a explicar na observação.</div>
@@ -862,6 +867,7 @@ Views.adminCategories = async function adminCategories(el) {
           description: m.querySelector('#sr-desc').value.trim(),
           sort_order: parseInt(m.querySelector('#sr-order').value, 10) || 0,
           active: m.querySelector('#sr-active').checked,
+          efeito: m.querySelector('#sr-efeito').value || null,
         };
         if (!b.name) { toast('Informe o nome.', 'warning'); return; }
         try {

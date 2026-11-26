@@ -922,3 +922,34 @@ ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS location_id BIGINT REFEREN
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS asset_type TEXT;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS asset_ids BIGINT[] NOT NULL DEFAULT '{}';
 UPDATE ticket_materials SET asset_ids = ARRAY[asset_id] WHERE asset_id IS NOT NULL AND asset_ids = '{}';
+
+-- =====================================================================
+-- Itens de quantidade e item substituído na retirada (2026-11-26)
+--   controle 'unidade'   : um registro por equipamento, com etiqueta (monitor, PC, impressora)
+--   controle 'quantidade': um registro por posto com a quantidade (mouse, teclado, cabo: sem etiqueta)
+--   motivo da retirada com efeito: o item substituído muda de estado sozinho
+--     (estragou -> Estragado, em conserto -> Em conserto, furto -> Extraviado, upgrade -> volta ao estoque)
+-- =====================================================================
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS controle TEXT NOT NULL DEFAULT 'unidade';
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_controle_check;
+ALTER TABLE assets ADD CONSTRAINT assets_controle_check CHECK (controle IN ('unidade','quantidade'));
+ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_quantity_check;
+ALTER TABLE assets ADD CONSTRAINT assets_quantity_check CHECK (quantity >= 0);
+ALTER TABLE stock_reasons ADD COLUMN IF NOT EXISTS efeito TEXT;
+ALTER TABLE stock_reasons DROP CONSTRAINT IF EXISTS stock_reasons_efeito_check;
+ALTER TABLE stock_reasons ADD CONSTRAINT stock_reasons_efeito_check CHECK (efeito IS NULL OR efeito IN ('BROKEN','REPAIR','LOST','STOCK'));
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS replaced_asset_id BIGINT REFERENCES assets(id) ON DELETE SET NULL;
+-- uma vez só: os motivos padrão que trocam um item ganham o efeito (o admin muda depois em Categorias e opções)
+DO $marco$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_marcos WHERE nome = 'motivos_com_efeito') THEN
+    UPDATE stock_reasons SET efeito = 'BROKEN' WHERE efeito IS NULL AND (name ILIKE 'O outro item estragou%' OR name ILIKE 'Acidente%');
+    UPDATE stock_reasons SET efeito = 'REPAIR' WHERE efeito IS NULL AND name ILIKE 'O outro item está em conserto%';
+    UPDATE stock_reasons SET efeito = 'LOST'   WHERE efeito IS NULL AND name ILIKE 'Perda, furto%';
+    UPDATE stock_reasons SET efeito = 'STOCK'  WHERE efeito IS NULL AND name ILIKE 'Troca por um melhor%';
+    -- periféricos já cadastrados passam a ser contados por quantidade
+    UPDATE assets SET controle = 'quantidade' WHERE type = 'PERIPHERAL' AND (asset_tag IS NULL OR asset_tag = '');
+    INSERT INTO schema_marcos (nome) VALUES ('motivos_com_efeito');
+  END IF;
+END $marco$;

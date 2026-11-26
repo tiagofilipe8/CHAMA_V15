@@ -99,8 +99,8 @@ router.post('/', requireRoles('admin'), async (req, res) => {
          SELECT name, description, sort_order, TRUE, neutral, $1
          FROM resolution_causes WHERE profile_id IS NULL AND active`, [pid]);
       await q(
-        `INSERT INTO stock_reasons (name, description, sort_order, active, profile_id)
-         SELECT name, description, sort_order, TRUE, $1
+        `INSERT INTO stock_reasons (name, description, sort_order, active, profile_id, efeito)
+         SELECT name, description, sort_order, TRUE, $1, efeito
          FROM stock_reasons WHERE profile_id IS NULL AND active`, [pid]);
       return rows[0];
     });

@@ -30,7 +30,7 @@ function filtroEmpresas(user, params, alias = 'a') {
 
 async function carregarItem(id) {
   const { rows } = await query(
-    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, a.entity_id, a.location_id,
+    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, a.entity_id, a.location_id, a.controle, a.quantity,
             e.name AS entity_name, l.name AS location_name
      FROM assets a JOIN entities e ON e.id = a.entity_id LEFT JOIN locations l ON l.id = a.location_id
      WHERE a.id = $1`, [id]);
@@ -62,7 +62,7 @@ router.get('/', async (req, res) => {
     where += ` AND (a.name ILIKE $${params.length} OR a.asset_tag ILIKE $${params.length} OR a.model ILIKE $${params.length} OR a.serial_number ILIKE $${params.length})`;
   }
   const { rows } = await query(
-    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, a.manufacturer, a.model, a.notes, a.updated_at,
+    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, a.manufacturer, a.model, a.notes, a.updated_at, a.controle, a.quantity,
             a.entity_id, e.name AS entity_name, a.location_id, l.name AS location_name,
             (SELECT max(m.created_at) FROM stock_movements m WHERE m.asset_id = a.id AND m.kind IN ('entry','return','transfer')) AS desde
      FROM assets a JOIN entities e ON e.id = a.entity_id LEFT JOIN locations l ON l.id = a.location_id
@@ -76,21 +76,46 @@ router.get('/', async (req, res) => {
 router.get('/reasons', async (req, res) => {
   const perfil = /^\d+$/.test(String(req.query.entity_id || '')) ? await perfilDaEmpresa(req.query.entity_id) : null;
   const { rows } = await query(
-    `SELECT r.id, r.name, r.description FROM stock_reasons r WHERE ${doPerfil('r', 1)} AND r.active ORDER BY r.sort_order, r.name`, [perfil]);
+    `SELECT r.id, r.name, r.description, r.efeito FROM stock_reasons r WHERE ${doPerfil('r', 1)} AND r.active ORDER BY r.sort_order, r.name`, [perfil]);
+  res.json(rows);
+});
+
+// Efeito do motivo no item substituído (o que a pessoa pegou foi para trocar outro)
+const EFEITOS = { BROKEN: 'Estragado', REPAIR: 'Em conserto', LOST: 'Extraviado', STOCK: 'Volta ao estoque' };
+
+// Itens que podem ter sido substituídos: os com etiqueta do posto de destino (do mesmo tipo primeiro)
+router.get('/:id/afetaveis', async (req, res) => {
+  if (!has(req.user, 'stock.withdraw')) return res.status(403).json({ error: 'Acesso negado.' });
+  const item = await carregarItem(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
+  if (!canAccessEntity(req.user, item.entity_id)) return res.status(403).json({ error: 'Acesso negado.' });
+  const local = /^\d+$/.test(String(req.query.location_id || '')) ? req.query.location_id : item.location_id;
+  const { rows } = await query(
+    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, l.name AS location_name
+     FROM assets a LEFT JOIN locations l ON l.id = a.location_id
+     WHERE a.entity_id = $1 AND a.id <> $2 AND a.controle = 'unidade'
+       AND a.status IN ('OPERATING','REPAIR','BROKEN') AND a.location_id IS NOT DISTINCT FROM $3
+     ORDER BY (a.type = $4) DESC, a.name LIMIT 200`, [item.entity_id, item.id, local, item.type]);
   res.json(rows);
 });
 
 // Dar baixa: a pessoa pegou o item. Precisa do motivo.
+//   { reason_id, note, location_id, quantidade (itens de quantidade), afetado_id | afetado: 'sem_etiqueta' }
 router.post('/:id/withdraw', async (req, res) => {
   if (!has(req.user, 'stock.withdraw')) return res.status(403).json({ error: 'Seu perfil não pode dar baixa no estoque.' });
   const item = await carregarItem(req.params.id);
   if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
   if (!canAccessEntity(req.user, item.entity_id)) return res.status(403).json({ error: 'Esse item não é do estoque da sua empresa.' });
   if (!PODE_PEGAR.includes(item.status)) return res.status(422).json({ error: 'Esse item não está disponível no estoque.' });
+  const porQuantidade = item.controle === 'quantidade';
+  const qtd = porQuantidade ? parseInt(req.body?.quantidade, 10) || 1 : 1;
+  if (porQuantidade && (qtd < 1 || qtd > item.quantity)) {
+    return res.status(422).json({ error: item.quantity ? `Tem ${item.quantity} no estoque. Escolha de 1 a ${item.quantity}.` : 'Esse item acabou no estoque.' });
+  }
   const reasonId = String(req.body?.reason_id || '');
   const perfil = await perfilDaEmpresa(item.entity_id);
   const razao = /^\d+$/.test(reasonId) ? (await query(
-    `SELECT id, name FROM stock_reasons r WHERE r.id = $2 AND r.active AND ${doPerfil('r', 1)}`, [perfil, reasonId])).rows[0] : null;
+    `SELECT id, name, efeito FROM stock_reasons r WHERE r.id = $2 AND r.active AND ${doPerfil('r', 1)}`, [perfil, reasonId])).rows[0] : null;
   if (!razao) return res.status(422).json({ error: 'Escolha o motivo da retirada.' });
   const nota = String(req.body?.note || '').trim().slice(0, 1000) || null;
   if (/^outro$/i.test(razao.name) && !nota) return res.status(422).json({ error: 'Explique o motivo na observação.' });
@@ -101,22 +126,51 @@ router.post('/:id/withdraw', async (req, res) => {
     if (!ok.rows.length) return res.status(422).json({ error: 'Esse local não é da empresa do item.' });
     destino = ok.rows[0].id;
   }
+  // item substituído (motivo com efeito): item com etiqueta escolhido, ou "sem etiqueta / não sei"
+  let afetado = null;
+  if (razao.efeito) {
+    if (req.body?.afetado_id) {
+      afetado = (await query(`SELECT id, name, asset_tag, status, entity_id, location_id, controle FROM assets WHERE id = $1`, [req.body.afetado_id])).rows[0];
+      if (!afetado || String(afetado.entity_id) !== String(item.entity_id) || String(afetado.id) === String(item.id) || afetado.controle !== 'unidade') {
+        return res.status(422).json({ error: 'Item substituído inválido.' });
+      }
+    } else if (req.body?.afetado !== 'sem_etiqueta' && !porQuantidade) {
+      return res.status(422).json({ error: 'Diga qual item foi substituído (ou "sem etiqueta / não sei").', afetado_obrigatorio: true });
+    }
+  }
+  const textoMotivo = `Motivo: ${razao.name}${afetado ? ` — substitui ${afetado.asset_tag ? `${afetado.asset_tag} · ` : ''}${afetado.name}` : ''}${nota ? ` — ${nota}` : ''}`;
+  const custo = item.price === null || item.price === undefined ? null : Number(item.price) * qtd;
   await withTransaction(async (q) => {
-    const upd = await q(
-      `UPDATE assets SET status = 'OPERATING', responsible_user_id = $2, location_id = $3
-       WHERE id = $1 AND status = ANY($4::text[]) RETURNING id`, [item.id, req.user.id, destino, PODE_PEGAR]);
-    if (!upd.rows.length) throw Object.assign(new Error('Outra pessoa acabou de pegar esse item.'), { status: 409 });
+    if (porQuantidade) {
+      const upd = await q(`UPDATE assets SET quantity = quantity - $2 WHERE id = $1 AND quantity >= $2 RETURNING quantity`, [item.id, qtd]);
+      if (!upd.rows.length) throw Object.assign(new Error('Não tem essa quantidade no estoque agora.'), { status: 409 });
+    } else {
+      const upd = await q(
+        `UPDATE assets SET status = 'OPERATING', responsible_user_id = $2, location_id = $3
+         WHERE id = $1 AND status = ANY($4::text[]) RETURNING id`, [item.id, req.user.id, destino, PODE_PEGAR]);
+      if (!upd.rows.length) throw Object.assign(new Error('Outra pessoa acabou de pegar esse item.'), { status: 409 });
+    }
     await q(
-      `INSERT INTO stock_movements (asset_id, kind, user_id, reason_id, reason_name, from_entity_id, to_entity_id, from_location_id, to_location_id, price, note)
-       VALUES ($1,'withdraw',$2,$3,$4,$5,$5,$6,$7,$8,$9)`,
-      [item.id, req.user.id, razao.id, razao.name, item.entity_id, item.location_id, destino, item.price, nota]);
+      `INSERT INTO stock_movements (asset_id, kind, user_id, reason_id, reason_name, from_entity_id, to_entity_id, from_location_id, to_location_id, price, note, quantity, replaced_asset_id)
+       VALUES ($1,'withdraw',$2,$3,$4,$5,$5,$6,$7,$8,$9,$10,$11)`,
+      [item.id, req.user.id, razao.id, razao.name, item.entity_id, item.location_id, destino, custo, nota, qtd, afetado ? afetado.id : null]);
     await q(
       `INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value)
-       VALUES ($1,$2,'StockWithdraw','status',$3,$4)`, [item.id, req.user.id, item.status, `Motivo: ${razao.name}${nota ? ` — ${nota}` : ''}`]);
+       VALUES ($1,$2,'StockWithdraw','status',$3,$4)`, [item.id, req.user.id, item.status, `${porQuantidade ? `${qtd} un · ` : ''}${textoMotivo}`]);
+    if (afetado) {
+      // o item substituído muda de estado sozinho (e fica registrado quem o substituiu)
+      await q('UPDATE assets SET status = $2 WHERE id = $1', [afetado.id, razao.efeito]);
+      await q(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'StockReplaced','status',$3,$4)`,
+        [afetado.id, req.user.id, afetado.status, `${EFEITOS[razao.efeito]} — substituído por ${item.asset_tag ? `${item.asset_tag} · ` : ''}${item.name} (${razao.name})`]);
+      if (razao.efeito === 'STOCK') {
+        await q(`INSERT INTO stock_movements (asset_id, kind, user_id, from_entity_id, to_entity_id, from_location_id, to_location_id, note)
+                 VALUES ($1,'return',$2,$3,$3,$4,$4,$5)`, [afetado.id, req.user.id, item.entity_id, afetado.location_id, `Voltou ao estoque: trocado por ${item.name}`]);
+      }
+    }
   }).catch((e) => { if (e.status) { res.status(e.status).json({ error: e.message }); return 'respondido'; } throw e; })
     .then(async (r) => {
       if (r === 'respondido') return;
-      await avisarSaida(item, req.user, `Motivo: ${razao.name}${nota ? ` — ${nota}` : ''}`);
+      await avisarSaida(item, req.user, `${porQuantidade ? `${qtd} un · ` : ''}${textoMotivo}`);
       res.json({ ok: true });
     });
 });

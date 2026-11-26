@@ -233,6 +233,8 @@ router.post('/assets', requireInv, async (req, res) => {
   const querSegredo = ['price', 'anydesk_password', 'master_user', 'master_password'].some((k) => b[k] !== undefined && b[k] !== null && b[k] !== '');
   if (querSegredo && !veSegredos(user)) return res.status(403).json({ error: 'Seu perfil não pode informar preço nem senhas.' });
   if (!precoValido(b.price)) return res.status(422).json({ error: 'Preço inválido.' });
+  const ctl = lerControle(b, null);
+  if (ctl.erro) return res.status(422).json({ error: ctl.erro });
   try {
     const { rows } = await query(
       `INSERT INTO assets (entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro, created_by,
@@ -244,10 +246,14 @@ router.post('/assets', requireInv, async (req, res) => {
        toner||null, cilindro||null, user.id,
        location_id||null, b.price === '' || b.price == null ? null : Number(b.price), anydesk_id||null,
        cifrar(b.anydesk_password), cifrar(b.master_user), cifrar(b.master_password)]);
+    if (ctl.controle !== 'unidade' || ctl.quantidade !== 1) {
+      const up = await query('UPDATE assets SET controle = $2, quantity = $3 WHERE id = $1 RETURNING *', [rows[0].id, ctl.controle, ctl.quantidade]);
+      rows[0] = up.rows[0];
+    }
     await query(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`, [rows[0].id, user.id, name]);
     if (st === 'STOCK') {
-      await query(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, price, note)
-                   VALUES ($1,'entry',$2,$3,$4,$5,'Cadastrado no estoque')`, [rows[0].id, user.id, entId, location_id||null, rows[0].price]);
+      await query(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, price, note, quantity)
+                   VALUES ($1,'entry',$2,$3,$4,$5,'Cadastrado no estoque',$6)`, [rows[0].id, user.id, entId, location_id||null, rows[0].price, ctl.quantidade]);
     }
     res.status(201).json(limpar(rows[0], user));
   } catch (e) {
@@ -255,6 +261,16 @@ router.post('/assets', requireInv, async (req, res) => {
     res.status(400).json({ error: 'Erro ao criar ativo', details: e.message });
   }
 });
+
+// Controle do item: 'unidade' (com etiqueta, um registro por equipamento) ou 'quantidade' (sem etiqueta, contado junto)
+function lerControle(b, atual) {
+  const controle = b.controle !== undefined ? (b.controle === 'quantidade' ? 'quantidade' : 'unidade') : (atual ? atual.controle : 'unidade');
+  let quantidade = atual ? atual.quantity : 1;
+  if (b.quantity !== undefined && b.quantity !== null && b.quantity !== '') quantidade = parseInt(b.quantity, 10);
+  if (controle === 'unidade') quantidade = 1;
+  if (!Number.isInteger(quantidade) || quantidade < 0 || quantidade > 100000) return { erro: 'Quantidade inválida.' };
+  return { controle, quantidade };
+}
 
 // Atualizar ativo
 router.patch('/assets/:id', requireInv, async (req, res) => {
@@ -277,6 +293,17 @@ router.patch('/assets/:id', requireInv, async (req, res) => {
   const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
   // preserva boolean false (nao vira null)
   for (const f of fields) if (req.body[f] !== undefined) add(f, req.body[f] === false ? false : (req.body[f] || null));
+  // controle por unidade / quantidade (0 é válido: esgotado)
+  if (b.controle !== undefined || b.quantity !== undefined) {
+    const ctl = lerControle(b, asset);
+    if (ctl.erro) return res.status(422).json({ error: ctl.erro });
+    if (ctl.controle !== asset.controle) add('controle', ctl.controle);
+    if (ctl.quantidade !== asset.quantity) {
+      add('quantity', ctl.quantidade);
+      await query(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','quantity',$3,$4)`,
+        [asset.id, req.user.id, String(asset.quantity), String(ctl.quantidade)]);
+    }
+  }
   const effDate = req.body.next_maintenance_date !== undefined ? req.body.next_maintenance_date : asset.next_maintenance_date;
   const effNotes = req.body.next_maintenance_notes !== undefined ? req.body.next_maintenance_notes : asset.next_maintenance_notes;
   if (effDate && !(effNotes && String(effNotes).trim())) {

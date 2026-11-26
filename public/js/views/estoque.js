@@ -33,7 +33,7 @@ const Estoque = (() => {
     return { m, fechar: () => bm.hide() };
   }
   const cabecalhoItem = (it) => `<div class="es-item-cab"><i class="bi bi-hdd"></i><div><b>${esc(it.name)}</b>
-    <small>${esc([it.asset_tag, tipoNome(it.type), it.location_name].filter(Boolean).join(' · '))}</small></div>${invEstado(it.status)}</div>`;
+    <small>${esc([it.asset_tag, tipoNome(it.type), it.location_name].filter(Boolean).join(' · '))}</small></div>${it.controle === 'quantidade' ? `<span class="tg tg-teal">×${it.quantity}</span>` : invEstado(it.status)}</div>`;
   async function opcoesPostos(entityId, atual) {
     let locs = [];
     try { locs = await API.get(`/locations?entity_id=${entityId}&active=true`); } catch { /* sem lista */ }
@@ -41,33 +41,81 @@ const Estoque = (() => {
   }
 
   // ---------- Dar baixa ----------
+  // o que acontece com o item substituído, conforme o motivo
+  const EFEITO_TXT = {
+    BROKEN: ['Estragado', 'O item substituído fica marcado como <b>Estragado</b> no inventário.'],
+    REPAIR: ['Em conserto', 'O item substituído fica marcado como <b>Em conserto</b> no inventário.'],
+    LOST: ['Extraviado', 'O item substituído fica marcado como <b>Extraviado</b> (furto/perda) no inventário.'],
+    STOCK: ['Volta ao estoque', 'O item substituído <b>volta para o estoque</b> do posto.'],
+  };
   async function darBaixa(it, depois) {
     let razoes = [];
     try { razoes = await API.get(`/stock/reasons?entity_id=${it.entity_id}`); } catch (e) { showError(e); return; }
     const postos = await opcoesPostos(it.entity_id, it.location_id);
+    const porQtd = it.controle === 'quantidade';
     const { m, fechar } = modal('Dar baixa: peguei este item', `
       ${cabecalhoItem(it)}
+      ${porQtd ? `<div class="es-qtd mt-3"><label class="form-label small fw-semibold mb-1">Quantos você pegou? *</label>
+        <div class="d-flex align-items-center gap-2"><input type="number" class="form-control form-control-sm" id="es-qtd" min="1" max="${it.quantity}" value="1" style="max-width:6rem">
+        <small class="text-muted">de ${it.quantity} no estoque · item sem etiqueta, contado por quantidade</small></div></div>` : ''}
       <label class="form-label small fw-semibold mt-3 mb-1">Por que você está pegando este item? *</label>
-      <div class="es-razoes">${razoes.map((r) => `<label class="es-razao"><input type="radio" name="es-razao" value="${r.id}" data-nome="${esc(r.name)}">
+      <div class="es-razoes">${razoes.map((r) => `<label class="es-razao"><input type="radio" name="es-razao" value="${r.id}" data-nome="${esc(r.name)}" data-efeito="${esc(r.efeito || '')}">
         <span><b>${esc(r.name)}</b>${r.description ? `<small>${esc(r.description)}</small>` : ''}</span></label>`).join('')}</div>
       <label class="form-label small fw-semibold mt-3 mb-1">Para onde ele vai?</label>
       <select class="form-select form-select-sm" id="es-destino"><option value="">— fica em ${esc(it.location_name || 'mesmo local')} —</option>${postos}</select>
+      <div class="es-subst d-none" id="es-subst">
+        <label class="form-label small fw-semibold mt-3 mb-1">Qual item ele substitui? ${porQtd ? '<span class="text-muted fw-normal">(opcional)</span>' : '*'}</label>
+        <select class="form-select form-select-sm" id="es-afetado"></select>
+        <div class="form-text" id="es-efeito"></div>
+      </div>
       <label class="form-label small fw-semibold mt-3 mb-1">Observação <span class="text-muted fw-normal" id="es-obs-dica">(opcional)</span></label>
       <textarea class="form-control form-control-sm" id="es-obs" rows="2" maxlength="1000" placeholder="Ex.: o mouse do caixa 2 parou de funcionar"></textarea>
       <div class="form-text">Fica registrado no histórico do item quem pegou, quando, por quê e para onde foi.</div>`, '<i class="bi bi-box-arrow-up"></i> Dar baixa');
-    m.querySelectorAll('[name="es-razao"]').forEach((r) => r.addEventListener('change', () => {
+    const selAf = m.querySelector('#es-afetado');
+    // itens com etiqueta do posto para onde vai (do mesmo tipo primeiro)
+    const carregarAfetaveis = async () => {
+      const dest = m.querySelector('#es-destino').value;
+      let lista = [];
+      try { lista = await API.get(`/stock/${it.id}/afetaveis${dest ? `?location_id=${dest}` : ''}`); } catch { lista = []; }
+      const mesmo = lista.filter((a) => a.type === it.type);
+      const outros = lista.filter((a) => a.type !== it.type);
+      const op = (a) => `<option value="${a.id}">${esc([a.asset_tag, a.name].filter(Boolean).join(' · '))}${a.status !== 'OPERATING' ? ` (${esc(INV_STATUS[a.status] || a.status)})` : ''}</option>`;
+      selAf.innerHTML = `<option value="">— escolha —</option>
+        ${mesmo.length ? `<optgroup label="${esc(tipoNome(it.type))} deste posto">${mesmo.map(op).join('')}</optgroup>` : ''}
+        ${outros.length ? `<optgroup label="Outros itens com etiqueta">${outros.map(op).join('')}</optgroup>` : ''}
+        <option value="sem_etiqueta">Não tem etiqueta / não sei qual</option>`;
+    };
+    const atualizar = () => {
+      const r = m.querySelector('[name="es-razao"]:checked');
       m.querySelectorAll('.es-razao').forEach((l) => l.classList.toggle('on', l.querySelector('input').checked));
-      const outro = /^outro$/i.test(r.dataset.nome);
+      const outro = r && /^outro$/i.test(r.dataset.nome);
       m.querySelector('#es-obs-dica').textContent = outro ? '(obrigatória: explique o motivo)' : '(opcional)';
-    }));
+      const ef = r ? r.dataset.efeito : '';
+      m.querySelector('#es-subst').classList.toggle('d-none', !ef);
+      m.querySelector('#es-efeito').innerHTML = ef && EFEITO_TXT[ef] ? `<i class="bi bi-info-circle"></i> ${EFEITO_TXT[ef][1]} Se não tiver etiqueta, fica só anotado.` : '';
+    };
+    m.querySelectorAll('[name="es-razao"]').forEach((r) => r.addEventListener('change', atualizar));
+    m.querySelector('#es-destino').addEventListener('change', carregarAfetaveis);
+    carregarAfetaveis();
     m.querySelector('[data-ok]').addEventListener('click', async () => {
       const r = m.querySelector('[name="es-razao"]:checked');
       if (!r) { toast('Escolha o motivo da retirada.', 'warning'); return; }
       const note = m.querySelector('#es-obs').value.trim();
       if (/^outro$/i.test(r.dataset.nome) && !note) { toast('Explique o motivo na observação.', 'warning'); return; }
+      const corpo = { reason_id: r.value, note, location_id: m.querySelector('#es-destino').value || null };
+      if (porQtd) {
+        const q = parseInt(m.querySelector('#es-qtd').value, 10);
+        if (!(q >= 1 && q <= it.quantity)) { toast(`Escolha de 1 a ${it.quantity}.`, 'warning'); return; }
+        corpo.quantidade = q;
+      }
+      if (r.dataset.efeito) {
+        const af = selAf.value;
+        if (!af && !porQtd) { toast('Diga qual item ele substitui (ou "não tem etiqueta").', 'warning'); return; }
+        if (af === 'sem_etiqueta') corpo.afetado = 'sem_etiqueta'; else if (af) corpo.afetado_id = af;
+      }
       try {
-        await API.post(`/stock/${it.id}/withdraw`, { reason_id: r.value, note, location_id: m.querySelector('#es-destino').value || null });
-        fechar(); toast(`Baixa registrada: ${it.name}.`, 'success'); if (depois) depois();
+        await API.post(`/stock/${it.id}/withdraw`, corpo);
+        fechar(); toast(`Baixa registrada: ${corpo.quantidade ? `${corpo.quantidade}× ` : ''}${it.name}.`, 'success'); if (depois) depois();
       } catch (e) { showError(e); }
     });
   }
@@ -171,10 +219,10 @@ const Estoque = (() => {
       corpo.innerHTML = [...grupos.values()].map((g) => `
         <div class="card panel-card mb-3">
           <div class="dp-bloco-cab"><span><i class="bi bi-geo-alt"></i> ${esc(g.posto)} <small class="text-muted fw-normal multi-empresa">· ${esc(g.empresa)}</small></span>
-            <small class="text-muted">${g.itens.length} item(ns)${vePreco ? ` · ${invMoeda(g.itens.reduce((s, i) => s + Number(i.price || 0), 0))}` : ''}</small></div>
+            <small class="text-muted">${g.itens.reduce((s, i) => s + (i.controle === 'quantidade' ? Number(i.quantity || 0) : 1), 0)} item(ns)${vePreco ? ` · ${invMoeda(g.itens.reduce((s, i) => s + Number(i.price || 0) * (i.controle === 'quantidade' ? Number(i.quantity || 0) : 1), 0))}` : ''}</small></div>
           <div class="es-grade">${g.itens.map((it) => `
             <div class="es-card">
-              <div class="es-card-cab">${invEstado(it.status)}<span class="es-tipo">${esc(tipoNome(it.type))}</span></div>
+              <div class="es-card-cab">${it.controle === 'quantidade' ? (it.quantity > 0 ? `<span class="tg tg-teal">×${it.quantity} no estoque</span>` : '<span class="tg tg-red">Esgotado</span>') : invEstado(it.status)}<span class="es-tipo">${esc(tipoNome(it.type))}</span></div>
               <b class="es-nome">${can('inventory.view') ? `<a href="#/inventory/${it.id}">${esc(it.name)}</a>` : esc(it.name)}</b>
               <small class="text-muted">${esc([it.asset_tag, [it.manufacturer, it.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || '—')}</small>
               ${it.notes ? `<small class="es-obs">${esc(it.notes)}</small>` : ''}
@@ -182,7 +230,7 @@ const Estoque = (() => {
                 <small class="text-muted">${it.desde ? `no estoque desde ${dataCurta(it.desde)}` : ''}${it.price !== undefined && it.price !== null ? ` · <b>${invMoeda(it.price)}</b>` : ''}</small>
                 <span class="d-flex gap-1">
                   ${can('inventory.manage') ? `<button class="btn btn-sm btn-outline-secondary" data-transf="${it.id}" title="Transferir para outra unidade"><i class="bi bi-arrow-left-right"></i></button>` : ''}
-                  ${can('stock.withdraw') && PODE_PEGAR.includes(it.status) ? `<button class="btn btn-sm btn-primary" data-baixa="${it.id}"><i class="bi bi-box-arrow-up"></i> Dar baixa</button>` : ''}
+                  ${can('stock.withdraw') && PODE_PEGAR.includes(it.status) && !(it.controle === 'quantidade' && !(it.quantity > 0)) ? `<button class="btn btn-sm btn-primary" data-baixa="${it.id}"><i class="bi bi-box-arrow-up"></i> Dar baixa</button>` : ''}
                 </span>
               </div>
             </div>`).join('')}</div>
