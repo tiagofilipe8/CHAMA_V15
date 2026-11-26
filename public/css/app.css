@@ -2108,3 +2108,76 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .er-item { display: flex; justify-content: space-between; gap: 10px; padding: 7px 12px; border-top: 1px solid var(--line, rgba(127,127,127,.15)); color: inherit; text-decoration: none; font-size: .85rem; }
 .er-item:hover { background: rgba(127,127,127,.06); }
 .er-item.perdido b { text-decoration: line-through; opacity: .7; }
+
+/* ===== Causas e notas: filtros e cards de análise (2026-11-26) ===== */
+.cz-filtro-card { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 14px; }
+.cz-fgrupo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cz-flabel { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.cz-flabel .bi { color: var(--primary); font-size: .9rem; }
+.cz-ou { font-size: .75rem; color: var(--muted); font-style: italic; }
+.cz-filtro-card .cz-sel { width: auto; min-width: 120px; max-width: 220px; border-radius: 9px; }
+.cz-filtro-card .seg button { padding: 4px 11px; font-size: .8rem; }
+.cz-limpar { font-size: .8rem; text-decoration: none; color: var(--muted); padding: 2px 6px; }
+.cz-limpar:hover { color: #b91c1c; }
+.cz-resumo { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.cz-resumo:empty { display: none; }
+.cz-pill { display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); }
+.cz-pill .bi { color: var(--primary); }
+.cz-pill.azul { background: #dbeafe; color: #1d4ed8; } .cz-pill.violeta { background: #ede9fe; color: #6d28d9; } .cz-pill.ambar { background: #fef3c7; color: #b45309; }
+[data-bs-theme="dark"] .cz-pill.azul, [data-bs-theme="dark"] .cz-pill.violeta, [data-bs-theme="dark"] .cz-pill.ambar { background: rgba(127,127,127,.18); color: var(--ink); }
+
+/* cards da grade: mesma altura, corpo com rolagem */
+.cz-grade { align-items: stretch; }
+.cz-card { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.cz-card-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--border); }
+.cz-card-tit { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cz-card-tit b { display: block; font-size: .92rem; color: var(--ink); }
+.cz-card-tit small { display: block; font-size: .72rem; color: var(--muted); line-height: 1.25; }
+.cz-card-ico { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.05rem; flex: 0 0 auto; }
+.cz-card-ico.azul { background: #dbeafe; color: #1d4ed8; } .cz-card-ico.violeta { background: #ede9fe; color: #6d28d9; }
+.cz-card-ico.vermelho { background: #fee2e2; color: #b91c1c; } .cz-card-ico.verde { background: #dcfce7; color: #15803d; }
+[data-bs-theme="dark"] .cz-card-ico { background: rgba(127,127,127,.18) !important; }
+.cz-card-ctl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cz-card-ctl .seg button { padding: 3px 9px; font-size: .74rem; }
+.cz-mini { width: auto; max-width: 180px; font-size: .76rem; border-radius: 8px; padding-top: 3px; padding-bottom: 3px; }
+.cz-card-corpo { height: 380px; overflow-y: auto; }
+.cz-card-corpo .dp-vazio { padding: 24px 14px; }
+
+/* barras do total: + botão para ranquear os postos daquela causa */
+.cz-card .cz-barra { grid-template-columns: minmax(0, 1.5fr) minmax(50px, 1fr) 26px 36px 74px 22px; }
+.cz-ir { border: 0; background: none; color: var(--muted); padding: 0; line-height: 1; }
+.cz-ir:hover { color: var(--primary); }
+.cz-violeta .cz-barra i { background: linear-gradient(90deg, #7c3aed var(--w), var(--surface-3) var(--w)); }
+
+/* rankings (por posto / por razão / custos) */
+.cz-rank { display: flex; flex-direction: column; }
+.cz-rank-item { display: flex; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.cz-rank-item:last-child { border-bottom: 0; }
+.cz-pos { flex: 0 0 30px; height: 26px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: .74rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.cz-pos.p1 { background: #fef3c7; color: #b45309; } .cz-pos.p2 { background: #e5e7eb; color: #374151; } .cz-pos.p3 { background: #fde4cf; color: #9a3412; }
+[data-bs-theme="dark"] .cz-pos { background: rgba(127,127,127,.18) !important; color: var(--ink) !important; }
+.cz-rank-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cz-rank-cab { display: flex; align-items: baseline; gap: 6px; font-size: .84rem; }
+.cz-rank-cab b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-rank-n { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cz-rank-barra { display: block; height: 7px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.cz-rank-barra i { display: block; height: 100%; width: var(--w); border-radius: 4px; background: var(--primary); }
+.cz-rank-barra.cz-violeta i { background: #7c3aed; } .cz-rank-barra.cz-mat i { background: #dc2626; }
+.cz-rank-tx > small { font-size: .72rem; }
+.cz-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.cz-chip { border: 1px solid var(--border); background: var(--card); border-radius: 999px; font-size: .7rem; padding: 1px 8px; color: var(--ink); }
+.cz-chip:hover { border-color: var(--primary); color: var(--primary); }
+.cz-chip b { color: var(--muted); font-weight: 700; }
+.cz-razao-sel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+.cz-razao-sel select { width: auto; flex: 1 1 200px; max-width: 340px; border-radius: 8px; }
+.cz-mat-soma { padding: 8px 14px; font-size: .8rem; background: var(--surface-2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+.cz-mat-soma .bi { color: #dc2626; }
+@media (max-width: 991px) { .cz-card-corpo { height: auto; max-height: 420px; } }
+@media (max-width: 575px) { .cz-card .cz-barra { grid-template-columns: 1fr 34px 38px 22px; } .cz-card .cz-barra .tg, .cz-card .cz-barra > span:not(.cz-barra-nome) { display: none; } }
+.card.cz-filtro-card { flex-direction: row; justify-content: flex-start; }
+.cz-card .cz-lista:not(.cz-x) .cz-barra.cz-barra { grid-template-columns: minmax(0, 1.5fr) minmax(50px, 1fr) 26px 36px 74px 22px; }
+.cz-card .cz-barra .cz-ir i { height: auto; background: none; border-radius: 0; }
+.cz-card-cab { min-height: 62px; }
+@media (max-width: 575px) { .cz-card .cz-lista:not(.cz-x) .cz-barra.cz-barra { grid-template-columns: minmax(0, 1fr) 26px 36px 22px; } }
+.cz-grade > .card { margin: 0 !important; }
+#cz-corpo .cz-grade > .card { margin: 0 !important; }

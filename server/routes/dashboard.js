@@ -277,7 +277,18 @@ router.get('/causas', async (req, res) => {
   const periodoAbertura = faixa('t.created_at');
   const periodoFech = faixa('COALESCE(t.resolved_at, t.closed_at, t.updated_at)');
 
-  const [abertura, fechamento, locais, usuarios, peloUsuario] = await Promise.all([
+  // custos de material (só para quem vê preços): filtros próprios, sem a tabela de chamados
+  const veCusto = has(user, 'inventory.secrets');
+  const pMat = [];
+  let fMov = ''; let fAst = '';
+  const ents = entityIdsOf(user);
+  if (ents !== null) { pMat.push(ents); fMov += ` AND m.to_entity_id::text = ANY($${pMat.length}::text[])`; fAst += ` AND a.entity_id::text = ANY($${pMat.length}::text[])`; }
+  if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) { pMat.push(req.query.entity_id); fMov += ` AND m.to_entity_id = $${pMat.length}`; fAst += ` AND a.entity_id = $${pMat.length}`; }
+  if (req.query.location_id && /^\d+$/.test(req.query.location_id)) { pMat.push(req.query.location_id); fMov += ` AND m.to_location_id = $${pMat.length}`; fAst += ` AND a.location_id = $${pMat.length}`; }
+  const UN = "(CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)";
+  const vazio = Promise.resolve({ rows: [] });
+
+  const [abertura, fechamento, locais, usuarios, peloUsuario, matAbertura, matFechamento, compras, retiradas, perdas] = await Promise.all([
     query(
       `SELECT COALESCE(sc.name, c.name, 'Sem categoria') AS nome, COALESCE(sc.icon, c.icon) AS icon,
               count(*)::int AS total, count(*) FILTER (WHERE t.status NOT IN (5,6,7))::int AS abertos
@@ -327,7 +338,65 @@ router.get('/causas', async (req, res) => {
       `SELECT t.requester_close_reason AS motivo, count(*)::int AS total
        FROM tickets t WHERE t.requester_close_reason IS NOT NULL AND t.status IN (5,6) ${periodoFech} ${base}
        GROUP BY 1 ORDER BY total DESC`, params),
+    // causa de abertura × posto (a tela monta: total, por posto, por causa)
+    query(
+      `SELECT COALESCE(sc.name, c.name, 'Sem categoria') AS causa, COALESCE(sc.icon, c.icon) AS icon,
+              COALESCE(pc.name, CASE WHEN t.simple_category_id IS NOT NULL THEN 'Pedidos simples' ELSE 'Outros' END) AS tipo,
+              t.location_id, COALESCE(l.name, 'Sem posto') AS posto, e.name AS empresa,
+              count(*)::int AS total, count(*) FILTER (WHERE t.status NOT IN (5,6,7))::int AS abertos
+       FROM tickets t
+       LEFT JOIN categories sc ON sc.id = t.simple_category_id
+       LEFT JOIN categories c ON c.id = t.category_id
+       LEFT JOIN categories pc ON pc.id = COALESCE(sc.parent_id, c.parent_id)
+       LEFT JOIN locations l ON l.id = t.location_id JOIN entities e ON e.id = t.entity_id
+       WHERE t.status <> 7 ${periodoAbertura} ${base}
+       GROUP BY 1, 2, 3, 4, 5, 6`, params),
+    // causa de fechamento × posto
+    query(
+      `SELECT COALESCE(rc.name, 'Sem causa informada') AS causa, t.location_id, COALESCE(l.name, 'Sem posto') AS posto, e.name AS empresa,
+              count(*)::int AS total
+       FROM tickets t LEFT JOIN resolution_causes rc ON rc.id = t.resolution_cause_id
+       LEFT JOIN locations l ON l.id = t.location_id JOIN entities e ON e.id = t.entity_id
+       WHERE t.status IN (5,6) ${periodoFech} ${base}
+       GROUP BY 1, 2, 3, 4`, params),
+    // compras (pedidos de material com preço) por posto de destino
+    veCusto ? query(
+      `SELECT COALESCE(tm.location_id, t.location_id) AS location_id, sum(tm.price * tm.quantity)::float AS valor, sum(tm.quantity)::int AS n
+       FROM ticket_materials tm JOIN tickets t ON t.id = tm.ticket_id
+       WHERE tm.price IS NOT NULL AND tm.status IN ('comprado','chegou','entregue') ${faixa('COALESCE(tm.status_at, t.created_at)')} ${base}
+       GROUP BY 1`, params) : vazio,
+    // retiradas do estoque (o que cada posto consumiu)
+    veCusto ? query(
+      `SELECT m.to_location_id AS location_id, COALESCE(sum(m.price),0)::float AS valor, sum(m.quantity)::int AS n
+       FROM stock_movements m WHERE m.kind = 'withdraw' ${faixa('m.created_at')} ${fMov} GROUP BY 1`, pMat) : vazio,
+    // estragado ou perdido no período (o item virou Estragado/Extraviado)
+    veCusto ? query(
+      `SELECT a.location_id, COALESCE(sum(a.price * ${UN}),0)::float AS valor, count(*)::int AS n
+       FROM assets a
+       WHERE a.status IN ('BROKEN','LOST') ${fAst}
+         AND EXISTS (SELECT 1 FROM asset_history h WHERE h.asset_id = a.id ${faixa('h.created_at')}
+                     AND ((h.field = 'status' AND h.new_value IN ('BROKEN','LOST')) OR h.action = 'StockReplaced'))
+       GROUP BY 1`, pMat) : vazio,
   ]);
+  // custos de material por posto (junta compras, retiradas e perdas)
+  let materiais = null;
+  if (veCusto) {
+    const porLocal = new Map();
+    const ids = new Set([...compras.rows, ...retiradas.rows, ...perdas.rows].map((x) => x.location_id).filter(Boolean));
+    const nomes = ids.size ? (await query('SELECT l.id, l.name, e.name AS empresa FROM locations l JOIN entities e ON e.id = l.entity_id WHERE l.id = ANY($1::bigint[])', [[...ids]])).rows : [];
+    const linha = (id) => {
+      const k = String(id || '');
+      if (!porLocal.has(k)) {
+        const n = nomes.find((x) => String(x.id) === k);
+        porLocal.set(k, { location_id: id || null, posto: n ? n.name : 'Sem posto', empresa: n ? n.empresa : '', compras: 0, compras_n: 0, retiradas: 0, retiradas_n: 0, perdas: 0, perdas_n: 0 });
+      }
+      return porLocal.get(k);
+    };
+    compras.rows.forEach((x) => { const l = linha(x.location_id); l.compras += x.valor || 0; l.compras_n += x.n || 0; });
+    retiradas.rows.forEach((x) => { const l = linha(x.location_id); l.retiradas += x.valor || 0; l.retiradas_n += x.n || 0; });
+    perdas.rows.forEach((x) => { const l = linha(x.location_id); l.perdas += x.valor || 0; l.perdas_n += x.n || 0; });
+    materiais = [...porLocal.values()];
+  }
 
   // empresas: média geral (só chamados com nota)
   const empresas = new Map();
@@ -347,6 +416,9 @@ router.get('/causas', async (req, res) => {
     locais: locais.rows.map((l) => ({ ...l, media: l.media === null ? null : Number(l.media) })),
     usuarios: usuarios.rows.map((u) => ({ ...u, media: Number(u.media) })),
     pelo_usuario: peloUsuario.rows,
+    mat_abertura: matAbertura.rows,
+    mat_fechamento: matFechamento.rows,
+    materiais,
     criterios: require('../services/avaliacao').CRITERIOS,
   });
 });
