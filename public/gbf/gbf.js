@@ -221,7 +221,14 @@
     atrasada: ['tag-red', 'Atrasada'], vence_logo: ['tag-amber', 'Vence em 24 h'], no_prazo: ['tag-green', 'No prazo'],
     sem_prazo: null, cumprido: ['tag-green', 'Feita no prazo'], fora_do_prazo: ['tag-red', 'Feita com atraso'],
   };
-  const PRIO_TAREFA = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' }; // mesma urgência dos chamados (nomes da Orcim)
+  // Urgência da TI do Beija-Flor (atividades e pedidos). Cores: azul, amarelo, laranja, vermelho.
+  const PRIO_TAREFA = { 1: 'Rotineira', 2: 'Programada', 3: 'Impeditiva', 4: 'Emergencial' };
+  const DESC_URG = {
+    1: 'Atividades comuns e não emergenciais do dia a dia da TI, que seguem o fluxo normal. Ex.: ajustes de configuração, atualização de softwares, verificação de equipamentos e dúvidas de uso dos sistemas.',
+    2: 'Atividades com data definida, que exigem planejamento. Ex.: instalação de computadores, acessos para novos colaboradores, implantação de sistemas, pesquisas UX, desenvolvimento, manutenção preventiva e infraestrutura para inaugurações.',
+    3: 'Está impedindo outras tarefas ou processos, mas não compromete toda a operação. Ex.: computador de um colaborador parado, falha de acesso a um sistema, impressora inoperante ou erro em relatórios.',
+    4: 'Exige execução imediata pelo impacto crítico na operação da unidade. Ex.: sistema de vendas fora do ar, queda geral da internet, notas fiscais sem emissão ou falha nos sistemas de abastecimento.',
+  };
   const tag = (cls, txt, icon) => `<span class="tag ${cls}">${icon ? `<i class="bi bi-${icon}"></i>` : ''}${esc(txt)}</span>`;
   const tagSla = (s) => tag(...(SLA[s] || SLA.sem_prazo));
   const tagStatus = (d) => tag(TAG_STATUS_CENTRAL[d.status] || 'tag-gray', d.status_label);
@@ -427,8 +434,19 @@
       el.insertAdjacentHTML('afterbegin', `<i class="bi bi-${ic} tit-ic"></i>`);
     });
   }
+  // Em qualquer formulário com Urgência: a explicação da opção escolhida aparece embaixo
+  function descUrgencia() {
+    $$('select[name="priority"]', view()).forEach((sel) => {
+      if (sel.dataset.desc) return;
+      sel.dataset.desc = '1';
+      const d = document.createElement('div'); d.className = 'urg-desc';
+      const pintar = () => { d.textContent = DESC_URG[sel.value] || ''; };
+      sel.after(d); pintar(); sel.addEventListener('change', pintar);
+    });
+  }
   function animarTela() {
     iconizar();
+    descUrgencia();
     $$('.pg-seg, .pg-abas', view()).forEach((g) => {
       const chave = `${location.hash.split('?')[0]}|${g.getAttribute('aria-label') || g.className}`;
       g.classList.add('anim');
@@ -1079,7 +1097,7 @@
       ${abasHtml}
       <div class="calpg${opts.semana ? ' semana' : ''}">
       <div class="cal-leg" aria-label="Legenda">
-        <div class="cal-leg-g"><span class="cal-leg-t">Urgência</span>${[4, 3, 2, 1].map((p) => `<span class="cal-leg-i"><i class="cal-num ${COR_URG[p]}"></i>${esc(c.urgencias[p])}</span>`).join('')}</div>
+        <div class="cal-leg-g"><span class="cal-leg-t">Urgência</span>${[4, 3, 2, 1].map((p) => `<span class="cal-leg-i" title="${esc(DESC_URG[p])} (Orcim: ${esc(c.urgencias[p])})"><i class="cal-num ${COR_URG[p]}"></i>${esc((c.urgencias_ti || PRIO_TAREFA)[p])}</span>`).join('')}</div>
         <div class="cal-leg-g"><span class="cal-leg-t">Andamento</span>
           <span class="cal-leg-i"><i class="bi bi-circle"></i>A fazer</span>
           <span class="cal-leg-i"><i class="bi bi-circle-half"></i>Em andamento / aguardando</span>
@@ -1162,7 +1180,7 @@
         <div class="cal-pop-lin"><i class="cal-num ${COR_URG[i.prioridade]}"></i><span class="t">${esc(i.titulo)}</span>${etiquetaEstado(i)}</div>
         ${i.faixaTxt ? `<div class="cal-pop-faixa">${esc(i.faixaTxt)}</div>` : ''}
         <div class="cal-pop-det"><div><dl>
-          <dt>Urgência</dt><dd>${esc(c.urgencias[i.prioridade] || '—')}</dd>
+          <dt>Urgência</dt><dd>${esc((i.fonte === 'orcim' ? c.urgencias : (c.urgencias_ti || PRIO_TAREFA))[i.prioridade] || '—')}</dd>
           <dt>Quando</dt><dd>${i.ini ? `${fmtCurta(i.ini)} → ${fmtCurta(i.fim)}` : i.comeca ? `${fmtCurta(i.comeca)} → ${fmtCurta(i.dia)}` : esc(i.hora || 'dia todo')}</dd>
           <dt>Situação</dt><dd>${esc(i.situacao || '—')}${i.aguardando ? ` · aguardando ${esc(i.aguardando)}` : ''}</dd>
           ${i.responsavel ? `<dt>Responsável</dt><dd>${esc(i.responsavel)}</dd>` : ''}
@@ -1215,7 +1233,7 @@
 
       if (opts.acoes) { ligarReagendar(); ligarIniciar(); }
       const doMes = visiveis().filter((i) => (opts.semana ? (c.inicio <= i.dia && i.dia <= c.fim) : i.dia.slice(0, 7) === c.mes));
-      $('#cal-resumo').innerHTML = `${opts.semana ? 'Na semana' : 'No mês'}: ${plural(doMes.length, 'item', 'itens')} · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc(c.urgencias[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
+      $('#cal-resumo').innerHTML = `${opts.semana ? 'Na semana' : 'No mês'}: ${plural(doMes.length, 'item', 'itens')} · ${[4, 3, 2, 1].map((p) => `${doMes.filter((i) => i.prioridade === p).length} ${esc((c.urgencias_ti || PRIO_TAREFA)[p]).toLowerCase()}`).join(' · ')} · ${doMes.filter((i) => i.aberto).length} ainda em aberto`;
       $$('.cal-filtros [data-f]').forEach((b) => {
         b.classList.toggle('on', !!filtro[b.dataset.f]);
         b.setAttribute('aria-pressed', String(!!filtro[b.dataset.f]));
@@ -3386,7 +3404,7 @@ function itemHistorico(e) {
     const tecnicos = users.filter((u) => u.role === 'tecnico' || u.faz_visitas);
     const respPadrao = fazVisitas() ? EU.id : (tecnicos[0]?.id || '');
     const tarefas = [];
-    const URG = [[1, 'Requisição'], [2, 'Prejudicada'], [3, 'Parada iminente'], [4, 'Operação parada']];
+    const URG = [1, 2, 3, 4].map((p) => [p, PRIO_TAREFA[p]]);
 
     view().innerHTML = `
       <form class="np card-x" id="np" novalidate>
@@ -3409,7 +3427,8 @@ function itemHistorico(e) {
             <label class="form-check np-so-ativ mt-1"><input type="checkbox" class="form-check-input" id="np-varios"> <span class="form-check-label">Leva vários dias</span></label>
             <div class="np-inicio d-none"><span class="small-muted">Começa em</span> <input type="date" class="form-control form-control-sm" id="np-ini"></div></div>
           <div class="np-linha"><span class="np-rot">Urgência</span>
-            <div class="np-urg" role="radiogroup" aria-label="Urgência">${URG.map(([v, n]) => `<label class="np-urg-op"><input type="radio" name="np-urg" value="${v}" ${v === 1 ? 'checked' : ''}><i class="cal-num urg-${v}"></i>${n}</label>`).join('')}</div></div>
+            <div><div class="np-urg" role="radiogroup" aria-label="Urgência">${URG.map(([v, n]) => `<label class="np-urg-op" title="${esc(DESC_URG[v])}"><input type="radio" name="np-urg" value="${v}" ${v === 1 ? 'checked' : ''}><i class="cal-num urg-${v}"></i>${n}</label>`).join('')}</div>
+            <div class="np-urg-desc" id="np-urg-desc">${esc(DESC_URG[1])}</div></div></div>
 
           <div class="np-linha np-so-visita"><span class="np-rot">O que fazer lá</span>
             <div class="np-tarefas">
@@ -3469,6 +3488,7 @@ function itemHistorico(e) {
     }
     $$('.np-tipo').forEach((b) => b.addEventListener('click', () => { tipo = b.dataset.tipo; aplicarTipo(); $('#np-tit').focus(); }));
     $('#np-posto').addEventListener('change', atualizarCk);
+    $$('[name="np-urg"]').forEach((r) => r.addEventListener('change', () => { $('#np-urg-desc').textContent = DESC_URG[r.value]; }));
     $('#np-ck').addEventListener('change', atualizarCk);
     $('#np-ck-sel').addEventListener('change', () => { ckEscolhidoAMao = true; atualizarCk(); });
     $('#np-varios').addEventListener('change', (e) => $('.np-inicio').classList.toggle('d-none', !e.target.checked));
@@ -3882,7 +3902,7 @@ function itemHistorico(e) {
         { rota: () => (ehGestor() ? '#/novo?tipo=visita' : '#/novo?tipo=atividade'), alvo: '#np-tit', titulo: 'O que precisa?', texto: 'Uma frase curta, ex.: "Trocar nobreak do caixa".' },
         { alvo: '#np-posto', titulo: 'Posto', texto: 'Em qual posto. Na visita é obrigatório.' },
         { alvo: '#np-data', titulo: 'Para quando', texto: 'O dia. Na atividade, o horário é opcional: vazio = o dia todo.' },
-        { alvo: '.np-urg', titulo: 'Urgência', texto: 'Requisição (azul), Prejudicada (amarelo), Parada iminente (laranja) ou Operação parada (vermelho). A cor aparece no calendário.' },
+        { alvo: '.np-urg', titulo: 'Urgência', texto: 'Rotineira (azul): o dia a dia. Programada (amarelo): tem data e planejamento. Impeditiva (laranja): está travando alguém, mas não a unidade toda. Emergencial (vermelho): parou a operação (vendas, internet, notas, abastecimento). A explicação aparece embaixo ao escolher.' },
         { alvo: '#np-tarefa', titulo: 'O que fazer lá (visita)', texto: 'Tarefas avulsas: digite uma e aperte Enter; a próxima linha aparece. Para tirar, clique no X.' },
         { alvo: '.np-ck', titulo: 'Cumprir checklist', texto: 'Marque para a visita seguir um checklist pronto (ex.: "Rota padrão do posto"). Vem escolhido o checklist do posto, mas dá para trocar por qualquer outro. Os primeiros itens aparecem embaixo. As tarefas avulsas entram junto, depois do checklist.' },
         { alvo: '#np-mais-l', titulo: '+ detalhes', texto: 'Algo mais que a TI precisa saber. Fica escondido para não atrapalhar.' },

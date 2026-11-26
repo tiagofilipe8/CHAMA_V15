@@ -12,7 +12,7 @@
 const express = require('express');
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
-const { ah, escopoTickets, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA } = require('./common');
+const { ah, escopoTickets, STATUS_CENTRAL, PRIORIDADE_CENTRAL, STATUS_TAREFA, PRIORIDADE_TAREFA } = require('./common');
 const { requireGestor } = require('./auth');
 
 // O que o técnico da Orcim fez com o equipamento ao encerrar (mesmos nomes do sistema da Orcim)
@@ -675,7 +675,7 @@ router.get('/calendario', ah(async (req, res) => {
     });
   }
 
-  res.json({ mes, primeiro, ultimo, inicio, fim, hoje, orcim_ok: orcimOk, urgencias: PRIORIDADE_CENTRAL, itens, faixas });
+  res.json({ mes, primeiro, ultimo, inicio, fim, hoje, orcim_ok: orcimOk, urgencias: PRIORIDADE_CENTRAL, urgencias_ti: PRIORIDADE_TAREFA, itens, faixas });
 }));
 
 module.exports = router;

@@ -16,7 +16,8 @@ const STATUS_TAREFA = {
   concluida: 'Concluída', cancelada: 'Cancelada',
 };
 // Atividades e solicitações usam a mesma escala de urgência dos chamados
-const PRIORIDADE_TAREFA = PRIORIDADE_CENTRAL;
+// Urgência da TI do Beija-Flor (atividades e pedidos de visita). Mesmas cores da escala da Orcim.
+const PRIORIDADE_TAREFA = { 1: 'Rotineira', 2: 'Programada', 3: 'Impeditiva', 4: 'Emergencial' };
 
 async function getSetting(key, fallback = null) {
   const { rows } = await query('SELECT value FROM gbf_settings WHERE key = $1', [key]);

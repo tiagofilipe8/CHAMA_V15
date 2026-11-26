@@ -10,7 +10,7 @@ const { ah, notificar, usuariosAtivos, avisarEquipe } = require('./common');
 
 const router = express.Router();
 const STATUS = { a_fazer: 'A fazer', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
-const PRIORIDADE = { 1: 'Requisição', 2: 'Operação prejudicada', 3: 'Parada iminente', 4: 'Operação parada' }; // mesma urgência dos chamados
+const PRIORIDADE = { 1: 'Rotineira', 2: 'Programada', 3: 'Impeditiva', 4: 'Emergencial' }; // urgência da TI do Beija-Flor
 const numero = (id) => `S-${String(id).padStart(4, '0')}`;
 const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 const MAX_TAREFAS = 60;
