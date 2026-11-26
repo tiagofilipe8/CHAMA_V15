@@ -168,7 +168,7 @@ router.get('/noc', async (req, res) => {
     const qMaintCount = await query(
       `SELECT count(*)::int AS c
        FROM assets a
-       WHERE a.next_maintenance_date IS NOT NULL
+       WHERE a.next_maintenance_date IS NOT NULL AND a.entity_id IS NOT NULL
          AND a.next_maintenance_date <= CURRENT_DATE
          AND a.status NOT IN ('DISPOSED', 'LOST')
          AND ($1::text[] IS NULL OR a.entity_id::text = ANY($1::text[]))`, [entityIdsOf(user)]);
@@ -280,7 +280,7 @@ router.get('/causas', async (req, res) => {
   // custos de material (só para quem vê preços): filtros próprios, sem a tabela de chamados
   const veCusto = has(user, 'inventory.secrets');
   const pMat = [];
-  let fMov = ''; let fAst = '';
+  let fMov = ' AND m.to_entity_id IS NOT NULL'; let fAst = ' AND a.entity_id IS NOT NULL';
   const ents = entityIdsOf(user);
   if (ents !== null) { pMat.push(ents); fMov += ` AND m.to_entity_id::text = ANY($${pMat.length}::text[])`; fAst += ` AND a.entity_id::text = ANY($${pMat.length}::text[])`; }
   if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) { pMat.push(req.query.entity_id); fMov += ` AND m.to_entity_id = $${pMat.length}`; fAst += ` AND a.entity_id = $${pMat.length}`; }

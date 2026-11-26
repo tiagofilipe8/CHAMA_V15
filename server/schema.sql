@@ -953,3 +953,12 @@ DO $marco$ BEGIN
     INSERT INTO schema_marcos (nome) VALUES ('motivos_com_efeito');
   END IF;
 END $marco$;
+
+-- =====================================================================
+-- Estoque da ORCIM (2026-11-26)
+--   Item da ORCIM = equipamento ainda sem empresa (entity_id NULL). Ele não aparece em nada das
+--   empresas (inventário, estoque de T.I., relatórios) até ser transferido para uma empresa e posto.
+--   A movimentação "transfer" com from_entity_id NULL é a saída do Estoque da ORCIM.
+-- =====================================================================
+ALTER TABLE assets ALTER COLUMN entity_id DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_assets_orcim ON assets(id) WHERE entity_id IS NULL;

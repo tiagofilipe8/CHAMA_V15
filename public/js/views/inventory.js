@@ -404,7 +404,7 @@ function invValor(campo, v) {
 function invLogHtml(a) {
   const eventos = [];
   (a.history || []).forEach((h) => {
-    if (['StockWithdraw', 'StockReturn', 'StockTransfer'].includes(h.action)) return; // vêm das movimentações, mais completas
+    if (['StockWithdraw', 'StockReturn', 'StockTransfer', 'OrcimTransfer'].includes(h.action)) return; // vêm das movimentações, mais completas
     let titulo; let detalhe = '';
     if (h.action === 'AssetCreated') titulo = 'Cadastrado no inventário';
     else if (h.action === 'SecretViewed') titulo = `Viu ${h.field === 'mestre' ? 'o acesso mestre' : h.field === 'anydesk' ? 'a senha do AnyDesk' : 'as senhas'}`;
@@ -416,9 +416,10 @@ function invLogHtml(a) {
     eventos.push({ quando: h.created_at, icone: h.action.startsWith('Secret') ? 'bi-key' : h.action === 'StockReplaced' ? 'bi-arrow-repeat' : 'bi-pencil', titulo, detalhe, quem: h.user_name || 'Agente' });
   });
   (a.movements || []).forEach((m) => {
-    const de = m.from_location_name || m.from_entity_name; const para = m.to_location_name || m.to_entity_name;
+    const daOrcim = m.kind === 'transfer' && !m.from_entity_id && m.to_entity_id;
+    const de = daOrcim ? 'Estoque da ORCIM' : (m.from_location_name || m.from_entity_name); const para = m.to_location_name || m.to_entity_name;
     const tipo = { withdraw: ['bi-box-arrow-up', 'Baixa no estoque (pegou o item)'], return: ['bi-box-arrow-in-down', 'Devolvido ao estoque'],
-      transfer: ['bi-arrow-left-right', 'Transferido de unidade'], entry: ['bi-box-seam', 'Entrou no estoque'] }[m.kind] || ['bi-dot', m.kind];
+      transfer: daOrcim ? ['bi-boxes', 'Veio do Estoque da ORCIM'] : ['bi-arrow-left-right', 'Transferido de unidade'], entry: ['bi-box-seam', m.to_entity_id ? 'Entrou no estoque' : 'Entrou no Estoque da ORCIM'] }[m.kind] || ['bi-dot', m.kind];
     const partes = [];
     if (m.quantity > 1) partes.push(`<b>${m.quantity} un</b>`);
     if (m.reason_name) partes.push(`<b>Motivo:</b> ${esc(m.reason_name)}`);

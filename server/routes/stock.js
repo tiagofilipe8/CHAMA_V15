@@ -227,7 +227,7 @@ router.post('/:id/transfer', async (req, res) => {
 router.get('/movements', async (req, res) => {
   if (!podeVer(req.user)) return res.status(403).json({ error: 'Seu perfil não vê o estoque de T.I.' });
   const params = [];
-  let where = 'TRUE ';
+  let where = 'm.to_entity_id IS NOT NULL '; // entradas do Estoque da ORCIM (sem empresa) ficam fora
   const ents = entityIdsOf(req.user);
   if (ents !== null) { params.push(ents); where += `AND (m.from_entity_id::text = ANY($1::text[]) OR m.to_entity_id::text = ANY($1::text[])) `; }
   if (/^\d+$/.test(String(req.query.asset_id || ''))) { params.push(req.query.asset_id); where += `AND m.asset_id = $${params.length} `; }
@@ -249,13 +249,13 @@ router.get('/report', async (req, res) => {
   if (!has(req.user, 'stock.report')) return res.status(403).json({ error: 'Seu perfil não vê o relatório de inventário.' });
   const dias = Math.min(Math.max(parseInt(req.query.dias, 10) || 90, 1), 3660);
   const pA = [];
-  let fA = filtroEmpresas(req.user, pA);
+  let fA = `AND a.entity_id IS NOT NULL ${filtroEmpresas(req.user, pA)}`; // itens da ORCIM (sem empresa) ficam fora
   // valor por empresa: compara todas as empresas que a pessoa vê (sem o filtro de empresa e de posto)
   const pEmp = [...pA]; let fEmp = fA;
   if (req.query.escopo === 'estoque') fEmp += ` AND a.status IN ('STOCK','READY','ORDERED')`;
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { pA.push(req.query.entity_id); fA += ` AND a.entity_id = $${pA.length}`; }
   const pM = [dias];
-  let fM = '';
+  let fM = ' AND m.to_entity_id IS NOT NULL';
   const ents = entityIdsOf(req.user);
   if (ents !== null) { pM.push(ents); fM += ` AND m.to_entity_id::text = ANY($${pM.length}::text[])`; }
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { pM.push(req.query.entity_id); fM += ` AND m.to_entity_id = $${pM.length}`; }

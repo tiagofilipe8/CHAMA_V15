@@ -2256,3 +2256,29 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .er-emp-v { display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
 .er-emp-lin td { background: var(--surface-2) !important; font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .er-emp-lin td .bi { color: var(--primary); margin-right: 4px; }
+
+/* ===== Estoque da ORCIM ===== */
+.card.oc-topo { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px; }
+.oc-marca { display: flex; align-items: center; gap: 12px; flex: 1 1 320px; min-width: 0; }
+.oc-marca b { display: block; font-size: 1rem; }
+.oc-marca small { display: block; color: var(--muted); font-size: .76rem; line-height: 1.3; }
+.oc-logo { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; background: #e0e7ff; color: #4338ca; flex: 0 0 auto; }
+[data-bs-theme="dark"] .oc-logo { background: rgba(127,127,127,.2); color: var(--ink); }
+.oc-kpis { display: flex; gap: 18px; }
+.oc-kpi { display: flex; flex-direction: column; }
+.oc-kpi b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.oc-kpi small { font-size: .7rem; color: var(--muted); }
+.oc-acoes { display: flex; gap: 8px; align-items: center; flex: 1 1 100%; }
+.oc-acoes .iv-busca { flex: 1; }
+.oc-grupo { overflow: hidden; }
+.oc-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.oc-item .iv-tx { flex: 1; min-width: 180px; }
+.oc-btns { display: flex; gap: 4px; }
+.oc-rota { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: .8rem; flex-wrap: wrap; }
+.oc-rota > .bi { color: var(--primary); }
+.oc-destinos { display: flex; flex-direction: column; gap: 6px; }
+.oc-enviados { display: flex; flex-direction: column; }
+.oc-env { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); color: inherit; text-decoration: none; font-size: .84rem; }
+.oc-env:hover { background: rgba(127,127,127,.06); }
+.oc-env-ico { color: #16a34a; font-size: 1.1rem; }
+.oc-env-tx { flex: 1; min-width: 0; }

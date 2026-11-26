@@ -31,6 +31,7 @@ const chatRoutes = require('./routes/chat');
 const stockRoutes = require('./routes/stock');
 const stockReasonRoutes = require('./routes/stockReasons');
 const pedidoRoutes = require('./routes/pedidos');
+const orcimRoutes = require('./routes/orcim');
 const rotaRoutes = require('./routes/rotas');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
@@ -81,6 +82,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/stock-reasons', stockReasonRoutes);
 app.use('/api/pedidos', pedidoRoutes);
+app.use('/api/orcim', orcimRoutes);
 app.use('/api/rotas', rotaRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)

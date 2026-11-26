@@ -47,9 +47,11 @@ function buildNav(u) {
 
   // Equipamentos: Inventário e, logo abaixo (ligado por um "L"), o Estoque de T.I. de cada posto
   const equip = [];
-  if (can('inventory.view')) equip.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
+  if (can('inventory.view')) equip.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário da Empresa' });
   if (can('stock.withdraw') || can('inventory.view')) equip.push({ href: '#/estoque', icon: 'bi-box-seam', label: 'Estoque de T.I.', sub: can('inventory.view') });
   if (can('inventory.view')) equip.push({ href: '#/pedidos', icon: 'bi-cart3', label: 'Pedidos', sub: true });
+  // Estoque da ORCIM: só a equipe da ORCIM (cuida do inventário e vê todas as empresas)
+  if (can('inventory.manage') && (master || can('ticket.view_all'))) equip.push({ href: '#/orcim', icon: 'bi-boxes', label: 'Estoque da ORCIM' });
   if (can('stock.report')) equip.push({ href: '#/inventario/relatorio', icon: 'bi-graph-up', label: 'Relatório de inventário' }); // item próprio, no mesmo nível do Inventário
   grupo('Equipamentos', 'g-equip', equip);
 
@@ -97,7 +99,8 @@ function pageTitleFromPath() {
     '/inventario/relatorio': 'Relatório de inventário',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
-    '/inventory': 'Inventário',
+    '/inventory': 'Inventário da Empresa',
+    '/orcim': 'Estoque da ORCIM',
     '/inventory/agents': 'Agentes',
     '/new': 'Abrir Chamado',
     '/admin/users': 'Usuários',
@@ -134,7 +137,8 @@ function pageDescFromPath() {
     '/meus-pedidos': 'Os materiais que você pediu e onde cada um está: pedido, a caminho, chegou, entregue. O sininho marca o que mudou.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
     '/new': 'Conte o problema e onde ele está. A equipe de TI recebe o chamado na hora.',
-    '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão, quanto custaram e em que estado estão.',
+    '/inventory': 'Computadores, impressoras e outros equipamentos de cada empresa: o que são, onde estão, quanto custaram e em que estado estão.',
+    '/orcim': 'Itens da ORCIM que ainda não foram para nenhuma empresa. Registre e transfira para a empresa e o posto.',
     '/chat': 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.',
     '/estoque': 'Itens guardados no estoque de cada posto. Quem pega um item dá baixa aqui, dizendo o motivo.',
     '/pedidos': 'Chamados com pedido de material e a situação de cada item: pedido, comprado, chegou, entregue.',
@@ -250,7 +254,7 @@ function renderNav() {
 // Selo do grupo ao lado do título (mesma cor do grupo no menu)
 function moduloAtual() {
   const p = location.hash.replace(/^#/, '') || '/dashboard';
-  if (p.startsWith('/inventory') || p.startsWith('/inventario') || p.startsWith('/estoque') || p.startsWith('/pedidos')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
+  if (p.startsWith('/inventory') || p.startsWith('/inventario') || p.startsWith('/estoque') || p.startsWith('/pedidos') || p.startsWith('/orcim')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
   if (p.startsWith('/chat')) return ['Chat', 'tg-teal', 'bi-chat-dots'];
   if (p.startsWith('/admin/locations')) return ['Locais', 'tg-teal', 'bi-geo-alt'];
   if (p.startsWith('/admin/roles') || p.startsWith('/admin/settings')) return ['Sistema', 'tg-gray', 'bi-gear'];
@@ -282,12 +286,12 @@ function migalhasDoCaminho() {
     lista.push({ txt: can('ticket.view_all') ? 'Chamados' : 'Meus chamados', href: '#/tickets' });
     lista.push({ txt: migalhaExtra || `Chamado #${m[1]}` });
   } else if ((m = path.match(/^\/inventory\/(\d+)/))) {
-    lista.push({ txt: 'Inventário', href: '#/inventory' });
+    lista.push({ txt: 'Inventário da Empresa', href: '#/inventory' });
     lista.push({ txt: migalhaExtra || `Equipamento #${m[1]}` });
   } else if (path === '/inventory/agents') {
-    lista.push({ txt: 'Inventário', href: '#/inventory' }, { txt: 'Agentes' });
+    lista.push({ txt: 'Inventário da Empresa', href: '#/inventory' }, { txt: 'Agentes' });
   } else if (path === '/estoque' && can('inventory.view')) {
-    lista.push({ txt: 'Inventário', href: '#/inventory' }, { txt: 'Estoque de T.I.' });
+    lista.push({ txt: 'Inventário da Empresa', href: '#/inventory' }, { txt: 'Estoque de T.I.' });
   } else if (/^\/chat\/\d+/.test(path)) {
     lista.push({ txt: migalhaExtra || 'Conversa' });
   } else {
@@ -364,6 +368,7 @@ const routes = [
   { re: /^#\/estoque$/, view: () => Views.estoque },
   { re: /^#\/pedidos$/, view: () => Views.pedidos },
   { re: /^#\/meus-pedidos$/, view: () => Views.meusPedidos },
+  { re: /^#\/orcim$/, view: () => Views.orcim },
   { re: /^#\/inventario\/relatorio$/, view: () => Views.estoqueRelatorio },
   { re: /^#\/estoque\/relatorio$/, view: () => () => { location.replace('#/inventario/relatorio'); } }, // endereço antigo
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
