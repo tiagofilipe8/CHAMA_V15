@@ -612,12 +612,21 @@ function pintarNovidades() {
   });
 }
 window.temNovidade = (id) => novidades.includes(Number(id));
+// o calendário escuta para pôr/tirar o sininho das bolinhas
+let novidadesAntes = '';
+function avisarNovidades() {
+  const k = novidades.slice().sort().join(',');
+  if (k === novidadesAntes) return;
+  novidadesAntes = k;
+  document.dispatchEvent(new CustomEvent('novidades'));
+}
 
 async function loadBell() {
   try {
     const data = await API.get('/notifications');
-    novidades = Array.isArray(data.mine_tickets) ? data.mine_tickets : [];
+    novidades = (Array.isArray(data.mine_tickets) ? data.mine_tickets : []).map(Number);
     pintarNovidades();
+    avisarNovidades();
     const countEl = document.getElementById('notif-count');
     const listEl = document.getElementById('notif-list');
     countEl.classList.toggle('d-none', data.unread === 0);

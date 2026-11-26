@@ -285,7 +285,12 @@ const CalendarUI = (() => {
       || Number(b.atrasado) - Number(a.atrasado) || a.t.id - b.t.id;
     const doDia = (d) => (porDia().get(d) || []).slice().sort(ordena);
 
-    const etiqueta = (i) => (i.atrasado ? '<span class="tg tg-red">Atrasado</span>' : badgeStatus(i.t.status)); // mesma etiqueta de status do resto do sistema
+    // sininho: chamado com novidade (mesma regra do sininho de "Meus chamados")
+    const novo = (i) => !!(window.temNovidade && window.temNovidade(i.t.id));
+    const sino = (n, titulo) => (n ? `<sup class="cg-sino" title="${titulo}"><i class="bi bi-bell-fill"></i>${n > 1 ? n : ''}</sup>` : '');
+    const sinoItem = (i) => (novo(i) ? '<i class="bi bi-bell-fill cg-sino-it" title="Teve novidade desde a última vez que você abriu"></i>' : '');
+
+  const etiqueta = (i) => (i.atrasado ? '<span class="tg tg-red">Atrasado</span>' : badgeStatus(i.t.status)); // mesma etiqueta de status do resto do sistema
 
     function pintar() {
       salvar();
@@ -302,19 +307,23 @@ const CalendarUI = (() => {
         // e os resolvidos/fechados aparecem num ✓ verde ao lado
         const abertosDia = lst.filter((i) => !i.feito);
         const cont = [4, 3, 2, 1].map((p) => [p, abertosDia.filter((i) => i.prioridade === p).length,
-          abertosDia.filter((i) => i.prioridade === p && i.atrasado).length]).filter(([, n]) => n);
+          abertosDia.filter((i) => i.prioridade === p && i.atrasado).length,
+          abertosDia.filter((i) => i.prioridade === p && novo(i)).length]).filter(([, n]) => n);
         const feitos = lst.filter((i) => i.feito).length;
+        const feitosNovos = lst.filter((i) => i.feito && novo(i)).length;
+        const novosDia = lst.filter(novo).length;
         const fora = d.slice(0, 7) !== mesIso;
-        return `<button type="button" class="cg-cel${fora ? ' fora' : ''}${d === hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}" data-dia="${d}"
-            aria-label="${tituloDia(d)}: ${plural(lst.length, 'chamado', 'chamados')}" aria-pressed="${d === diaSel}">
+        return `<button type="button" class="cg-cel${fora ? ' fora' : ''}${d === hoje ? ' hoje' : ''}${d === diaSel ? ' sel' : ''}${novosDia ? ' com-novidade' : ''}" data-dia="${d}"
+            aria-label="${tituloDia(d)}: ${plural(lst.length, 'chamado', 'chamados')}${novosDia ? `, ${novosDia} com novidade` : ''}" aria-pressed="${d === diaSel}">
           <span class="cg-d">${Number(d.slice(8, 10))}</span>
-          <span class="cg-nums">${cont.map(([p, n, a]) => `<i class="cg-num ${URG_CLS[p]}" title="${n} em aberto · ${esc(nomes[p])}${a ? ` · ${a} atrasado(s)` : ''}">${n}${a ? `<sup class="cg-sup" title="${a} atrasado(s)"><i class="bi bi-alarm-fill"></i>${a > 1 ? a : ''}</sup>` : ''}</i>`).join('')}${feitos ? `<i class="cg-ok" title="${feitos} resolvido(s)/fechado(s)"><i class="bi bi-check-lg"></i>${feitos}</i>` : ''}</span>
+          <span class="cg-nums">${cont.map(([p, n, a, nv]) => `<i class="cg-num ${URG_CLS[p]}" title="${n} em aberto · ${esc(nomes[p])}${a ? ` · ${a} atrasado(s)` : ''}${nv ? ` · ${nv} com novidade` : ''}">${n}${a ? `<sup class="cg-sup" title="${a} atrasado(s)"><i class="bi bi-alarm-fill"></i>${a > 1 ? a : ''}</sup>` : ''}${sino(nv, `${nv} com novidade`)}</i>`).join('')}${feitos ? `<i class="cg-ok" title="${feitos} resolvido(s)/fechado(s)${feitosNovos ? ` · ${feitosNovos} com novidade` : ''}"><i class="bi bi-check-lg"></i>${feitos}${sino(feitosNovos, `${feitosNovos} com novidade`)}</i>` : ''}</span>
         </button>`;
       }).join('');
 
       $('.cg-legenda').innerHTML = `${[4, 3, 2, 1].map((p) => `<span><i class="cg-num ${URG_CLS[p]}"></i>${esc(nomes[p])}</span>`).join('')}
         ${atraso ? '<span><i class="bi bi-alarm-fill cg-alarme"></i>atrasado (em cima do número)</span>' : ''}
         <span><i class="bi bi-check-lg cg-ok-leg"></i>resolvidos/fechados</span>
+        <span><i class="bi bi-bell-fill cg-sino-leg"></i>teve novidade</span>
         <span class="ms-auto cg-nota">${esc(nota || `Cada chamado aparece no dia de "${dateLabel}".`)}</span>`;
 
       // lista do dia escolhido (ao lado)
@@ -324,7 +333,7 @@ const CalendarUI = (() => {
       const itemLado = (i) => `<a class="cg-item" href="#/tickets/${i.t.id}">
           <i class="cg-num ${URG_CLS[i.prioridade]}" title="${esc(nomes[i.prioridade])}"></i>
           <span class="cg-item-tx">
-            <span class="t">${esc(i.t.title)}</span>
+            <span class="t">${sinoItem(i)}${esc(i.t.title)}</span>
             <span class="cg-sub">${esc(i.t.number || String(i.t.id))}${i.t.location_name ? ` · ${esc(i.t.location_name)}` : ''} · ${i.t.assigned_name ? esc(i.t.assigned_name) : '<em>sem técnico</em>'}${i.dia !== diaSel ? ` · ${dateLabel.toLowerCase()} ${curta(i.dia)}` : ''}</span>
           </span>
           <span class="cg-item-tg">${etiqueta(i)}</span>
@@ -456,7 +465,7 @@ const CalendarUI = (() => {
           <span>${lst.length ? `${feitos}/${lst.length} resolvido(s)` : ''}</span>
           <button type="button" class="cg-pop-x" aria-label="Fechar"><i class="bi bi-x-lg"></i></button></div>
         ${lst.length ? `<ul>${lst.slice(0, 30).map((i, n) => `<li style="--n:${n}" data-id="${i.t.id}" tabindex="0">
-            <div class="cg-pop-lin"><i class="cg-num ${URG_CLS[i.prioridade]}"></i><span class="t">${esc(i.t.title)}</span>${etiqueta(i)}</div>
+            <div class="cg-pop-lin"><i class="cg-num ${URG_CLS[i.prioridade]}"></i><span class="t">${sinoItem(i)}${esc(i.t.title)}</span>${etiqueta(i)}</div>
             ${det(i)}</li>`).join('')}</ul>${lst.length > 30 ? `<div class="cg-pop-mais">+${lst.length - 30} na lista ao lado</div>` : ''}`
     : '<div class="cg-pop-vazio">Nenhum chamado neste dia.</div>'}`;
       F.pop.classList.add('fixo');
@@ -475,6 +484,8 @@ const CalendarUI = (() => {
       setTimeout(() => desenharLinha(cel), primeira ? 30 : 230); // espera a lista chegar no lugar
     }
 
+    const aoMudarNovidades = () => { if (!document.body.contains(el)) { document.removeEventListener('novidades', aoMudarNovidades); return; } pintar(); };
+    document.addEventListener('novidades', aoMudarNovidades);
     carregar();
     return { reload: carregar };
   }
