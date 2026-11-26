@@ -13,7 +13,7 @@ Views.causas = async function causas(el) {
     toast('Seu perfil não vê as causas e as notas dos chamados.', 'warning');
     return;
   }
-  let prefs = { dias: 90, entity: '' };
+  let prefs = { dias: 90, entity: '', posto: '', mes: '', ano: '' };
   try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('causas_prefs') || '{}') }; } catch { /* padrão */ }
   const salvar = () => { try { localStorage.setItem('causas_prefs', JSON.stringify(prefs)); } catch { /* sem armazenamento */ } };
   const PERIODOS = [[30, '30 dias'], [90, '90 dias'], [365, '12 meses'], [0, 'Tudo']];
@@ -23,7 +23,10 @@ Views.causas = async function causas(el) {
   el.innerHTML = `
     <div class="cz-filtros">
       <div class="seg" role="group" aria-label="Período">${PERIODOS.map(([v, r]) => `<button type="button" data-dias="${v}">${r}</button>`).join('')}</div>
+      <select class="form-select form-select-sm cz-sel" id="cz-ano" title="Ano"></select>
+      <select class="form-select form-select-sm cz-sel" id="cz-mes" title="Mês"></select>
       <select class="form-select form-select-sm cz-ent" id="cz-ent" style="display:none"></select>
+      <select class="form-select form-select-sm cz-sel" id="cz-posto" title="Posto"><option value="">Todos os postos</option></select>
       <span class="small text-muted ms-auto" id="cz-info"></span>
     </div>
     <div id="cz-corpo">${spinner()}</div>`;
@@ -36,9 +39,32 @@ Views.causas = async function causas(el) {
     sel.innerHTML = '<option value="">Todas as empresas</option>' + ativas.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
     sel.value = prefs.entity;
     sel.style.display = '';
-    sel.addEventListener('change', () => { prefs.entity = sel.value; salvar(); carregar(); });
+    sel.addEventListener('change', async () => { prefs.entity = sel.value; await carregarPostos(); salvar(); carregar(); });
   }).catch(() => {});
-  el.querySelectorAll('[data-dias]').forEach((b) => b.addEventListener('click', () => { prefs.dias = Number(b.dataset.dias); salvar(); carregar(); }));
+  // período: botões (últimos dias) OU mês/ano escolhidos (um anula o outro)
+  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const anoAtual = new Date().getFullYear();
+  const selAno = el.querySelector('#cz-ano'); const selMes = el.querySelector('#cz-mes');
+  selAno.innerHTML = '<option value="">Ano</option>' + [0, 1, 2, 3].map((k) => `<option value="${anoAtual - k}">${anoAtual - k}</option>`).join('');
+  selMes.innerHTML = '<option value="">Mês (o ano todo)</option>' + MESES.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}">${m}</option>`).join('');
+  selAno.value = prefs.ano; selMes.value = prefs.mes; selMes.disabled = !prefs.ano;
+  const porData = () => { prefs.ano = selAno.value; prefs.mes = prefs.ano ? selMes.value : ''; selMes.disabled = !prefs.ano; if (!prefs.ano) selMes.value = ''; salvar(); carregar(); };
+  selAno.addEventListener('change', porData);
+  selMes.addEventListener('change', porData);
+  el.querySelectorAll('[data-dias]').forEach((b) => b.addEventListener('click', () => {
+    prefs.dias = Number(b.dataset.dias); prefs.ano = ''; prefs.mes = ''; selAno.value = ''; selMes.value = ''; selMes.disabled = true; salvar(); carregar();
+  }));
+  // postos (da empresa escolhida, se houver)
+  const selPosto = el.querySelector('#cz-posto');
+  const carregarPostos = async () => {
+    let locs = [];
+    try { locs = await API.get(`/locations${prefs.entity ? `?entity_id=${encodeURIComponent(prefs.entity)}` : ''}`); } catch { /* sem lista */ }
+    selPosto.innerHTML = '<option value="">Todos os postos</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+    if (!locs.some((l) => String(l.id) === String(prefs.posto))) prefs.posto = '';
+    selPosto.value = prefs.posto;
+  };
+  selPosto.addEventListener('change', () => { prefs.posto = selPosto.value; salvar(); carregar(); });
+  carregarPostos();
 
   const barras = (lista, total, extra) => lista.map((r) => {
     const pct = total ? Math.round((r.total / total) * 100) : 0;
@@ -50,16 +76,17 @@ Views.causas = async function causas(el) {
   }).join('');
 
   async function carregar() {
-    el.querySelectorAll('[data-dias]').forEach((b) => b.classList.toggle('active', Number(b.dataset.dias) === prefs.dias));
+    el.querySelectorAll('[data-dias]').forEach((b) => b.classList.toggle('active', !prefs.ano && Number(b.dataset.dias) === prefs.dias));
     const corpo = el.querySelector('#cz-corpo');
     let d;
     try {
-      d = await API.get(`/dashboard/causas?dias=${prefs.dias}${prefs.entity ? `&entity_id=${encodeURIComponent(prefs.entity)}` : ''}`);
+      const periodo = prefs.ano ? (prefs.mes ? `&mes=${prefs.ano}-${prefs.mes}` : `&ano=${prefs.ano}`) : '';
+      d = await API.get(`/dashboard/causas?dias=${prefs.dias}${periodo}${prefs.entity ? `&entity_id=${encodeURIComponent(prefs.entity)}` : ''}${prefs.posto ? `&location_id=${encodeURIComponent(prefs.posto)}` : ''}`);
     } catch (e) { corpo.innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
     const totAb = d.abertura.reduce((s, r) => s + r.total, 0);
     const totFe = d.fechamento.reduce((s, r) => s + r.total, 0);
     const avaliados = d.locais.reduce((s, r) => s + r.avaliados, 0);
-    el.querySelector('#cz-info').textContent = `${totAb} aberto(s) · ${totFe} resolvido(s) · ${avaliados} com nota${prefs.dias ? ` · últimos ${prefs.dias} dias` : ''}`;
+    el.querySelector('#cz-info').textContent = `${totAb} aberto(s) · ${totFe} resolvido(s) · ${avaliados} com nota${prefs.ano ? ` · ${prefs.mes ? `${MESES[Number(prefs.mes) - 1]} de ` : ''}${prefs.ano}` : prefs.dias ? ` · últimos ${prefs.dias} dias` : ''}`;
 
     // usuários por local (para abrir dentro de cada local)
     const usuariosDe = (l) => d.usuarios.filter((u) => String(u.entity_id) === String(l.entity_id) && String(u.location_id ?? '') === String(l.location_id ?? ''));

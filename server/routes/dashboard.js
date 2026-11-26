@@ -262,10 +262,20 @@ router.get('/causas', async (req, res) => {
   if (req.query.entity_id && /^\d+$/.test(req.query.entity_id)) {
     params.push(req.query.entity_id); conds.push(`t.entity_id = $${params.length}`);
   }
+  // filtro por posto (localidade)
+  if (req.query.location_id && /^\d+$/.test(req.query.location_id)) {
+    params.push(req.query.location_id); conds.push(`t.location_id = $${params.length}`);
+  }
   const base = conds.length ? `AND ${conds.join(' AND ')}` : '';
-  // abertura: chamados abertos no período; fechamento e notas: resolvidos no período
-  const periodoAbertura = dias ? `AND t.created_at >= now() - interval '${dias} days'` : '';
-  const periodoFech = dias ? `AND COALESCE(t.resolved_at, t.closed_at, t.updated_at) >= now() - interval '${dias} days'` : '';
+  // período: um mês (?mes=2026-11), um ano (?ano=2026) ou os últimos N dias (?dias=30)
+  //   abertura: chamados abertos no período; fechamento e notas: resolvidos no período
+  const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query.mes || '')) ? req.query.mes : null;
+  const ano = /^\d{4}$/.test(String(req.query.ano || '')) ? req.query.ano : null;
+  const faixa = (col) => (mes ? `AND ${col} >= '${mes}-01'::date AND ${col} < ('${mes}-01'::date + interval '1 month')`
+    : ano ? `AND ${col} >= '${ano}-01-01'::date AND ${col} < '${Number(ano) + 1}-01-01'::date`
+      : dias ? `AND ${col} >= now() - interval '${dias} days'` : '');
+  const periodoAbertura = faixa('t.created_at');
+  const periodoFech = faixa('COALESCE(t.resolved_at, t.closed_at, t.updated_at)');
 
   const [abertura, fechamento, locais, usuarios, peloUsuario] = await Promise.all([
     query(

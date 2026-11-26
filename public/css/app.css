@@ -1950,3 +1950,5 @@ a.dp-ind:hover { background: var(--surface-2); }
 .cz-barra { grid-template-columns: minmax(0, 2fr) minmax(40px, .9fr) 24px 34px 66px; }
 .cz-fech .cz-barra, .cz-lista:not(:has(.tg)) .cz-barra { grid-template-columns: minmax(0, 2fr) minmax(40px, .9fr) 24px 34px; }
 @media (max-width: 575px) { .cz-barra, .cz-fech .cz-barra, .cz-lista:not(:has(.tg)) .cz-barra { grid-template-columns: minmax(0, 1fr) 24px 34px; } }
+.cz-sel { width: auto; max-width: 190px; }
+.cz-filtros { flex-wrap: wrap; gap: 6px; }
