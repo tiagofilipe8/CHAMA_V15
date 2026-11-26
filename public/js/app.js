@@ -36,6 +36,8 @@ function buildNav(u) {
   if (can('dashboard.view') && can('ticket.rating')) atendimento.push({ href: '#/causas', icon: 'bi-clipboard-data', label: 'Causas e notas' });
   if (can('dashboard.view')) atendimento.push({ href: '#/urgencia', icon: 'bi-fire', label: 'Score de urgência' });
   if (can('dashboard.view')) atendimento.push({ href: '#/rotas', icon: 'bi-signpost-split', label: 'Sugerir rotas' });
+  // Agenda de rotas: logo abaixo, ligada por um "L" (as rotas já agendadas para outros dias)
+  if (can('dashboard.view')) atendimento.push({ href: '#/rotas?aba=agenda', icon: 'bi-calendar3', label: 'Agenda de rotas', sub: true });
   // quem não vê o painel (gestor, usuário): as visitas da TI planejadas para o seu local
   if (!can('dashboard.view')) atendimento.push({ href: '#/visitas', icon: 'bi-truck', label: 'Visitas da TI' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
@@ -91,7 +93,7 @@ function pageTitleFromPath() {
     '/atendimento': 'Meu atendimento',
     '/causas': 'Causas e notas',
     '/urgencia': 'Score de urgência',
-    '/rotas': 'Sugerir rotas',
+    '/rotas': /aba=agenda/.test(location.hash) ? 'Agenda de rotas' : 'Sugerir rotas',
     '/visitas': 'Visitas da TI',
     '/chat': 'Chat',
     '/estoque': 'Estoque de T.I.',
@@ -340,12 +342,15 @@ function activeNav() {
   const fab = document.getElementById('fab-novo');
   if (fab) fab.classList.toggle('show', Roles.can(currentUser(), 'ticket.create') && !/^#\/new/.test(location.hash));
   const path = location.hash.replace(/^#/, '');
-  document.querySelectorAll('#side-nav .nav-item').forEach((a) => {
+  // quando um item do menu bate exatamente com a tela (ex.: Agenda de rotas), só ele fica marcado
+  const itens = [...document.querySelectorAll('#side-nav .nav-item')];
+  const exato = itens.some((a) => (a.getAttribute('href') || '').replace(/^#/, '') === path && path.includes('?'));
+  itens.forEach((a) => {
     const href = a.getAttribute('href') || '';
     const target = href.replace(/^#/, '');
     a.classList.toggle('active',
       target === '/dashboard' ? path === target
-        : path === target || path.startsWith(target + '/') || path.startsWith(target + '?'));
+        : path === target || path.startsWith(target + '/') || (!exato && path.startsWith(target + '?')));
   });
   const cta = document.querySelector('#side-nav .nav-cta');
   if (cta) cta.classList.toggle('active', /^\/new($|\?)/.test(path));
