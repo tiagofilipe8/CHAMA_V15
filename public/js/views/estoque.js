@@ -58,6 +58,7 @@ const Estoque = (() => {
       ${porQtd ? `<div class="es-qtd mt-3"><label class="form-label small fw-semibold mb-1">Quantos você pegou? *</label>
         <div class="d-flex align-items-center gap-2"><input type="number" class="form-control form-control-sm" id="es-qtd" min="1" max="${it.quantity}" value="1" style="max-width:6rem">
         <small class="text-muted">de ${it.quantity} no estoque · item sem etiqueta, contado por quantidade</small></div></div>` : ''}
+      ${it.price !== undefined && it.price !== null ? `<div class="es-custo mt-2"><i class="bi bi-cash-coin"></i> Custo desta baixa: <b id="es-custo">${invMoeda(it.price)}</b>${porQtd ? ` <small class="text-muted">(${invMoeda(it.price)} por unidade)</small>` : ''}</div>` : ''}
       <label class="form-label small fw-semibold mt-3 mb-1">Por que você está pegando este item? *</label>
       <div class="es-razoes">${razoes.map((r) => `<label class="es-razao"><input type="radio" name="es-razao" value="${r.id}" data-nome="${esc(r.name)}" data-efeito="${esc(r.efeito || '')}">
         <span><b>${esc(r.name)}</b>${r.description ? `<small>${esc(r.description)}</small>` : ''}</span></label>`).join('')}</div>
@@ -79,7 +80,7 @@ const Estoque = (() => {
       try { lista = await API.get(`/stock/${it.id}/afetaveis${dest ? `?location_id=${dest}` : ''}`); } catch { lista = []; }
       const mesmo = lista.filter((a) => a.type === it.type);
       const outros = lista.filter((a) => a.type !== it.type);
-      const op = (a) => `<option value="${a.id}">${esc([a.asset_tag, a.name].filter(Boolean).join(' · '))}${a.status !== 'OPERATING' ? ` (${esc(INV_STATUS[a.status] || a.status)})` : ''}</option>`;
+      const op = (a) => `<option value="${a.id}" data-preco="${a.price ?? ''}">${esc([a.asset_tag, a.name].filter(Boolean).join(' · '))}${a.status !== 'OPERATING' ? ` (${esc(INV_STATUS[a.status] || a.status)})` : ''}</option>`;
       selAf.innerHTML = `<option value="">— escolha —</option>
         ${mesmo.length ? `<optgroup label="${esc(tipoNome(it.type))} deste posto">${mesmo.map(op).join('')}</optgroup>` : ''}
         ${outros.length ? `<optgroup label="Outros itens com etiqueta">${outros.map(op).join('')}</optgroup>` : ''}
@@ -95,6 +96,17 @@ const Estoque = (() => {
       m.querySelector('#es-efeito').innerHTML = ef && EFEITO_TXT[ef] ? `<i class="bi bi-info-circle"></i> ${EFEITO_TXT[ef][1]} Se não tiver etiqueta, fica só anotado.` : '';
     };
     m.querySelectorAll('[name="es-razao"]').forEach((r) => r.addEventListener('change', atualizar));
+    // custo = preço por unidade × quantidade
+    const qtdEl = m.querySelector('#es-qtd');
+    if (qtdEl && m.querySelector('#es-custo')) qtdEl.addEventListener('input', () => { m.querySelector('#es-custo').textContent = invMoeda(Number(it.price) * (parseInt(qtdEl.value, 10) || 0)); });
+    // valor do item substituído (o que se perde quando estragou ou sumiu)
+    selAf.addEventListener('change', () => {
+      const o = selAf.selectedOptions[0];
+      const r = m.querySelector('[name="es-razao"]:checked');
+      const base = r && EFEITO_TXT[r.dataset.efeito] ? EFEITO_TXT[r.dataset.efeito][1] : '';
+      const preco = o && o.dataset.preco;
+      m.querySelector('#es-efeito').innerHTML = `<i class="bi bi-info-circle"></i> ${base}${preco && r && ['LOST', 'BROKEN'].includes(r.dataset.efeito) ? ` Valor do item perdido: <b>${invMoeda(preco)}</b> (entra no relatório como prejuízo).` : ''}`;
+    });
     m.querySelector('#es-destino').addEventListener('change', carregarAfetaveis);
     carregarAfetaveis();
     m.querySelector('[data-ok]').addEventListener('click', async () => {
@@ -227,7 +239,7 @@ const Estoque = (() => {
               <small class="text-muted">${esc([it.asset_tag, [it.manufacturer, it.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || '—')}</small>
               ${it.notes ? `<small class="es-obs">${esc(it.notes)}</small>` : ''}
               <div class="es-card-rodape">
-                <small class="text-muted">${it.desde ? `no estoque desde ${dataCurta(it.desde)}` : ''}${it.price !== undefined && it.price !== null ? ` · <b>${invMoeda(it.price)}</b>` : ''}</small>
+                <small class="text-muted">${it.desde ? `no estoque desde ${dataCurta(it.desde)}` : ''}${it.price !== undefined && it.price !== null ? (it.controle === 'quantidade' ? ` · ${invMoeda(it.price)}/un · <b>${invMoeda(Number(it.price) * Number(it.quantity || 0))}</b>` : ` · <b>${invMoeda(it.price)}</b>`) : ''}</small>
                 <span class="d-flex gap-1">
                   ${can('inventory.manage') ? `<button class="btn btn-sm btn-outline-secondary" data-transf="${it.id}" title="Transferir para outra unidade"><i class="bi bi-arrow-left-right"></i></button>` : ''}
                   ${can('stock.withdraw') && PODE_PEGAR.includes(it.status) && !(it.controle === 'quantidade' && !(it.quantity > 0)) ? `<button class="btn btn-sm btn-primary" data-baixa="${it.id}"><i class="bi bi-box-arrow-up"></i> Dar baixa</button>` : ''}
@@ -326,6 +338,7 @@ const Estoque = (() => {
     : 'Quantos equipamentos estão cadastrados agora, de todas as categorias e estados, menos os descartados e extraviados.')}<small>${r.escopo === 'estoque' ? 'Itens no estoque de T.I.' : 'Equipamentos no inventário'}</small><b>${r.inventario.itens}</b><span>${r.escopo === 'estoque' ? 'em estoque, prontos ou a caminho' : 'sem os descartados e extraviados'}</span></div>
           <div class="er-kpi"><span class="er-ico ambar" aria-hidden="true"><i class="bi bi-box-arrow-up"></i></span>${ajuda('Quantas vezes alguém deu baixa (pegou um item) no estoque de T.I. no período escolhido. Cada baixa tem um motivo, que aparece em "Retiradas por motivo".')}<small>Retiradas do estoque</small><b>${r.totais.retiradas}</b><span>${periodo}</span></div>
           ${v ? `<div class="er-kpi destaque"><span class="er-ico vermelho" aria-hidden="true"><i class="bi bi-receipt-cutoff"></i></span>${ajuda('Soma do preço dos itens que saíram do estoque no período: é quanto em equipamento foi usado para substituir, repor ou atender pedidos. Veja em "Retiradas por motivo" e "por posto" para onde esse dinheiro está indo.')}<small>Custo das retiradas</small><b>${invMoeda(r.totais.custo_retiradas)}</b><span>${periodo}</span></div>` : ''}
+          ${v ? `<div class="er-kpi"><span class="er-ico vermelho" aria-hidden="true"><i class="bi bi-exclamation-octagon"></i></span>${ajuda('Valor dos equipamentos que estragaram ou sumiram (furto, perda, acidente) e foram substituídos por um item do estoque no período. Conta o preço cadastrado do item antigo.')}<small>Prejuízo (perdidos e estragados)</small><b>${invMoeda(r.totais.prejuizo)}</b><span>${r.totais.perdidos} item(ns) · ${periodo}</span></div>` : ''}
           <div class="er-kpi"><span class="er-ico violeta" aria-hidden="true"><i class="bi bi-arrow-left-right"></i></span>${ajuda('Transferências: itens mandados de uma unidade para outra. Entradas: itens que entraram no estoque (cadastrados como "Em estoque" ou devolvidos depois de usados).')}<small>Transferências / entradas</small><b>${r.totais.transferencias} / ${r.totais.entradas}</b><span>${periodo}</span></div>
         </div>
         <div class="er-grade">

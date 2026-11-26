@@ -294,7 +294,7 @@ Views.inventory = async function inventory(el) {
         ${manutVencida ? '<i class="bi bi-tools text-danger" title="Manutenção vencida"></i>' : ''}
         ${a.agent_status === 'ONLINE' ? '<i class="bi bi-wifi text-success" title="Agente online"></i>' : ''}
       </span>
-      ${invVeSegredos() ? `<span class="iv-preco">${a.price !== null && a.price !== undefined ? invMoeda(a.price) : ''}</span>` : ''}
+      ${invVeSegredos() ? `<span class="iv-preco">${a.price !== null && a.price !== undefined ? (a.controle === 'quantidade' ? `${invMoeda(Number(a.price) * Number(a.quantity || 0))}<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : invMoeda(a.price)) : ''}</span>` : ''}
       <span class="iv-estado">${invEstado(a.status)}</span>
     </a>`;
   };
@@ -325,7 +325,7 @@ Views.inventory = async function inventory(el) {
       if (!locais.has(k)) locais.set(k, { nome: a.location_name || 'Sem local definido', empresa: a.entity_name, tipos: new Map(), n: 0, valor: 0 });
       const L = locais.get(k);
       if (!L.tipos.has(a.type)) L.tipos.set(a.type, []);
-      L.tipos.get(a.type).push(a); L.n += 1; L.valor += Number(a.price || 0);
+      L.tipos.get(a.type).push(a); L.n += 1; L.valor += Number(a.price || 0) * (a.controle === 'quantidade' ? Number(a.quantity || 0) : 1);
     });
     const ordem = [...locais.entries()].sort((x, y) => (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || x[1].nome.localeCompare(y[1].nome));
     grid.innerHTML = ordem.map(([k, L]) => {
@@ -430,7 +430,8 @@ Views.assetDetail = async function assetDetail(id, el) {
         <div class="card panel-card mb-3"><div class="card-header">Identificação</div><div class="card-body small">
           <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>Etiqueta Orcim:</b> ${esc(a.asset_tag||'—')}</div></div>
           <div class="row"><div class="col-6"><b>Categoria:</b> ${INV_TYPES[a.type]||a.type}</div><div class="col-6"><b>Estado:</b> ${invEstado(a.status)}</div></div>
-          <div class="row"><div class="col-6"><b>Local (posto):</b> ${esc(a.location_name||'—')}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${invMoeda(a.price)}</div>` : ''}</div>
+          <div class="row"><div class="col-6"><b>Local (posto):</b> ${esc(a.location_name||'—')}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
+          ${a.controle === 'quantidade' ? `<div class="row"><div class="col-6"><b>Quantidade:</b> ${a.quantity} un <small class="text-muted">(sem etiqueta, contado por quantidade)</small></div></div>` : ''}
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
           <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6 multi-empresa"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
           <div class="row">${a.location ? `<div class="col-6"><b>Local (anotação antiga):</b> ${esc(a.location)}</div>` : ''}<div class="col-6"><b>Setor:</b> ${esc(a.department||'—')}</div></div>

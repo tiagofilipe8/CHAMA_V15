@@ -2101,3 +2101,4 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .iv-tag.iv-qtd { background: rgba(13,148,136,.14); color: #0f766e; font-weight: 700; }
 .iv-tag.iv-qtd.zero { background: rgba(220,38,38,.12); color: #b91c1c; }
 .es-subst .form-text { color: var(--ink); }
+.es-custo { font-size: .85rem; background: rgba(22,163,74,.08); border-radius: 8px; padding: 6px 10px; }

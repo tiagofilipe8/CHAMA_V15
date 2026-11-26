@@ -1364,7 +1364,10 @@ async function sincronizarEquipamentos(q, ticket, m, situacao, user) {
            AND upper(name) = upper($3) AND id <> $4 ORDER BY id LIMIT 1`, [ticket.entity_id, local, m.name, a.id])).rows[0];
       const alvo = igual ? igual.id : a.id;
       if (igual) {
-        await q('UPDATE assets SET quantity = quantity + $2, price = COALESCE($3, price) WHERE id = $1', [igual.id, n, m.price]);
+        // custo médio: (qtd antiga × preço antigo + qtd nova × preço novo) / total
+        await q(`UPDATE assets SET price = CASE WHEN $3::numeric IS NULL THEN price WHEN price IS NULL OR quantity = 0 THEN $3::numeric
+                   ELSE round((price * quantity + $3::numeric * $2) / (quantity + $2), 2) END,
+                   quantity = quantity + $2 WHERE id = $1`, [igual.id, n, m.price]);
         await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetUpdated','quantity',$3)`, [igual.id, user.id, `+${n} (pedido #${ticket.id})`]);
         await q('DELETE FROM assets WHERE id = $1', [a.id]);
       }

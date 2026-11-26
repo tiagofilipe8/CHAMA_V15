@@ -91,12 +91,12 @@ router.get('/:id/afetaveis', async (req, res) => {
   if (!canAccessEntity(req.user, item.entity_id)) return res.status(403).json({ error: 'Acesso negado.' });
   const local = /^\d+$/.test(String(req.query.location_id || '')) ? req.query.location_id : item.location_id;
   const { rows } = await query(
-    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, l.name AS location_name
+    `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, l.name AS location_name
      FROM assets a LEFT JOIN locations l ON l.id = a.location_id
      WHERE a.entity_id = $1 AND a.id <> $2 AND a.controle = 'unidade'
        AND a.status IN ('OPERATING','REPAIR','BROKEN') AND a.location_id IS NOT DISTINCT FROM $3
      ORDER BY (a.type = $4) DESC, a.name LIMIT 200`, [item.entity_id, item.id, local, item.type]);
-  res.json(rows);
+  res.json(veSegredos(req.user) ? rows : rows.map(({ price, ...r }) => r));
 });
 
 // Dar baixa: a pessoa pegou o item. Precisa do motivo.
@@ -266,25 +266,28 @@ router.get('/report', async (req, res) => {
   }
   const periodo = `m.created_at >= now() - ($1::int * interval '1 day')`;
   const [inv, porStatus, porCategoria, porMotivo, porPosto, porMes, totais, recentes] = await Promise.all([
-    query(`SELECT count(*)::int AS itens, COALESCE(sum(a.price),0)::float AS valor, count(a.price)::int AS com_preco
+    query(`SELECT COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS itens, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.price IS NOT NULL),0)::int AS com_preco
            FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST') ${fA}`, pA),
-    query(`SELECT a.status, count(*)::int AS n, COALESCE(sum(a.price),0)::float AS valor FROM assets a WHERE TRUE ${fA} GROUP BY a.status`, pA),
-    query(`SELECT a.type, count(*)::int AS n, COALESCE(sum(a.price),0)::float AS valor,
-                  count(*) FILTER (WHERE a.status = 'STOCK')::int AS em_estoque
+    query(`SELECT a.status, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS n, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor FROM assets a WHERE TRUE ${fA} GROUP BY a.status`, pA),
+    query(`SELECT a.type, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS n, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor,
+                  COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status = 'STOCK'),0)::int AS em_estoque
            FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST') ${fA} GROUP BY a.type ORDER BY valor DESC, n DESC`, pA),
-    query(`SELECT COALESCE(m.reason_name, 'Sem motivo') AS motivo, count(*)::int AS n, COALESCE(sum(m.price),0)::float AS custo
+    query(`SELECT COALESCE(m.reason_name, 'Sem motivo') AS motivo, sum(m.quantity)::int AS n, COALESCE(sum(m.price),0)::float AS custo
            FROM stock_movements m WHERE m.kind = 'withdraw' AND ${periodo} ${fM} GROUP BY 1 ORDER BY n DESC, custo DESC`, pM),
-    query(`SELECT COALESCE(l.name, 'Sem local') AS posto, e.name AS empresa, count(*)::int AS n, COALESCE(sum(m.price),0)::float AS custo
+    query(`SELECT COALESCE(l.name, 'Sem local') AS posto, e.name AS empresa, sum(m.quantity)::int AS n, COALESCE(sum(m.price),0)::float AS custo
            FROM stock_movements m LEFT JOIN locations l ON l.id = m.to_location_id LEFT JOIN entities e ON e.id = m.to_entity_id
            WHERE m.kind = 'withdraw' AND ${periodo} ${fM} GROUP BY 1, 2 ORDER BY custo DESC, n DESC LIMIT 30`, pM),
-    query(`SELECT to_char(date_trunc('month', m.created_at), 'YYYY-MM') AS mes, count(*)::int AS n, COALESCE(sum(m.price),0)::float AS custo
+    query(`SELECT to_char(date_trunc('month', m.created_at), 'YYYY-MM') AS mes, sum(m.quantity)::int AS n, COALESCE(sum(m.price),0)::float AS custo
            FROM stock_movements m WHERE m.kind = 'withdraw' AND ${periodo} ${fM} GROUP BY 1 ORDER BY 1`, pM),
-    query(`SELECT count(*) FILTER (WHERE m.kind = 'withdraw')::int AS retiradas,
+    query(`SELECT COALESCE(sum(m.quantity) FILTER (WHERE m.kind = 'withdraw'),0)::int AS retiradas,
+                  COALESCE(sum(ra.price) FILTER (WHERE m.kind = 'withdraw' AND r.efeito IN ('LOST','BROKEN')),0)::float AS prejuizo,
+                  count(ra.id) FILTER (WHERE m.kind = 'withdraw' AND r.efeito IN ('LOST','BROKEN'))::int AS perdidos,
                   COALESCE(sum(m.price) FILTER (WHERE m.kind = 'withdraw'),0)::float AS custo_retiradas,
                   count(*) FILTER (WHERE m.kind = 'transfer')::int AS transferencias,
                   count(*) FILTER (WHERE m.kind IN ('entry','return'))::int AS entradas
-           FROM stock_movements m WHERE ${periodo} ${fM}`, pM),
-    query(`SELECT m.id, m.kind, m.created_at, m.reason_name, m.price, m.note, a.id AS asset_id, a.name AS asset_name, a.asset_tag,
+           FROM stock_movements m LEFT JOIN stock_reasons r ON r.id = m.reason_id LEFT JOIN assets ra ON ra.id = m.replaced_asset_id
+           WHERE ${periodo} ${fM}`, pM),
+    query(`SELECT m.id, m.kind, m.created_at, m.reason_name, m.price, m.note, m.quantity, a.id AS asset_id, a.name AS asset_name, a.asset_tag,
                   u.name AS user_name, lt.name AS to_location_name, lf.name AS from_location_name
            FROM stock_movements m JOIN assets a ON a.id = m.asset_id LEFT JOIN users u ON u.id = m.user_id
            LEFT JOIN locations lt ON lt.id = m.to_location_id LEFT JOIN locations lf ON lf.id = m.from_location_id
@@ -302,7 +305,7 @@ router.get('/report', async (req, res) => {
     por_motivo: semPreco(porMotivo.rows, ['custo']),
     por_posto: semPreco(porPosto.rows, ['custo']),
     por_mes: semPreco(porMes.rows, ['custo']),
-    totais: semPreco([totais.rows[0]], ['custo_retiradas'])[0],
+    totais: semPreco([totais.rows[0]], ['custo_retiradas', 'prejuizo'])[0],
     recentes: semPreco(recentes.rows, ['price']),
   });
 });
