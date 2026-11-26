@@ -894,3 +894,24 @@ ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_status_check
 ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_destino_check;
 ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_destino_check
   CHECK (destino IS NULL OR destino IN ('estoque','inventario','nenhum'));
+
+-- =====================================================================
+-- Agenda de rotas (2026-11-26): dia, técnico e os locais na ordem de visita
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS route_plans (
+    id            BIGSERIAL PRIMARY KEY,
+    data          DATE NOT NULL,
+    technician_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    nota          TEXT,
+    created_by    BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_route_plans_data ON route_plans(data);
+CREATE TABLE IF NOT EXISTS route_plan_stops (
+    id          BIGSERIAL PRIMARY KEY,
+    plan_id     BIGINT NOT NULL REFERENCES route_plans(id) ON DELETE CASCADE,
+    location_id BIGINT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+    ordem       INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_route_plan_stops_plan ON route_plan_stops(plan_id);
+CREATE INDEX IF NOT EXISTS idx_route_plan_stops_loc ON route_plan_stops(location_id);

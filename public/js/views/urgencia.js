@@ -201,7 +201,209 @@ const Urgencia = (() => {
     return ordem;
   }
 
-  async function rotas(el) {
+  // ---------------- Caixinha em pixel art (ícone do "O que levar") ----------------
+  const CAIXA_PIX = [
+    '............',
+    '.LLLLLLLLLL.',
+    'LLLLLYYLLLLL',
+    'DDDDDYYDDDDD',
+    'BBBBBYYBBBBB',
+    'BBBBBYYBBBBB',
+    'BBWWBYYBBBBB',
+    'BBWWBYYBBBBB',
+    'BBBBBYYBBBBB',
+    'SBBBBYYBBBBS',
+    'SSSSSSSSSSSS',
+    '............',
+  ];
+  const CORES_CAIXA = { L: '#e9c48a', D: '#a8692e', B: '#c98b48', Y: '#f4d36b', W: '#fff7e0', S: '#8a5426' };
+  const caixaPixel = (tam = 28) => {
+    const r = CAIXA_PIX.flatMap((lin, y) => [...lin].map((c, x) => (CORES_CAIXA[c] ? `<rect x="${x}" y="${y}" width="1" height="1" fill="${CORES_CAIXA[c]}"/>` : ''))).join('');
+    return `<svg class="caixa-pix" width="${tam}" height="${tam}" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true">${r}</svg>`;
+  };
+
+  // ---------------- "O que levar": janela com o checklist de todos os pedidos das paradas ----------------
+  const DESTINOS = { estoque: 'Estoque de T.I. do local', inventario: 'Inventário do local (operando)', nenhum: 'Só marcar entregue' };
+  const chaveSeparado = (id) => `levar_ok_${id}`;
+  const separado = (id) => { try { return localStorage.getItem(chaveSeparado(id)) === '1'; } catch { return false; } };
+  function abrirLevar(ordem, depois) {
+    const u = API.user || {};
+    const podeEntregar = Roles.can(u, 'ticket.work') || Roles.can(u, 'inventory.manage') || Roles.isMaster(u);
+    const podeCadastrar = Roles.can(u, 'inventory.manage') || Roles.isMaster(u);
+    const blocos = ordem.map((p, i) => {
+      const chs = p.chamados.filter((c) => (c.materiais || []).some((m) => m.status !== 'cancelado'));
+      if (!chs.length) return '';
+      return `<div class="lv-parada"><div class="lv-parada-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b></div>
+        ${chs.map((c) => `<div class="lv-ch"><a href="#/tickets/${c.id}" class="lv-ch-num">${esc(c.number)}</a> <span class="text-muted">${esc(c.title)}</span></div>
+          ${(c.materiais || []).filter((m) => m.status !== 'cancelado').map((m) => `
+          <div class="lv-item ${m.status === 'entregue' ? 'feito' : ''}" data-t="${c.id}" data-m="${m.id}">
+            <label class="lv-check" title="Já separei para levar"><input type="checkbox" ${separado(m.id) || m.status === 'entregue' ? 'checked' : ''} ${m.status === 'entregue' ? 'disabled' : ''}></label>
+            <span class="lv-qtd">${m.quantity} ${esc(m.unit || 'un')}</span>
+            <span class="lv-nome">${esc(m.name)}</span>
+            <span class="lv-st">${pedidoTag(m.status)}${m.destino && m.destino !== 'nenhum' ? ` <small class="text-muted">${m.destino === 'estoque' ? 'no estoque' : 'no inventário'}</small>` : ''}</span>
+            ${m.status !== 'entregue' && podeEntregar ? `<span class="lv-acao">
+              <select class="form-select form-select-sm lv-dest">${Object.entries(DESTINOS).filter(([k]) => podeCadastrar || k === 'nenhum').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+              <button class="btn btn-sm btn-success lv-entregar"><i class="bi bi-box-arrow-in-down"></i> Entregar</button></span>` : ''}
+          </div>`).join('')}`).join('')}
+      </div>`;
+    }).join('');
+    const total = new Map();
+    ordem.forEach((p) => p.chamados.forEach((c) => (c.materiais || []).filter((m) => !['entregue', 'cancelado'].includes(m.status)).forEach((m) => {
+      const k = `${m.name}|${m.unit || ''}`; total.set(k, { ...m, quantity: (total.get(k)?.quantity || 0) + Number(m.quantity || 0) });
+    })));
+    const m = document.createElement('div');
+    m.className = 'modal fade';
+    m.innerHTML = `<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h6 class="mb-0 d-flex align-items-center gap-2">${caixaPixel(26)} O que levar nesta rota</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        ${total.size ? `<div class="lv-total"><b>Para separar:</b> ${[...total.values()].map((x) => `<span class="tg tg-teal">${x.quantity} ${esc(x.unit || 'un')} · ${esc(x.name)}</span>`).join(' ')}</div>` : ''}
+        <div class="small text-muted mb-2">Marque o que já separou. Ao entregar no local, escolha para onde o item vai: ele entra no <b>Estoque de T.I.</b> ou no <b>Inventário</b> daquele local (ou só fica marcado como entregue).</div>
+        ${blocos || '<div class="dp-vazio">Nenhum material pedido nos chamados dessas paradas.</div>'}
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button></div></div></div>`;
+    document.body.appendChild(m);
+    const bm = new bootstrap.Modal(m);
+    let mudou = false;
+    m.addEventListener('hidden.bs.modal', () => { m.remove(); if (mudou && depois) depois(); });
+    m.querySelectorAll('.lv-check input').forEach((c) => c.addEventListener('change', () => {
+      try { localStorage.setItem(chaveSeparado(c.closest('.lv-item').dataset.m), c.checked ? '1' : '0'); } catch { /* sem armazenamento */ }
+    }));
+    m.querySelectorAll('.lv-entregar').forEach((b) => b.addEventListener('click', async () => {
+      const it = b.closest('.lv-item');
+      const destino = it.querySelector('.lv-dest').value;
+      b.disabled = true;
+      try {
+        await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/entregar`, { destino });
+        mudou = true;
+        it.classList.add('feito');
+        it.querySelector('.lv-check input').checked = true; it.querySelector('.lv-check input').disabled = true;
+        it.querySelector('.lv-st').innerHTML = `${pedidoTag('entregue')}${destino !== 'nenhum' ? ` <small class="text-muted">${destino === 'estoque' ? 'no estoque' : 'no inventário'}</small>` : ''}`;
+        it.querySelector('.lv-acao').remove();
+        toast(destino === 'nenhum' ? 'Marcado como entregue.' : `Entregue e registrado no ${destino === 'estoque' ? 'Estoque de T.I.' : 'inventário'} do local.`, 'success');
+      } catch (e) { b.disabled = false; showError(e); }
+    }));
+    bm.show();
+  }
+
+  // ---------------- Agendar a rota montada ----------------
+  async function agendarRota(ordem, depois) {
+    let tecnicos = [];
+    try { tecnicos = await API.get('/rotas/tecnicos'); } catch (e) { showError(e); return; }
+    const u = API.user || {};
+    const amanha = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE');
+    const m = document.createElement('div');
+    m.className = 'modal fade';
+    m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h6 class="mb-0"><i class="bi bi-calendar-plus me-1"></i> Agendar esta rota</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="lv-total mb-3">${ordem.map((p, i) => `<span class="tg tg-blue">${i + 1}. ${esc(p.location_name)}</span>`).join(' ')}</div>
+        <div class="row g-2">
+          <div class="col-6"><label class="form-label small fw-semibold mb-1">Dia *</label><input type="date" class="form-control form-control-sm" id="ag-dia" min="${new Date().toLocaleDateString('sv-SE')}" value="${amanha}"></div>
+          <div class="col-6"><label class="form-label small fw-semibold mb-1">Técnico</label><select class="form-select form-select-sm" id="ag-tec">
+            <option value="">— a definir —</option>${tecnicos.map((t) => `<option value="${t.id}" ${String(t.id) === String(u.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+        </div>
+        <label class="form-label small fw-semibold mt-3 mb-1">Observação</label>
+        <input class="form-control form-control-sm" id="ag-nota" maxlength="500" placeholder="Ex.: saída 8h da base, levar toner">
+        <div class="form-text">Quem é desses locais vê "Rota da TI agendada para o seu local" e recebe um aviso.</div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="ag-ok"><i class="bi bi-calendar-check"></i> Agendar</button></div></div></div>`;
+    document.body.appendChild(m);
+    const bm = new bootstrap.Modal(m);
+    m.addEventListener('hidden.bs.modal', () => m.remove());
+    m.querySelector('#ag-ok').addEventListener('click', async () => {
+      try {
+        await API.post('/rotas', { data: m.querySelector('#ag-dia').value, technician_id: m.querySelector('#ag-tec').value || null,
+          nota: m.querySelector('#ag-nota').value.trim(), locais: ordem.map((p) => p.location_id) });
+        bm.hide(); toast('Rota agendada. Os locais foram avisados.', 'success'); if (depois) depois();
+      } catch (e) { showError(e); }
+    });
+    bm.show();
+  }
+
+  // ---------------- Agenda de rotas (calendário do mês + lista) ----------------
+  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  async function agenda(el, { modoPosto = false } = {}) {
+    const u = API.user || {};
+    const hoje = new Date();
+    let ano = hoje.getFullYear(); let mes = hoje.getMonth();
+    let diaSel = null;
+    el.innerHTML = `
+      <div class="card panel-card mb-3"><div class="ag-cab">
+        <button class="btn btn-sm btn-outline-secondary" id="ag-ant" title="Mês anterior"><i class="bi bi-chevron-left"></i></button>
+        <b id="ag-mes"></b>
+        <button class="btn btn-sm btn-outline-secondary" id="ag-prox" title="Próximo mês"><i class="bi bi-chevron-right"></i></button>
+        <button class="btn btn-sm btn-link" id="ag-hoje">Hoje</button>
+        <span class="small text-muted ms-auto">${modoPosto ? 'As visitas da TI planejadas para o seu local' : 'Rotas planejadas pelos técnicos. Para agendar, monte a rota em "Sugerir agora".'}</span>
+      </div>
+      <div class="ag-grade" id="ag-grade"></div></div>
+      <div id="ag-lista"></div>`;
+    const doMes = () => {
+      const de = `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
+      const fim = new Date(ano, mes + 1, 0).getDate();
+      return [de, `${ano}-${String(mes + 1).padStart(2, '0')}-${String(fim).padStart(2, '0')}`];
+    };
+    async function carregar() {
+      el.querySelector('#ag-mes').textContent = `${MESES[mes]} de ${ano}`;
+      const [de, ate] = doMes();
+      let d;
+      try { d = await API.get(`/rotas?de=${de}&ate=${ate}`); } catch (e) { el.querySelector('#ag-lista').innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
+      const meuLocal = String(d.meu_local || u.location_id || '');
+      const passaNoMeu = (r) => meuLocal && (r.paradas || []).some((p) => String(p.location_id) === meuLocal);
+      const porDia = {};
+      d.rotas.forEach((r) => { (porDia[r.data] = porDia[r.data] || []).push(r); });
+      // calendário
+      const primeiro = new Date(ano, mes, 1).getDay();
+      const fim = new Date(ano, mes + 1, 0).getDate();
+      const hojeIso = new Date().toLocaleDateString('sv-SE');
+      let cel = SEMANA.map((s) => `<div class="ag-sem">${s}</div>`).join('');
+      for (let i = 0; i < primeiro; i += 1) cel += '<div class="ag-dia vazio"></div>';
+      for (let dd = 1; dd <= fim; dd += 1) {
+        const iso = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+        const rs = porDia[iso] || [];
+        cel += `<button type="button" class="ag-dia ${iso === hojeIso ? 'hoje' : ''} ${iso === diaSel ? 'sel' : ''} ${rs.length ? 'tem' : ''} ${rs.some(passaNoMeu) ? 'meu' : ''}" data-dia="${iso}">
+          <span class="ag-n">${dd}</span>
+          ${rs.length ? `<span class="ag-chip" title="${rs.map((r) => (r.paradas || []).map((p) => p.location_name).join(' → ')).join(' | ')}"><i class="bi bi-truck"></i>${rs.reduce((s, r) => s + (r.paradas || []).length, 0)}</span>` : ''}
+        </button>`;
+      }
+      el.querySelector('#ag-grade').innerHTML = cel;
+      el.querySelectorAll('.ag-dia[data-dia]').forEach((b) => b.addEventListener('click', () => { diaSel = diaSel === b.dataset.dia ? null : b.dataset.dia; carregar(); }));
+      // lista
+      const lista = d.rotas.filter((r) => !diaSel || r.data === diaSel);
+      el.querySelector('#ag-lista').innerHTML = lista.length ? lista.map((r) => {
+        const dt = new Date(`${r.data}T12:00:00`);
+        const podeCancelar = d.pode_agendar && (Roles.isMaster(u) || [r.created_by, r.technician_id].map(String).includes(String(u.id)));
+        return `<div class="card panel-card mb-2 ag-rota ${passaNoMeu(r) ? 'meu' : ''}">
+          <div class="ag-rota-data"><b>${dt.getDate()}</b><small>${MESES[dt.getMonth()].slice(0, 3)}</small><small>${SEMANA[dt.getDay()]}</small></div>
+          <div class="ag-rota-tx">
+            ${passaNoMeu(r) ? '<span class="tg tg-teal mb-1"><i class="bi bi-geo-alt-fill"></i> Rota da TI agendada para o seu local</span>' : ''}
+            <div class="ag-paradas">${(r.paradas || []).map((p, i) => `<span class="ag-parada ${String(p.location_id) === meuLocal ? 'meu' : ''}"><span class="ur-num">${i + 1}</span>${esc(p.location_name)}</span>`).join('<i class="bi bi-arrow-right ag-seta"></i>')}</div>
+            <small class="text-muted"><i class="bi bi-person-badge"></i> ${esc(r.technician_name || 'técnico a definir')}${r.nota ? ` · ${esc(r.nota)}` : ''}</small>
+          </div>
+          ${podeCancelar ? `<button class="btn btn-sm btn-outline-danger ag-cancelar" data-id="${r.id}" title="Cancelar esta rota"><i class="bi bi-x-lg"></i></button>` : ''}
+        </div>`;
+      }).join('') : emptyState(diaSel ? 'Nenhuma rota neste dia' : 'Nenhuma rota planejada neste mês', modoPosto ? 'Quando a TI agendar uma visita ao seu local, ela aparece aqui.' : 'Monte uma rota em "Sugerir agora" e clique em "Agendar esta rota".', 'bi-calendar3');
+      el.querySelectorAll('.ag-cancelar').forEach((b) => b.addEventListener('click', async () => {
+        if (!await confirmDialog({ title: 'Cancelar rota', body: 'A rota sai da agenda.', confirmText: 'Cancelar rota', danger: true })) return;
+        try { await API.del(`/rotas/${b.dataset.id}`); toast('Rota cancelada.', 'warning'); carregar(); } catch (e) { showError(e); }
+      }));
+    }
+    el.querySelector('#ag-ant').addEventListener('click', () => { mes -= 1; if (mes < 0) { mes = 11; ano -= 1; } diaSel = null; carregar(); });
+    el.querySelector('#ag-prox').addEventListener('click', () => { mes += 1; if (mes > 11) { mes = 0; ano += 1; } diaSel = null; carregar(); });
+    el.querySelector('#ag-hoje').addEventListener('click', () => { ano = hoje.getFullYear(); mes = hoje.getMonth(); diaSel = null; carregar(); });
+    carregar();
+  }
+
+  async function rotas(raiz) {
+    // abas: sugerir agora (tempo real) | agenda de rotas (planejadas)
+    const aba = /aba=agenda/.test(location.hash) ? 'agenda' : 'agora';
+    raiz.innerHTML = `<ul class="nav nav-tabs mb-3 rt-abas">
+      <li class="nav-item"><a class="nav-link ${aba === 'agora' ? 'active' : ''}" href="#/rotas"><i class="bi bi-magic"></i> Sugerir agora</a></li>
+      <li class="nav-item"><a class="nav-link ${aba === 'agenda' ? 'active' : ''}" href="#/rotas?aba=agenda"><i class="bi bi-calendar3"></i> Agenda de rotas</a></li>
+    </ul><div id="rt-conteudo"></div>`;
+    const el = raiz.querySelector('#rt-conteudo');
+    if (aba === 'agenda') { agenda(el); return; }
     el.innerHTML = spinner();
     let d;
     try { d = await API.get('/dashboard/urgencia'); } catch (e) { el.innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
@@ -235,7 +437,7 @@ const Urgencia = (() => {
           ${semCoord.length ? `<div class="ur-sem">Sem coordenadas (fora da rota): ${semCoord.map((l) => `${esc(l.location_name)} <b>${n1(l.score)}</b>`).join(' · ')}.
             Cadastre a latitude e longitude em <a href="#/admin/locations">Localizações</a>.</div>` : ''}
         </div>
-        <div class="card panel-card ur-rota" id="rt-rota"></div>
+        <div class="rt-direita"><div class="card panel-card ur-rota" id="rt-rota"></div><div id="rt-levar"></div></div>
       </div>
       ${regrasHtml(d.regras)}`;
     el.querySelector('#rt-inicio').value = prefs.inicio;
@@ -264,7 +466,7 @@ const Urgencia = (() => {
     function pintarRota() {
       const box = el.querySelector('#rt-rota');
       const paradas = comCoord.filter((l) => escolhidos.has(String(l.location_id)));
-      if (!paradas.length) { box.innerHTML = '<div class="dp-vazio">Marque ao menos um local para montar a rota.</div>'; return; }
+      if (!paradas.length) { box.innerHTML = '<div class="dp-vazio">Marque ao menos um local para montar a rota.</div>'; el.querySelector('#rt-levar').innerHTML = ''; return; }
       const inicio = pontoInicio();
       const ordem = ordenar(paradas, inicio);
       let total = 0; let anterior = inicio;
@@ -275,16 +477,16 @@ const Urgencia = (() => {
       const destino = ordem[ordem.length - 1];
       const meio = ordem.slice(0, -1);
       const url = `https://www.google.com/maps/dir/?api=1${inicio ? `&origin=${encodeURIComponent(pt(inicio))}` : ''}&destination=${encodeURIComponent(pt(destino))}${meio.length ? `&waypoints=${encodeURIComponent(meio.map(pt).join('|'))}` : ''}&travelmode=driving`;
-      // o que levar: materiais pedidos nos chamados das paradas
-      const levar = new Map();
-      ordem.forEach((p) => p.chamados.forEach((c) => (c.materiais || []).forEach((m) => {
-        const k = `${m.name}|${m.unit || ''}`;
-        levar.set(k, { ...m, quantity: (levar.get(k)?.quantity || 0) + Number(m.quantity || 0) });
-      })));
+      // o que levar: materiais pedidos (ainda não entregues) nos chamados das paradas
+      const pendentes = ordem.flatMap((p) => p.chamados.flatMap((c) => (c.materiais || []).filter((m) => !['entregue', 'cancelado'].includes(m.status))));
+      const pedidosN = ordem.reduce((s, p) => s + p.chamados.filter((c) => (c.materiais || []).some((m) => !['entregue', 'cancelado'].includes(m.status))).length, 0);
+      const u = API.user || {};
+      const podeAgendarRota = Roles.isMaster(u) || (Roles.can(u, 'dashboard.view') && (Roles.can(u, 'ticket.work') || Roles.can(u, 'ticket.assign')));
       box.innerHTML = `
         <div class="dp-bloco-cab"><span><i class="bi bi-signpost-split"></i> Rota sugerida</span>
           <span class="d-flex gap-1">
             <a class="btn btn-sm btn-primary" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Abrir no Google Maps</a>
+            ${podeAgendarRota ? '<button class="btn btn-sm btn-outline-primary" id="rt-agendar"><i class="bi bi-calendar-plus"></i> Agendar esta rota</button>' : ''}
             <button class="btn btn-sm btn-outline-secondary" id="rt-imprimir"><i class="bi bi-printer"></i> Relatório</button>
           </span></div>
         <div class="ur-resumo">${ordem.length} parada(s) · ~${n1(Math.round(total))} km · ~${horas < 1 ? `${Math.round(horas * 60)} min` : `${n1(Math.round(horas * 10) / 10)} h`} de estrada
@@ -298,11 +500,18 @@ const Urgencia = (() => {
               <div class="ur-parada-sub">${esc([p.address, p.city].filter(Boolean).join(' · '))}${trechos[i] ? ` · ~${n1(Math.round(trechos[i]))} km do ponto anterior` : ''}</div>
               <div class="ur-chs">${p.chamados.map(linhaChamado).join('')}</div>
             </li>`).join('')}
-        </ol>
-        <div class="ur-levar"><b><i class="bi bi-bag-check"></i> O que levar</b>
-          ${levar.size ? `<ul>${[...levar.values()].map((m) => `<li><input type="checkbox"> ${m.quantity} ${esc(m.unit || 'un')} · ${esc(m.name)}</li>`).join('')}</ul>`
-    : '<div class="text-muted small">Nenhum material pedido nesses chamados. Confira as categorias (impressora, rede...) antes de sair.</div>'}</div>`;
+        </ol>`;
       box.querySelector('#rt-imprimir').addEventListener('click', () => { document.body.classList.add('imprimindo-rota'); window.print(); setTimeout(() => document.body.classList.remove('imprimindo-rota'), 500); });
+      box.querySelector('#rt-agendar')?.addEventListener('click', () => agendarRota(ordem, () => { location.hash = '#/rotas?aba=agenda'; }));
+      // card separado: "O que levar" (abre a janela com o checklist dos pedidos)
+      const lv = el.querySelector('#rt-levar');
+      lv.innerHTML = `<button type="button" class="card panel-card lv-card ${pendentes.length ? '' : 'vazio'}" id="rt-abrir-levar">
+        ${caixaPixel(40)}
+        <span class="lv-card-tx"><b>O que levar</b>
+          <small>${pendentes.length ? `${pendentes.length} item(ns) para separar · ${pedidosN} pedido(s) de material` : 'Nenhum material pedido nas paradas desta rota'}</small></span>
+        <span class="btn btn-sm btn-outline-primary">Abrir lista <i class="bi bi-box-arrow-up-right"></i></span>
+      </button>`;
+      lv.querySelector('#rt-abrir-levar').addEventListener('click', () => abrirLevar(ordem, () => rotas(raiz)));
     }
 
     const sugerir = () => {
@@ -326,8 +535,9 @@ const Urgencia = (() => {
     pintarCands(); pintarRota();
   }
 
-  return { pagina, rotas };
+  return { pagina, rotas, agenda };
 })();
 
 Views.urgencia = (el) => Urgencia.pagina(el);
 Views.rotas = (el) => Urgencia.rotas(el);
+Views.visitas = (el) => Urgencia.agenda(el, { modoPosto: true });

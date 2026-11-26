@@ -383,7 +383,8 @@ router.get('/urgencia', async (req, res) => {
             e.name AS entity_name, l.name AS location_name, l.address, l.city, l.state, l.latitude, l.longitude,
             il.name AS impact_name, u.name AS assigned_name,
             COALESCE(sc.name, c.name) AS category_name,
-            COALESCE((SELECT json_agg(json_build_object('name', m.name, 'unit', m.unit, 'quantity', m.quantity) ORDER BY m.id)
+            COALESCE((SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
+                                                         'status', m.status, 'destino', m.destino) ORDER BY m.id)
                       FROM ticket_materials m WHERE m.ticket_id = t.id), '[]') AS materiais
      FROM tickets t
      JOIN entities e ON e.id = t.entity_id

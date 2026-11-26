@@ -4,7 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
 const config = require('../config');
-const { query } = require('../db');
+const { query, withTransaction } = require('../db');
 const {
   requireAuth, scopeConditions, canViewTicket, canTriage, canAccessEntity, seesAll, has,
   isMaster, isLocalAdmin, isModerator, canAssign, canTake, canManageWatchers, canWork,
@@ -1331,6 +1331,55 @@ router.post('/:id/materials/:mid/status', async (req, res) => {
     await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: ${SITUACAO_MATERIAL[st].toLowerCase()}`, texto, ticket.id).catch(() => {});
   }
   res.json({ ok: true });
+});
+
+// Entregar um material pedido: vira equipamento no Estoque de T.I. do local, no Inventário (operando),
+// ou só fica marcado como entregue. { destino: 'estoque' | 'inventario' | 'nenhum', type? }
+router.post('/:id/materials/:mid/entregar', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  const user = req.user;
+  if (!(canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket)))) {
+    return res.status(403).json({ error: 'Seu perfil não pode entregar materiais.' });
+  }
+  const destino = String(req.body?.destino || '');
+  if (!['estoque', 'inventario', 'nenhum'].includes(destino)) return res.status(422).json({ error: 'Escolha para onde vai o item.' });
+  if (destino !== 'nenhum' && !has(user, 'inventory.manage')) return res.status(403).json({ error: 'Seu perfil não cadastra itens no inventário. Use "Só marcar entregue".' });
+  const { rows } = await query('SELECT * FROM ticket_materials WHERE id = $1 AND ticket_id = $2', [req.params.mid, ticket.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Material não encontrado.' });
+  const m = rows[0];
+  if (m.status === 'entregue') return res.status(422).json({ error: 'Esse item já foi entregue.' });
+  const TIPOS = ['COMPUTER', 'NOTEBOOK', 'SERVER', 'PRINTER', 'MONITOR', 'UPS', 'NETWORK_DEVICE', 'MOBILE_DEVICE', 'PERIPHERAL', 'OTHER'];
+  const tipo = TIPOS.includes(req.body?.type) ? req.body.type : 'PERIPHERAL';
+  let primeiro = null;
+  await withTransaction(async (q) => {
+    if (destino !== 'nenhum') {
+      const qtd = Math.min(Math.max(Number(m.quantity) || 1, 1), 20);
+      for (let i = 0; i < qtd; i += 1) {
+        const a = await q(
+          `INSERT INTO assets (entity_id, name, type, status, location_id, notes, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [ticket.entity_id, String(m.name).toUpperCase(), tipo, destino === 'estoque' ? 'STOCK' : 'OPERATING', ticket.location_id,
+            `Entregue pelo pedido #${ticket.id}`, user.id]);
+        if (!primeiro) primeiro = a.rows[0].id;
+        await q(`INSERT INTO asset_history (asset_id, user_id, action, field, new_value) VALUES ($1,$2,'AssetCreated','name',$3)`,
+          [a.rows[0].id, user.id, `pedido #${ticket.id}`]);
+        if (destino === 'estoque') {
+          await q(`INSERT INTO stock_movements (asset_id, kind, user_id, to_entity_id, to_location_id, note)
+                   VALUES ($1,'entry',$2,$3,$4,$5)`, [a.rows[0].id, user.id, ticket.entity_id, ticket.location_id, `Entregue pelo pedido #${ticket.id}`]);
+        }
+      }
+    }
+    await q('UPDATE ticket_materials SET status = $2, status_at = now(), status_by = $3, destino = $4, asset_id = $5 WHERE id = $1',
+      [m.id, 'entregue', user.id, destino, primeiro]);
+  });
+  const ondeTxt = destino === 'estoque' ? 'no Estoque de T.I.' : destino === 'inventario' ? 'no inventário (operando)' : '';
+  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: Entregue${ondeTxt ? ` e registrado ${ondeTxt}` : ''}`;
+  await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`, [ticket.id, user.id, `Pedido de material — ${texto}`]);
+  if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
+    await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: entregue`, texto, ticket.id).catch(() => {});
+  }
+  res.json({ ok: true, asset_id: primeiro });
 });
 
 router.post('/:id/messages', async (req, res) => {

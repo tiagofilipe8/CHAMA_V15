@@ -34,6 +34,8 @@ function buildNav(u) {
   if (can('dashboard.view') && can('ticket.rating')) atendimento.push({ href: '#/causas', icon: 'bi-clipboard-data', label: 'Causas e notas' });
   if (can('dashboard.view')) atendimento.push({ href: '#/urgencia', icon: 'bi-fire', label: 'Score de urgência' });
   if (can('dashboard.view')) atendimento.push({ href: '#/rotas', icon: 'bi-signpost-split', label: 'Sugerir rotas' });
+  // quem não vê o painel (gestor, usuário): as visitas da TI planejadas para o seu local
+  if (!can('dashboard.view')) atendimento.push({ href: '#/visitas', icon: 'bi-truck', label: 'Visitas da TI' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
   if (!listaJaEMinha) atendimento.push({ href: '#/tickets', icon: 'bi-journal-text', label: ticketsLabel });
   if (client && can('ticket.view_company')) atendimento.push({ href: '#/team-tickets', icon: 'bi-people', label: 'Chamados da equipe' });
@@ -75,7 +77,7 @@ function currentUser() {
 }
 
 function pageTitleFromPath() {
-  const path = location.hash.replace(/^#/, '') || '/dashboard';
+  const path = (location.hash.replace(/^#/, '') || '/dashboard').split('?')[0];
   const map = {
     '/dashboard': 'Painel de Chamados',
     '/tickets': 'Chamados',
@@ -85,6 +87,7 @@ function pageTitleFromPath() {
     '/causas': 'Causas e notas',
     '/urgencia': 'Score de urgência',
     '/rotas': 'Sugerir rotas',
+    '/visitas': 'Visitas da TI',
     '/chat': 'Chat',
     '/estoque': 'Estoque de T.I.',
     '/pedidos': 'Pedidos',
@@ -121,7 +124,8 @@ function pageDescFromPath() {
     '/atendimento': 'O chamado que você está atendendo agora e a sua fila, do mais urgente para o menos urgente.',
     '/causas': 'Por que abrem e por que fecham os chamados, e a nota de cada local e usuário com a TI.',
     '/urgencia': 'Os locais em ordem de urgência: soma do score dos chamados abertos (urgência, atraso e prazo).',
-    '/rotas': 'Escolha quantos locais vai atender: o sistema sugere os mais urgentes, monta a ordem de visita e o que levar.',
+    '/rotas': 'Sugira a rota pelos chamados de agora, agende rotas para outros dias e veja o que levar para cada local.',
+    '/visitas': 'Os dias em que a TI vai passar no seu local (rotas planejadas pelos técnicos).',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
@@ -346,7 +350,8 @@ const routes = [
   { re: /^#\/atendimento$/, view: () => Views.atendimento },
   { re: /^#\/causas$/, view: () => Views.causas },
   { re: /^#\/urgencia$/, view: () => Views.urgencia },
-  { re: /^#\/rotas$/, view: () => Views.rotas },
+  { re: /^#\/rotas(\?.*)?$/, view: () => Views.rotas },
+  { re: /^#\/visitas$/, view: () => Views.visitas },
   { re: /^#\/chat$/, view: () => Views.chat },
   { re: /^#\/chat\/(\d+)$/, view: (m) => Views.chatConversa(m[1]) },
   { re: /^#\/estoque$/, view: () => Views.estoque },
