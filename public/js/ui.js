@@ -71,6 +71,13 @@ const CHECKLIST_NOTA = {
   sem_mau_uso: 'Não foi mau uso nem erro repetido', ajudou: 'Ajudou a mais',
 };
 
+// Situação de cada material pedido (Pedidos e no chamado): [nome, ícone]
+const PEDIDO_STATUS = {
+  solicitado: ['Pedido', 'bi-hourglass-split'], comprado: ['Comprado', 'bi-cart-check'], chegou: ['Chegou', 'bi-box-seam'],
+  entregue: ['Entregue', 'bi-check2-circle'], cancelado: ['Cancelado', 'bi-x-circle'],
+};
+const pedidoTag = (st) => { const [nome, ic] = PEDIDO_STATUS[st || 'solicitado'] || [st, 'bi-dot']; return `<span class="pd-tag pd-${esc(st || 'solicitado')}"><i class="bi ${ic}"></i>${esc(nome)}</span>`; };
+
 const STATUS_BADGE = { 1: 'new', 2: 'assigned', 3: 'progress', 4: 'pending', 5: 'solved', 6: 'closed', 7: 'canceled' };
 const Views = {};
 const PRIO_BADGE = { 1: 'prio-low', 2: 'prio-med', 3: 'prio-high', 4: 'prio-urgent' };

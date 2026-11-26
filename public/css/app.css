@@ -1998,3 +1998,25 @@ a.dp-ind:hover { background: var(--surface-2); }
 .iv-item.est-borda-READY { border-left-color: #06b6d4; } .iv-item.est-borda-STOCK { border-left-color: #3b82f6; }
 .iv-item.est-borda-DISPOSED { border-left-color: #9ca3af; } .iv-item.est-borda-LOST { border-left-color: #ec4899; }
 @media (max-width: 575px) { .iv-preco, .iv-marcas { display: none; } .iv-estado { min-width: 0; } .iv-local-n { margin-left: 0; } }
+
+/* ---------- Pedidos de material: situação de cada item ---------- */
+.pd-tag { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.pd-solicitado { background: #f1f5f9; color: #475569; } .pd-comprado { background: #ede9fe; color: #6d28d9; }
+.pd-chegou { background: #dbeafe; color: #1d4ed8; } .pd-entregue { background: #dcfce7; color: #15803d; }
+.pd-cancelado { background: #f3f4f6; color: #9ca3af; text-decoration: line-through; }
+select.pd-sel { width: auto; min-width: 118px; font-size: .74rem; font-weight: 700; border-radius: 999px; padding: 2px 26px 2px 10px; border-color: transparent; }
+select.pd-sel.pd-cancelado { text-decoration: none; }
+.pd-resumo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: .76rem; }
+.pd-card { overflow: hidden; }
+.pd-cab { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.pd-num { font-weight: 800; color: var(--primary); text-decoration: none; font-size: .82rem; }
+.pd-cab-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pd-cab-tx a { color: var(--ink); text-decoration: none; font-size: .84rem; }
+.pd-cab-tx small { color: var(--muted); font-size: .7rem; }
+.pd-itens { padding: 4px 12px 8px; }
+.pd-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: .8rem; }
+.pd-item:last-child { border-bottom: 0; }
+.pd-qtd { flex: none; min-width: 52px; font-weight: 700; color: var(--muted); font-size: .74rem; }
+.pd-nome { flex: 1; min-width: 0; }
+.pd-tab td { font-size: .8rem; }
+[data-bs-theme="dark"] .pd-tag, [data-bs-theme="dark"] select.pd-sel { background-color: rgba(127,127,127,.2); }

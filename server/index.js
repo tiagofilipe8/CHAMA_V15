@@ -30,6 +30,7 @@ const optionProfileRoutes = require('./routes/optionProfiles');
 const chatRoutes = require('./routes/chat');
 const stockRoutes = require('./routes/stock');
 const stockReasonRoutes = require('./routes/stockReasons');
+const pedidoRoutes = require('./routes/pedidos');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
 
@@ -78,6 +79,7 @@ app.use('/api/option-profiles', optionProfileRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/stock-reasons', stockReasonRoutes);
+app.use('/api/pedidos', pedidoRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);

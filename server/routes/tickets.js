@@ -660,7 +660,8 @@ router.get('/:id', async (req, res) => {
            FROM ticket_watchers w JOIN users u ON u.id = w.user_id
            LEFT JOIN locations l ON l.id = u.location_id
            WHERE w.ticket_id = $1 ORDER BY w.created_at`, [id]),
-    query(`SELECT name, unit, quantity FROM ticket_materials WHERE ticket_id = $1 ORDER BY id`, [id]),
+    query(`SELECT m.id, m.name, m.unit, m.quantity, m.status, m.status_at, m.destino, m.asset_id, u.name AS status_by_name
+           FROM ticket_materials m LEFT JOIN users u ON u.id = m.status_by WHERE m.ticket_id = $1 ORDER BY m.id`, [id]),
   ]);
   let requesterRating = null;
   if (seesRating) {
@@ -1305,6 +1306,33 @@ router.get('/:id/mencionaveis', async (req, res) => {
 //   - cliente gestor: kind 'note' (instrucao/solicitacao)
 //   - demais: kind 'comment'
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Situação de cada material pedido: pedido -> comprado -> chegou -> entregue (ou cancelado)
+//   quem atende o chamado ou cuida do inventário muda; o solicitante é avisado
+// ---------------------------------------------------------------------
+const SITUACAO_MATERIAL = { solicitado: 'Pedido', comprado: 'Comprado', chegou: 'Chegou', entregue: 'Entregue', cancelado: 'Cancelado' };
+router.post('/:id/materials/:mid/status', async (req, res) => {
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  const user = req.user;
+  if (!(canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket)))) {
+    return res.status(403).json({ error: 'Seu perfil não pode mudar a situação dos materiais.' });
+  }
+  const st = String(req.body?.status || '');
+  if (!SITUACAO_MATERIAL[st]) return res.status(422).json({ error: 'Situação inválida.' });
+  const { rows } = await query('SELECT * FROM ticket_materials WHERE id = $1 AND ticket_id = $2', [req.params.mid, ticket.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Material não encontrado.' });
+  const m = rows[0];
+  if (m.status === st) return res.json({ ok: true });
+  await query('UPDATE ticket_materials SET status = $2, status_at = now(), status_by = $3 WHERE id = $1', [m.id, st, user.id]);
+  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: ${SITUACAO_MATERIAL[st]}`;
+  await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`, [ticket.id, user.id, `Pedido de material — ${texto}`]);
+  if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
+    await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: ${SITUACAO_MATERIAL[st].toLowerCase()}`, texto, ticket.id).catch(() => {});
+  }
+  res.json({ ok: true });
+});
+
 router.post('/:id/messages', async (req, res) => {
   const ticket = await loadTicket(req.params.id);
   if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });

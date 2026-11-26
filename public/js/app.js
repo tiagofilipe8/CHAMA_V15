@@ -45,6 +45,7 @@ function buildNav(u) {
   const equip = [];
   if (can('inventory.view')) equip.push({ href: '#/inventory', icon: 'bi-hdd-stack', label: 'Inventário' });
   if (can('stock.withdraw') || can('inventory.view')) equip.push({ href: '#/estoque', icon: 'bi-box-seam', label: 'Estoque de T.I.', sub: can('inventory.view') });
+  if (can('inventory.view')) equip.push({ href: '#/pedidos', icon: 'bi-cart3', label: 'Pedidos', sub: true });
   if (can('stock.report')) equip.push({ href: '#/inventario/relatorio', icon: 'bi-graph-up', label: 'Relatório de inventário' }); // item próprio, no mesmo nível do Inventário
   grupo('Equipamentos', 'g-equip', equip);
 
@@ -86,6 +87,7 @@ function pageTitleFromPath() {
     '/rotas': 'Sugerir rotas',
     '/chat': 'Chat',
     '/estoque': 'Estoque de T.I.',
+    '/pedidos': 'Pedidos',
     '/inventario/relatorio': 'Relatório de inventário',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
@@ -127,6 +129,7 @@ function pageDescFromPath() {
     '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão, quanto custaram e em que estado estão.',
     '/chat': 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.',
     '/estoque': 'Itens guardados no estoque de cada posto. Quem pega um item dá baixa aqui, dizendo o motivo.',
+    '/pedidos': 'Chamados com pedido de material e a situação de cada item: pedido, comprado, chegou, entregue.',
     '/inventario/relatorio': 'Quanto vale o inventário, por que os itens saem do estoque e quanto custam as retiradas. Filtre por estoque de T.I. ou por localidade.',
     '/inventory/agents': 'Programas instalados nos computadores que enviam o inventário sozinhos.',
     '/admin/locations': 'Lugares atendidos (lojas, postos, setores). Cada chamado e equipamento fica ligado a um local.',
@@ -236,7 +239,7 @@ function renderNav() {
 // Selo do grupo ao lado do título (mesma cor do grupo no menu)
 function moduloAtual() {
   const p = location.hash.replace(/^#/, '') || '/dashboard';
-  if (p.startsWith('/inventory') || p.startsWith('/inventario') || p.startsWith('/estoque')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
+  if (p.startsWith('/inventory') || p.startsWith('/inventario') || p.startsWith('/estoque') || p.startsWith('/pedidos')) return ['Equipamentos', 'tg-amber', 'bi-hdd-stack'];
   if (p.startsWith('/chat')) return ['Chat', 'tg-teal', 'bi-chat-dots'];
   if (p.startsWith('/admin/locations')) return ['Locais', 'tg-teal', 'bi-geo-alt'];
   if (p.startsWith('/admin/roles') || p.startsWith('/admin/settings')) return ['Sistema', 'tg-gray', 'bi-gear'];
@@ -347,6 +350,7 @@ const routes = [
   { re: /^#\/chat$/, view: () => Views.chat },
   { re: /^#\/chat\/(\d+)$/, view: (m) => Views.chatConversa(m[1]) },
   { re: /^#\/estoque$/, view: () => Views.estoque },
+  { re: /^#\/pedidos$/, view: () => Views.pedidos },
   { re: /^#\/inventario\/relatorio$/, view: () => Views.estoqueRelatorio },
   { re: /^#\/estoque\/relatorio$/, view: () => () => { location.replace('#/inventario/relatorio'); } }, // endereço antigo
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },

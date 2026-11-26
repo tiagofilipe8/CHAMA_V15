@@ -208,10 +208,13 @@ Views.ticketDetail = function ticketDetail(id) {
           ${(t.materials || []).length ? `
           <div class="card panel-card mb-3">
             <div class="card-header"><i class="bi bi-box-seam me-1"></i> Materiais pedidos</div>
-            <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-              <thead><tr><th>Material</th><th class="text-end">Quantidade</th></tr></thead>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0 pd-tab">
+              <thead><tr><th>Material</th><th class="text-end">Quantidade</th><th>Situação</th></tr></thead>
               <tbody>${t.materials.map((m) => `<tr><td>${esc(m.name)}</td>
-                <td class="text-end"><span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span></td></tr>`).join('')}</tbody>
+                <td class="text-end"><span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span></td>
+                <td>${(can.resolve || Roles.can(user, 'inventory.manage'))
+    ? `<select class="form-select form-select-sm pd-sel pd-${esc(m.status || 'solicitado')}" data-mat="${m.id}">${Object.entries(PEDIDO_STATUS).map(([k, v]) => `<option value="${k}" ${k === (m.status || 'solicitado') ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>`
+    : pedidoTag(m.status)}${m.status_at ? `<small class="text-muted d-block">${esc(fmt.dateTime(m.status_at))}</small>` : ''}</td></tr>`).join('')}</tbody>
             </table></div>
           </div>` : ''}
 
@@ -326,6 +329,10 @@ Views.ticketDetail = function ticketDetail(id) {
     }
     el.querySelector('#act-resolve')?.addEventListener('click', () => TicketModals.resolve(t, { toStatus: (fechaDireto || t.awaiting_evaluation) ? 6 : 5, onDone: () => afterReload() }));
     el.querySelector('#act-pause')?.addEventListener('click', () => TicketModals.pause(t, { onDone: () => afterReload() }));
+    el.querySelectorAll('.pd-sel').forEach((s) => s.addEventListener('change', async () => {
+      try { await API.post(`/tickets/${t.id}/materials/${s.dataset.mat}/status`, { status: s.value }); toast('Situação do material atualizada.', 'success'); afterReload(); }
+      catch (e) { showError(e); }
+    }));
     const eqPend = el.querySelector('#eq-pend');
     if (eqPend) {
       API.get(`/inventory/assets?entity_id=${t.entity_id}&limit=500`).then((lista) => {

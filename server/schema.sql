@@ -877,3 +877,20 @@ DO $marco$ BEGIN
     INSERT INTO schema_marcos (nome) VALUES ('categorias_pedem_equipamento');
   END IF;
 END $marco$;
+
+-- =====================================================================
+-- Pedidos de material: situação de cada item (2026-11-26)
+--   solicitado (pedido) -> comprado -> chegou -> entregue (ou cancelado)
+--   destino: para onde foi quando entregue (estoque de T.I. ou inventário) e o equipamento criado
+-- =====================================================================
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'solicitado';
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS status_at TIMESTAMPTZ;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS status_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS destino TEXT;
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS asset_id BIGINT REFERENCES assets(id) ON DELETE SET NULL;
+ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_status_check;
+ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_status_check
+  CHECK (status IN ('solicitado','comprado','chegou','entregue','cancelado'));
+ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_destino_check;
+ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_destino_check
+  CHECK (destino IS NULL OR destino IN ('estoque','inventario','nenhum'));
