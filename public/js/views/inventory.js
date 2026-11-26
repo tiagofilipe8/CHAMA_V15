@@ -52,7 +52,7 @@ async function openAssetModal(asset, cb) {
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">Estado</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${(a?.status||'OPERATING')===k?'selected':''}>${v}</option>`).join('')}</select></div>
-        <div class="col-md-4 mb-2 multi-empresa"><label class="form-label small">Empresa *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
+        <div class="col-md-4 mb-2"><label class="form-label small">Empresa *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Local (posto) para onde vai</label><select class="form-select" id="a-loc"><option value="">— sem local —</option></select></div>
       </div>
       <div class="row">
@@ -247,7 +247,7 @@ Views.inventory = async function inventory(el) {
     <div class="card panel-card mb-3">
       <div class="card-body py-2 iv-filtros">
         <div class="iv-busca"><i class="bi bi-search"></i><input class="form-control form-control-sm" id="inv-q" placeholder="Buscar etiqueta, nome, serial, AnyDesk..."></div>
-        <select class="form-select form-select-sm multi-empresa" id="inv-entity"><option value="">Todas as empresas</option></select>
+        <select class="form-select form-select-sm" id="inv-entity"><option value="">Todas as empresas</option></select>
         <select class="form-select form-select-sm" id="inv-loc"><option value="">Todos os locais</option></select>
         <select class="form-select form-select-sm" id="inv-type">
           <option value="">Todas as categorias</option>
@@ -331,12 +331,22 @@ Views.inventory = async function inventory(el) {
     });
     const ordem = [...locais.entries()].sort((x, y) => (prefs.ordem === 'valor' && invVeSegredos() ? y[1].valor - x[1].valor : 0)
       || (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || x[1].nome.localeCompare(y[1].nome));
-    grid.innerHTML = ordem.map(([k, L]) => {
+    // empresa -> locais (subcategoria) -> categorias. A empresa principal (Grupo Beija-flor) vem primeiro.
+    const empresas = new Map();
+    ordem.forEach(([k, L]) => {
+      const eid = k.split(':')[0];
+      if (!empresas.has(eid)) empresas.set(eid, { id: eid, nome: L.empresa || 'Sem empresa', locais: [], n: 0, valor: 0 });
+      const E = empresas.get(eid); E.locais.push([k, L]); E.n += L.n; E.valor += L.valor;
+    });
+    const principal = (E) => (/beija/i.test(E.nome) ? 0 : 1);
+    const ordemEmp = [...empresas.values()].sort((x, y) => principal(x) - principal(y)
+      || (prefs.ordem === 'valor' && invVeSegredos() ? y.valor - x.valor : 0) || x.nome.localeCompare(y.nome));
+    const blocoLocal = ([k, L]) => {
       const aberto = prefs.abertos[k] !== false;
       return `<details class="card panel-card iv-local mb-2" data-k="${esc(k)}" ${aberto ? 'open' : ''}>
         <summary class="iv-local-cab">
           <i class="bi bi-chevron-right iv-seta"></i><i class="bi bi-geo-alt-fill iv-pin"></i>
-          <b>${esc(L.nome)}</b><small class="text-muted multi-empresa">${esc(L.empresa || '')}</small>
+          <b>${esc(L.nome)}</b>
           <span class="iv-chips">${[...L.tipos.entries()].map(([tp, it]) => `<span class="iv-chip" title="${esc(INV_TYPES[tp] || tp)}"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${it.length}</span>`).join('')}</span>
           <span class="iv-local-n">${L.n} item(ns)${invVeSegredos() && L.valor ? ` · ${invMoeda(L.valor)}` : ''}</span>
         </summary>
@@ -346,7 +356,19 @@ Views.inventory = async function inventory(el) {
             ${itens.sort((x, y) => String(x.name).localeCompare(String(y.name))).map(linha).join('')}
           </div>`).join('')}
       </details>`;
+    };
+    grid.innerHTML = ordemEmp.map((E) => {
+      const aberta = prefs.abertos[`emp:${E.id}`] !== false;
+      return `<details class="iv-emp ${principal(E) === 0 ? 'principal' : ''}" data-k="emp:${esc(E.id)}" ${aberta ? 'open' : ''}>
+        <summary class="iv-emp-cab">
+          <i class="bi bi-chevron-right iv-seta"></i><span class="iv-emp-ico"><i class="bi bi-building"></i></span>
+          <b>${esc(E.nome)}</b>
+          <span class="iv-emp-n">${E.locais.length} local(is) · ${E.n} item(ns)${invVeSegredos() && E.valor ? ` · <b>${invMoeda(E.valor)}</b>` : ''}</span>
+        </summary>
+        <div class="iv-emp-corpo">${E.locais.map(blocoLocal).join('')}</div>
+      </details>`;
     }).join('');
+    grid.querySelectorAll('.iv-emp').forEach((d) => d.addEventListener('toggle', (ev) => { if (ev.target !== d) return; prefs.abertos[d.dataset.k] = d.open; salvar(); }));
     grid.querySelectorAll('.iv-local').forEach((d) => d.addEventListener('toggle', () => { prefs.abertos[d.dataset.k] = d.open; salvar(); }));
   };
 
@@ -438,7 +460,7 @@ Views.assetDetail = async function assetDetail(id, el) {
           <div class="row"><div class="col-6"><b>Local (posto):</b> ${esc(a.location_name||'—')}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
           ${a.controle === 'quantidade' ? `<div class="row"><div class="col-6"><b>Quantidade:</b> ${a.quantity} un <small class="text-muted">(sem etiqueta, contado por quantidade)</small></div></div>` : ''}
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
-          <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6 multi-empresa"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
+          <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
           <div class="row">${a.location ? `<div class="col-6"><b>Local (anotação antiga):</b> ${esc(a.location)}</div>` : ''}<div class="col-6"><b>Setor:</b> ${esc(a.department||'—')}</div></div>
           <div class="row"><div class="col-6"><b>Usuário / Posse:</b> ${esc(a.responsible_name||a.responsible_user_id||'—')}</div><div class="col-6"><b>Data de compra:</b> ${a.purchase_date ? String(a.purchase_date).slice(0,10) : '—'}</div></div>
           <div class="row"><div class="col-6"><b>Garantia até:</b> ${a.warranty_expiration ? String(a.warranty_expiration).slice(0,10) : '—'}</div><div class="col-6"><b>IP:</b> ${esc(a.ip_address||'—')}</div></div>
@@ -607,7 +629,7 @@ Views.assetDetail = async function assetDetail(id, el) {
   document.getElementById('btn-provision').onclick = async ()=>{
     try{
       const r = await API.post('/inventory/agents/provision', { entity_id: a.entity_id });
-      document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h<span class="multi-empresa"> · Entidade: ${esc(a.entity_name)}</span></small></div>`;
+      document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h<span class=""> · Entidade: ${esc(a.entity_name)}</span></small></div>`;
     }catch(e){ showError(e); }
   };
   document.getElementById('btn-new-os-asset').onclick = ()=> { location.hash = `#/new?entity_id=${a.entity_id}&asset_id=${a.id}`; };
@@ -720,14 +742,14 @@ Views.assetDetail = async function assetDetail(id, el) {
 };
 
 Views.agents = async function agents(el){
-  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th class="multi-empresa">Empresa</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
+  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th class="">Empresa</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
   try{
     const agents = await API.get('/inventory/agents');
     document.getElementById('agents-body').innerHTML = agents.length ? agents.map(a=>`
       <tr>
         <td><code class="small">${esc(a.agent_id.slice(0,16))}…</code></td>
         <td>${a.asset_name ? `<a href="#/inventory/${a.asset_id}">${esc(a.asset_name)}</a>` : '—'}</td>
-        <td class="multi-empresa">${esc(a.entity_name||'')}</td>
+        <td class="">${esc(a.entity_name||'')}</td>
         <td>${esc(a.version||'—')}</td>
         <td><span class="badge text-bg-${a.status==='ONLINE'?'success':a.status==='OFFLINE'?'warning':'secondary'}">${a.status}</span></td>
         <td class="small text-muted">${a.last_seen_at ? fmt.timeAgo(a.last_seen_at) : 'nunca'}</td>

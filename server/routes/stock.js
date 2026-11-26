@@ -250,6 +250,9 @@ router.get('/report', async (req, res) => {
   const dias = Math.min(Math.max(parseInt(req.query.dias, 10) || 90, 1), 3660);
   const pA = [];
   let fA = filtroEmpresas(req.user, pA);
+  // valor por empresa: compara todas as empresas que a pessoa vê (sem o filtro de empresa e de posto)
+  const pEmp = [...pA]; let fEmp = fA;
+  if (req.query.escopo === 'estoque') fEmp += ` AND a.status IN ('STOCK','READY','ORDERED')`;
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { pA.push(req.query.entity_id); fA += ` AND a.entity_id = $${pA.length}`; }
   const pM = [dias];
   let fM = '';
@@ -267,7 +270,7 @@ router.get('/report', async (req, res) => {
     pM.push(req.query.location_id); fM += ` AND (m.to_location_id = $${pM.length} OR m.from_location_id = $${pM.length})`;
   }
   const periodo = `m.created_at >= now() - ($1::int * interval '1 day')`;
-  const [inv, porStatus, porCategoria, porMotivo, porPosto, porMes, totais, recentes, valorPosto, itensPosto] = await Promise.all([
+  const [inv, porStatus, porCategoria, porMotivo, porPosto, porMes, totais, recentes, valorPosto, itensPosto, valorEmpresa] = await Promise.all([
     query(`SELECT COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS itens, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.price IS NOT NULL),0)::int AS com_preco
            FROM assets a WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN') ${fA}`, pA),
     query(`SELECT a.status, COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::int AS n, COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)),0)::float AS valor FROM assets a WHERE TRUE ${fA} GROUP BY a.status`, pA),
@@ -305,6 +308,12 @@ router.get('/report', async (req, res) => {
     /^\d+$/.test(String(req.query.location_id || '')) ? query(`SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.controle, a.quantity, a.price,
                   (a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END))::float AS total
            FROM assets a WHERE a.status <> 'DISPOSED' ${fA} ORDER BY total DESC NULLS LAST, a.name LIMIT 300`, pA) : Promise.resolve({ rows: [] }),
+    query(`SELECT a.entity_id, e.name AS empresa, count(DISTINCT a.location_id)::int AS postos,
+                  COALESCE(sum((CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN')),0)::int AS n,
+                  COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status NOT IN ('DISPOSED','LOST','BROKEN')),0)::float AS valor,
+                  COALESCE(sum(a.price * (CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)) FILTER (WHERE a.status IN ('LOST','BROKEN')),0)::float AS perdido
+           FROM assets a JOIN entities e ON e.id = a.entity_id
+           WHERE a.status <> 'DISPOSED' ${fEmp} GROUP BY 1, 2 ORDER BY valor DESC, n DESC`, pEmp),
   ]);
   const ver = veSegredos(req.user);
   const semPreco = (lista, campos) => (ver ? lista : lista.map((r) => { const o = { ...r }; campos.forEach((c) => delete o[c]); return o; }));
@@ -321,6 +330,7 @@ router.get('/report', async (req, res) => {
     totais: semPreco([totais.rows[0]], ['custo_retiradas', 'prejuizo'])[0],
     recentes: semPreco(recentes.rows, ['price']),
     valor_por_posto: semPreco(valorPosto.rows, ['valor', 'perdido']),
+    valor_por_empresa: semPreco(valorEmpresa.rows, ['valor', 'perdido']),
     itens_posto: semPreco(itensPosto.rows, ['price', 'total']),
   });
 });

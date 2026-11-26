@@ -155,7 +155,7 @@ const Estoque = (() => {
     try { ents = (await API.get('/entities')).filter((e) => e.active); } catch { /* só a própria */ }
     const { m, fechar } = modal('Transferir para outra unidade', `${cabecalhoItem(it)}
       <div class="row g-2 mt-2">
-        <div class="col-sm-6 multi-empresa"><label class="form-label small fw-semibold mb-1">Empresa</label>
+        <div class="col-sm-6"><label class="form-label small fw-semibold mb-1">Empresa</label>
           <select class="form-select form-select-sm" id="es-ent">${ents.map((e) => `<option value="${e.id}" ${String(e.id) === String(it.entity_id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
         <div class="col-sm-6"><label class="form-label small fw-semibold mb-1">Unidade (posto) *</label>
           <select class="form-select form-select-sm" id="es-loc"></select></div>
@@ -187,7 +187,7 @@ const Estoque = (() => {
     try { ents = (await API.get('/entities')).filter((e) => e.active); } catch { /* sem filtro */ }
     el.innerHTML = `
       <div class="card panel-card mb-3"><div class="card-body py-2 es-filtros">
-        <select class="form-select form-select-sm multi-empresa" id="es-f-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+        <select class="form-select form-select-sm" id="es-f-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
         <select class="form-select form-select-sm" id="es-f-loc"><option value="">Todos os postos</option></select>
         <select class="form-select form-select-sm" id="es-f-st"><option value="">Todos os estados</option>${Object.entries(NO_ESTOQUE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
         <input class="form-control form-control-sm" id="es-f-q" placeholder="Buscar item, etiqueta, modelo">
@@ -230,7 +230,7 @@ const Estoque = (() => {
       const vePreco = lista.some((it) => it.price !== undefined);
       corpo.innerHTML = [...grupos.values()].map((g) => `
         <div class="card panel-card mb-3">
-          <div class="dp-bloco-cab"><span><i class="bi bi-geo-alt"></i> ${esc(g.posto)} <small class="text-muted fw-normal multi-empresa">· ${esc(g.empresa)}</small></span>
+          <div class="dp-bloco-cab"><span><i class="bi bi-geo-alt"></i> ${esc(g.posto)} <small class="text-muted fw-normal">· ${esc(g.empresa)}</small></span>
             <small class="text-muted">${g.itens.reduce((s, i) => s + (i.controle === 'quantidade' ? Number(i.quantity || 0) : 1), 0)} item(ns)${vePreco ? ` · ${invMoeda(g.itens.reduce((s, i) => s + Number(i.price || 0) * (i.controle === 'quantidade' ? Number(i.quantity || 0) : 1), 0))}` : ''}</small></div>
           <div class="es-grade">${g.itens.map((it) => `
             <div class="es-card">
@@ -307,7 +307,7 @@ const Estoque = (() => {
         <select class="form-select form-select-sm" id="er-dias">
           <option value="30">Últimos 30 dias</option><option value="90" selected>Últimos 90 dias</option>
           <option value="365">Último ano</option><option value="3650">Tudo</option></select>
-        <select class="form-select form-select-sm multi-empresa" id="er-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+        <select class="form-select form-select-sm" id="er-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
         <div class="seg" role="group" aria-label="O que entra no relatório">
           <button type="button" data-escopo="tudo" class="active">Todo o inventário</button>
           <button type="button" data-escopo="estoque">Só o estoque de T.I.</button>
@@ -328,6 +328,13 @@ const Estoque = (() => {
       const maxMes = Math.max(0, ...r.por_mes.map((x) => x.n));
       const maxCat = Math.max(0, ...r.por_categoria.map((x) => (v ? x.valor : x.n)));
       const maxPosto = Math.max(0, ...r.valor_por_posto.map((x) => (v ? x.valor : x.n)));
+      // postos separados por empresa (a principal primeiro); só mostra o nome quando há mais de uma
+      const porEmpresa = (lista) => {
+        const m = new Map();
+        lista.forEach((x) => { const k = x.empresa || 'Sem empresa'; if (!m.has(k)) m.set(k, []); m.get(k).push(x); });
+        return [...m.entries()].sort((a, b) => (/beija/i.test(a[0]) ? 0 : 1) - (/beija/i.test(b[0]) ? 0 : 1) || a[0].localeCompare(b[0]));
+      };
+      const multi = porEmpresa(r.valor_por_posto).length > 1;
       const periodo = dias >= 3650 ? 'desde o início' : `nos últimos ${dias} dias`;
       corpo.innerHTML = `
         <div class="er-kpis">
@@ -342,6 +349,12 @@ const Estoque = (() => {
           ${v ? `<div class="er-kpi"><span class="er-ico vermelho" aria-hidden="true"><i class="bi bi-exclamation-octagon"></i></span>${ajuda('Valor dos equipamentos que estragaram ou sumiram (furto, perda, acidente) e foram substituídos por um item do estoque no período. Conta o preço cadastrado do item antigo.')}<small>Prejuízo (perdidos e estragados)</small><b>${invMoeda(r.totais.prejuizo)}</b><span>${r.totais.perdidos} item(ns) · ${periodo}</span></div>` : ''}
           <div class="er-kpi"><span class="er-ico violeta" aria-hidden="true"><i class="bi bi-arrow-left-right"></i></span>${ajuda('Transferências: itens mandados de uma unidade para outra. Entradas: itens que entraram no estoque (cadastrados como "Em estoque" ou devolvidos depois de usados).')}<small>Transferências / entradas</small><b>${r.totais.transferencias} / ${r.totais.entradas}</b><span>${periodo}</span></div>
         </div>
+        <div class="card panel-card mb-3"><div class="dp-bloco-cab"><span><i class="bi bi-buildings"></i> Valor por empresa ${ajuda('Quanto vale o que cada empresa tem agora (preço × quantidade). O Grupo Beija-flor aparece separado das outras empresas. Clique numa empresa para ver só ela no relatório.')}</span>${ent ? '<a href="javascript:void 0" id="er-limpa-ent">todas as empresas</a>' : '<small class="text-muted">hoje</small>'}</div>
+          <div class="er-emps">${(r.valor_por_empresa || []).slice().sort((a, b) => (/beija/i.test(a.empresa) ? 0 : 1) - (/beija/i.test(b.empresa) ? 0 : 1)).map((x) => `<button type="button" class="er-emp ${/beija/i.test(x.empresa) ? 'principal' : ''} ${String(x.entity_id) === String(ent) ? 'ativa' : ''}" data-ent="${x.entity_id}">
+            <span class="er-emp-ico"><i class="bi bi-building"></i></span>
+            <span class="er-emp-tx"><b>${esc(x.empresa)}</b><small>${x.postos} posto(s) · ${x.n} item(ns)</small></span>
+            ${v ? `<span class="er-emp-v"><b>${invMoeda(x.valor)}</b>${x.perdido ? `<small class="text-danger">${invMoeda(x.perdido)} perdido</small>` : ''}</span>` : ''}
+          </button>`).join('') || '<div class="dp-vazio">Nenhum equipamento.</div>'}</div></div>
         <div class="er-grade">
           <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-signpost-2"></i> Retiradas por motivo ${ajuda('Por que as pessoas pegaram itens do estoque: o motivo escolhido ao dar baixa. A barra mostra o peso de cada motivo (pelo custo, quando há preço). Muitas retiradas por "estragou" ou "mau uso" num posto indicam equipamento velho ou falta de treinamento.')}</span><small class="text-muted">${periodo}</small></div>
             ${r.por_motivo.length ? `<table class="table table-sm align-middle mb-0 er-tab"><thead><tr><th>Motivo</th><th></th><th class="text-end">Retiradas</th>${v ? '<th class="text-end">Custo</th>' : ''}</tr></thead><tbody>
@@ -357,14 +370,14 @@ const Estoque = (() => {
             </tbody></table>` : '<div class="dp-vazio">Nenhum equipamento cadastrado.</div>'}</div>
           <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-geo-alt"></i> Retiradas por posto ${ajuda('Para qual localidade foram os itens retirados e quanto custaram. Um posto com muitas retiradas pode ter equipamento velho, mau uso ou precisar de treinamento.')}</span><small class="text-muted">${periodo}</small></div>
             ${r.por_posto.length ? `<table class="table table-sm align-middle mb-0 er-tab"><thead><tr><th>Posto</th><th class="text-end">Retiradas</th>${v ? '<th class="text-end">Custo</th>' : ''}</tr></thead><tbody>
-            ${r.por_posto.map((x) => `<tr><td>${esc(x.posto)}<small class="text-muted multi-empresa"> · ${esc(x.empresa || '')}</small></td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap">${invMoeda(x.custo)}</td>` : ''}</tr>`).join('')}
+            ${r.por_posto.map((x) => `<tr><td>${esc(x.posto)}<small class="text-muted"> · ${esc(x.empresa || '')}</small></td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap">${invMoeda(x.custo)}</td>` : ''}</tr>`).join('')}
             </tbody></table>` : '<div class="dp-vazio">Nenhuma retirada no período.</div>'}</div>
         </div>
         <div class="er-grade mt-3">
           <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-trophy"></i> Valor por posto ${ajuda('Quanto vale o que cada posto tem agora (preço × quantidade), do maior para o menor. Estragados e extraviados saem da soma e aparecem em "Perdido". Clique num posto para ver os itens dele.')}</span><small class="text-muted">hoje</small></div>
             ${r.valor_por_posto.length ? `<table class="table table-sm table-hover align-middle mb-0 er-tab er-click"><thead><tr><th>#</th><th>Posto</th><th></th><th class="text-end">Itens</th>${v ? '<th class="text-end">Valor</th><th class="text-end">Perdido</th>' : ''}</tr></thead><tbody>
-            ${r.valor_por_posto.map((x, i) => `<tr data-loc="${x.location_id || ''}" class="${String(x.location_id || '') === String(loc) && loc ? 'table-active' : ''}"><td class="text-muted">${i + 1}º</td><td>${esc(x.posto)}<small class="text-muted multi-empresa"> · ${esc(x.empresa || '')}</small></td>
-              <td class="w-25">${barra(v ? x.valor : x.n, maxPosto)}</td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap"><b>${invMoeda(x.valor)}</b></td><td class="text-end text-nowrap ${x.perdido ? 'text-danger' : 'text-muted'}">${x.perdido ? invMoeda(x.perdido) : '—'}</td>` : ''}</tr>`).join('')}
+            ${porEmpresa(r.valor_por_posto).map(([emp, lista]) => `${multi ? `<tr class="er-emp-lin"><td colspan="${v ? 6 : 4}"><i class="bi bi-building"></i> ${esc(emp)}</td></tr>` : ''}${lista.map((x, i) => `<tr data-loc="${x.location_id || ''}" class="${String(x.location_id || '') === String(loc) && loc ? 'table-active' : ''}"><td class="text-muted">${i + 1}º</td><td>${esc(x.posto)}<small class="text-muted"> · ${esc(x.empresa || '')}</small></td>
+              <td class="w-25">${barra(v ? x.valor : x.n, maxPosto)}</td><td class="text-end">${x.n}</td>${v ? `<td class="text-end text-nowrap"><b>${invMoeda(x.valor)}</b></td><td class="text-end text-nowrap ${x.perdido ? 'text-danger' : 'text-muted'}">${x.perdido ? invMoeda(x.perdido) : '—'}</td>` : ''}</tr>`).join('')}`).join('')}
             </tbody></table>` : '<div class="dp-vazio">Nenhum equipamento.</div>'}</div>
           <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-list-ol"></i> ${loc ? `Itens de ${esc((r.valor_por_posto.find((x) => String(x.location_id) === String(loc)) || {}).posto || 'posto')}` : 'Itens do posto'} ${ajuda('Os itens do posto escolhido, do mais caro para o mais barato. Itens contados por quantidade mostram o total (preço por unidade × quantidade).')}</span>${loc ? '<a href="javascript:void 0" id="er-limpa-loc">todos os postos</a>' : ''}</div>
             ${!loc ? '<div class="dp-vazio">Escolha um posto no filtro ou clique num posto ao lado.</div>' : r.itens_posto.length ? `<div class="er-itens">${r.itens_posto.map((a) => `<a href="#/inventory/${a.id}" class="er-item ${['LOST', 'BROKEN'].includes(a.status) ? 'perdido' : ''}">
@@ -397,7 +410,14 @@ const Estoque = (() => {
     el.addEventListener('click', (e) => {
       const tr = e.target.closest('.er-click tr[data-loc]');
       if (tr && tr.dataset.loc) { loc = tr.dataset.loc; selLoc.value = loc; carregar(); return; }
-      if (e.target.closest('#er-limpa-loc')) { loc = ''; selLoc.value = ''; carregar(); }
+      if (e.target.closest('#er-limpa-loc')) { loc = ''; selLoc.value = ''; carregar(); return; }
+      const be = e.target.closest('.er-emp[data-ent]');
+      const selEnt = el.querySelector('#er-ent');
+      if (be || e.target.closest('#er-limpa-ent')) {
+        ent = be && String(be.dataset.ent) !== String(ent) ? be.dataset.ent : '';
+        if (selEnt) selEnt.value = ent;
+        carregarLocais().then(carregar);
+      }
     });
     el.querySelectorAll('[data-escopo]').forEach((b) => b.addEventListener('click', () => {
       escopo = b.dataset.escopo;
