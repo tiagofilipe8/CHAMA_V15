@@ -207,112 +207,129 @@ async function openAssetModal(asset, cb) {
   modal.show();
 }
 
+// Ícone de cada categoria de equipamento
+const INV_ICONES = {
+  COMPUTER: 'bi-pc-display', NOTEBOOK: 'bi-laptop', SERVER: 'bi-hdd-rack', PRINTER: 'bi-printer',
+  MONITOR: 'bi-display', UPS: 'bi-battery-charging', NETWORK_DEVICE: 'bi-router', MOBILE_DEVICE: 'bi-phone',
+  PERIPHERAL: 'bi-mouse2', OTHER: 'bi-box',
+};
+window.INV_ICONES = INV_ICONES;
+
 Views.inventory = async function inventory(el) {
   const user = API.user || {};
+  let prefs = { abertos: {} };
+  try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('inv_prefs') || '{}') }; } catch { /* padrão */ }
+  const salvar = () => { try { localStorage.setItem('inv_prefs', JSON.stringify(prefs)); } catch { /* sem armazenamento */ } };
   el.innerHTML = `
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h4 class="mb-0"><i class="bi bi-hdd-stack me-2"></i> Orcim Inventário</h4>
-      <div class="d-flex gap-2">
-        <button class="btn btn-outline-secondary btn-sm" id="btn-agents"><i class="bi bi-cpu"></i> Agentes</button>
-        <button class="btn btn-primary btn-sm" id="btn-new-asset"><i class="bi bi-plus-lg"></i> Novo ativo</button>
-      </div>
-    </div>
     <div class="card panel-card mb-3">
-      <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
-        <input class="form-control form-control-sm" id="inv-q" style="max-width:220px" placeholder="Buscar etiqueta, nome, serial, AnyDesk...">
-        <select class="form-select form-select-sm" id="inv-type" style="max-width:160px">
+      <div class="card-body py-2 iv-filtros">
+        <div class="iv-busca"><i class="bi bi-search"></i><input class="form-control form-control-sm" id="inv-q" placeholder="Buscar etiqueta, nome, serial, AnyDesk..."></div>
+        <select class="form-select form-select-sm multi-empresa" id="inv-entity"><option value="">Todas as empresas</option></select>
+        <select class="form-select form-select-sm" id="inv-loc"><option value="">Todos os locais</option></select>
+        <select class="form-select form-select-sm" id="inv-type">
           <option value="">Todas as categorias</option>
-          ${Object.entries(INV_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+          ${Object.entries(INV_TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
-        <select class="form-select form-select-sm" id="inv-status" style="max-width:150px">
+        <select class="form-select form-select-sm" id="inv-status">
           <option value="">Todos os estados</option>
-          ${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+          ${Object.entries(INV_STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
-        <select class="form-select form-select-sm multi-empresa" id="inv-entity" style="max-width:200px"><option value="">Todas entidades</option></select>
-        <button class="btn btn-sm btn-outline-secondary" id="btn-inv-filter"><i class="bi bi-search"></i></button>
+        <span class="ms-auto d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-agents"><i class="bi bi-cpu"></i> Agentes</button>
+          <button class="btn btn-primary btn-sm" id="btn-new-asset"><i class="bi bi-plus-lg"></i> Novo equipamento</button>
+        </span>
       </div>
     </div>
-    <div class="card panel-card">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Foto</th>
-              <th>Estado</th>
-              <th class="multi-empresa">Empresa</th>
-              <th>Local</th>
-              <th>Nome</th>
-              <th>Categoria</th>
-              ${invVeSegredos() ? '<th class="text-end">Preço</th>' : ''}
-              <th>Marca</th>
-              <th>N° Série</th>
-              <th>CPU</th>
-              <th>Memória</th>
-              <th>HD</th>
-            </tr>
-          </thead>
-          <tbody id="inv-grid">${spinner()}</tbody>
-        </table>
-      </div>
-    </div>`;
+    <div class="iv-resumo small text-muted mb-2" id="inv-resumo"></div>
+    <div id="inv-grid">${spinner()}</div>`;
 
-  const loadEntities = async () => {
-    try {
-      const ents = await API.get('/entities');
-      const sel = document.getElementById('inv-entity');
-      sel.innerHTML = `<option value="">Todas entidades</option>` + ents.filter(e=>e.active).map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
-      if (user.role==='client') { sel.value = String(user.entity_id||''); sel.disabled = true; }
-    } catch {}
+  const selEnt = document.getElementById('inv-entity'); const selLoc = document.getElementById('inv-loc');
+  try {
+    const ents = await API.get('/entities');
+    selEnt.innerHTML = '<option value="">Todas as empresas</option>' + ents.filter((e) => e.active).map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+    if (user.role === 'client') { selEnt.value = String(user.entity_id || ''); selEnt.disabled = true; }
+  } catch { /* sem filtro */ }
+  const carregarLocais = async () => {
+    let locs = [];
+    try { locs = await API.get(`/locations?active=true${selEnt.value ? `&entity_id=${selEnt.value}` : ''}`); } catch { /* sem lista */ }
+    selLoc.innerHTML = '<option value="">Todos os locais</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
   };
-  await loadEntities();
+  await carregarLocais();
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  const linha = (a) => {
+    const manutVencida = a.next_maintenance_date && String(a.next_maintenance_date).slice(0, 10) <= hoje && !['DISPOSED', 'LOST'].includes(a.status);
+    const detalhe = [[a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_number ? `S/N ${a.serial_number}` : '', a.responsible_name ? `com ${a.responsible_name}` : '']
+      .filter(Boolean).join(' · ');
+    return `<a class="iv-item est-borda-${esc(a.status)}" href="#/inventory/${a.id}">
+      <span class="iv-ico"><i class="bi ${INV_ICONES[a.type] || 'bi-box'}"></i></span>
+      <span class="iv-tx"><b>${esc(a.name)}</b>${a.asset_tag ? `<code class="iv-tag" title="Etiqueta Orcim">${esc(a.asset_tag)}</code>` : '<code class="iv-tag sem" title="Sem etiqueta Orcim">sem etiqueta</code>'}
+        <small>${esc(detalhe || INV_TYPES[a.type] || '')}</small></span>
+      <span class="iv-marcas">
+        ${a.display_photo_id || a.photos_count ? '<i class="bi bi-camera" title="Tem foto"></i>' : ''}
+        ${a.anydesk_id ? '<i class="bi bi-pc-display-horizontal" title="Tem AnyDesk"></i>' : ''}
+        ${manutVencida ? '<i class="bi bi-tools text-danger" title="Manutenção vencida"></i>' : ''}
+        ${a.agent_status === 'ONLINE' ? '<i class="bi bi-wifi text-success" title="Agente online"></i>' : ''}
+      </span>
+      ${invVeSegredos() ? `<span class="iv-preco">${a.price !== null && a.price !== undefined ? invMoeda(a.price) : ''}</span>` : ''}
+      <span class="iv-estado">${invEstado(a.status)}</span>
+    </a>`;
+  };
 
   const load = async () => {
     const p = new URLSearchParams();
     const q = document.getElementById('inv-q').value.trim();
     const t = document.getElementById('inv-type').value;
     const s = document.getElementById('inv-status').value;
-    const e = document.getElementById('inv-entity').value;
     if (q) p.set('q', q);
     if (t) p.set('type', t);
     if (s) p.set('status', s);
-    if (e) p.set('entity_id', e);
-    try {
-      const assets = await API.get('/inventory/assets?' + p);
-      const grid = document.getElementById('inv-grid');
-      if (!assets.length) {
-        grid.innerHTML = emptyState('Nenhum ativo', 'Cadastre o primeiro equipamento.', 'bi-hdd');
-        return;
-      }
-      grid.innerHTML = assets.map(a=>`
-        <tr class="asset-row" data-id="${a.id}" style="cursor:pointer">
-          <td style="width:40px" class="text-center">
-            ${a.display_photo_id || a.photos_count
-              ? `<i class="bi bi-camera text-muted" title="Possui fotos"></i>`
-              : ''}
-          </td>
-          <td>${invEstado(a.status)}${a.next_maintenance_date && String(a.next_maintenance_date).slice(0,10) <= new Date().toISOString().slice(0,10) && a.status !== 'DISPOSED' && a.status !== 'LOST' ? ` <i class="bi bi-tools text-danger" title="Manutenção vencida"></i>` : ''}</td>
-          <td class="small multi-empresa">${esc(a.entity_name||'')}</td>
-          <td class="small">${esc(a.location_name||a.location||'—')}</td>
-          <td>
-            <div class="fw-semibold">${esc(a.name)}</div>
-            <div class="small text-muted">${esc(a.asset_tag||'')}</div>
-          </td>
-          <td><span class="badge text-bg-light border">${INV_TYPES[a.type]||a.type}</span></td>
-          ${invVeSegredos() ? `<td class="small text-end text-nowrap">${invMoeda(a.price)}</td>` : ''}
-          <td class="small">${esc(a.manufacturer||'')} ${esc(a.model||'')}</td>
-          <td class="small text-muted">${esc(a.serial_number||'—')}</td>
-          <td class="small">${esc(a.cpu_info||'—')}</td>
-          <td class="small">${esc(a.memory_info||'—')}</td>
-          <td class="small">${esc(a.hd_info||'—')}</td>
-        </tr>`).join('');
-      grid.querySelectorAll('.asset-row').forEach(c=> c.addEventListener('click', ()=> location.hash=`#/inventory/${c.dataset.id}`));
-    } catch(e){ showError(e); }
+    if (selEnt.value) p.set('entity_id', selEnt.value);
+    if (selLoc.value) p.set('location_id', selLoc.value);
+    p.set('limit', '500');
+    const grid = document.getElementById('inv-grid');
+    let assets;
+    try { assets = await API.get('/inventory/assets?' + p); } catch (e) { showError(e); return; }
+    const porEstado = {};
+    assets.forEach((a) => { porEstado[a.status] = (porEstado[a.status] || 0) + 1; });
+    document.getElementById('inv-resumo').innerHTML = assets.length
+      ? `${assets.length} equipamento(s) · ${Object.entries(porEstado).map(([k, n]) => `${invEstado(k)} ${n}`).join(' ')}` : '';
+    if (!assets.length) { grid.innerHTML = emptyState('Nenhum equipamento', 'Cadastre o primeiro equipamento ou mude os filtros.', 'bi-hdd'); return; }
+    // local -> categoria -> itens
+    const locais = new Map();
+    assets.forEach((a) => {
+      const k = `${a.entity_id}:${a.location_id || ''}`;
+      if (!locais.has(k)) locais.set(k, { nome: a.location_name || 'Sem local definido', empresa: a.entity_name, tipos: new Map(), n: 0, valor: 0 });
+      const L = locais.get(k);
+      if (!L.tipos.has(a.type)) L.tipos.set(a.type, []);
+      L.tipos.get(a.type).push(a); L.n += 1; L.valor += Number(a.price || 0);
+    });
+    const ordem = [...locais.entries()].sort((x, y) => (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || x[1].nome.localeCompare(y[1].nome));
+    grid.innerHTML = ordem.map(([k, L]) => {
+      const aberto = prefs.abertos[k] !== false;
+      return `<details class="card panel-card iv-local mb-2" data-k="${esc(k)}" ${aberto ? 'open' : ''}>
+        <summary class="iv-local-cab">
+          <i class="bi bi-chevron-right iv-seta"></i><i class="bi bi-geo-alt-fill iv-pin"></i>
+          <b>${esc(L.nome)}</b><small class="text-muted multi-empresa">${esc(L.empresa || '')}</small>
+          <span class="iv-chips">${[...L.tipos.entries()].map(([tp, it]) => `<span class="iv-chip" title="${esc(INV_TYPES[tp] || tp)}"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${it.length}</span>`).join('')}</span>
+          <span class="iv-local-n">${L.n} item(ns)${invVeSegredos() && L.valor ? ` · ${invMoeda(L.valor)}` : ''}</span>
+        </summary>
+        ${[...L.tipos.entries()].sort((x, y) => (INV_TYPES[x[0]] || '').localeCompare(INV_TYPES[y[0]] || '')).map(([tp, itens]) => `
+          <div class="iv-tipo">
+            <div class="iv-tipo-cab"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${esc(INV_TYPES[tp] || tp)} <span>${itens.length}</span></div>
+            ${itens.sort((x, y) => String(x.name).localeCompare(String(y.name))).map(linha).join('')}
+          </div>`).join('')}
+      </details>`;
+    }).join('');
+    grid.querySelectorAll('.iv-local').forEach((d) => d.addEventListener('toggle', () => { prefs.abertos[d.dataset.k] = d.open; salvar(); }));
   };
 
-  document.getElementById('btn-inv-filter').onclick = load;
-  document.getElementById('inv-q').addEventListener('keydown', e=>{ if(e.key==='Enter') load(); });
-  document.getElementById('btn-new-asset').onclick = ()=> openAssetModal(null, load);
-  document.getElementById('btn-agents').onclick = ()=> location.hash='#/inventory/agents';
+  let espera = null;
+  document.getElementById('inv-q').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(load, 300); });
+  ['inv-type', 'inv-status', 'inv-loc'].forEach((id) => document.getElementById(id).addEventListener('change', load));
+  selEnt.addEventListener('change', async () => { await carregarLocais(); load(); });
+  document.getElementById('btn-new-asset').onclick = () => openAssetModal(null, load);
+  document.getElementById('btn-agents').onclick = () => { location.hash = '#/inventory/agents'; };
   await load();
 };
 Views.inventory.openAssetModal = openAssetModal;
