@@ -11,6 +11,22 @@ const { requireAuth, scopeConditions, has } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
+// Meus pedidos: os pedidos de material dos chamados que eu abri (sem preço) e quais tiveram novidade
+router.get('/meus', async (req, res) => {
+  const { rows } = await query(
+    `SELECT t.id, t.title, t.status, t.created_at, t.needed_by, l.name AS location_name, a.name AS assigned_name,
+            EXISTS (SELECT 1 FROM inapp_notifications n WHERE n.user_id = $1 AND n.ticket_id = t.id AND n.link = '#/meus-pedidos' AND n.is_read = FALSE) AS novidade,
+            (SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
+                     'status', m.status, 'status_at', m.status_at, 'destino', m.destino, 'location_name', lm.name) ORDER BY m.id)
+               FROM ticket_materials m LEFT JOIN locations lm ON lm.id = m.location_id WHERE m.ticket_id = t.id) AS materiais
+     FROM tickets t
+     LEFT JOIN locations l ON l.id = t.location_id
+     LEFT JOIN users a ON a.id = t.assigned_user_id
+     WHERE t.requester_id = $1 AND t.status <> 7 AND EXISTS (SELECT 1 FROM ticket_materials tm WHERE tm.ticket_id = t.id)
+     ORDER BY novidade DESC, t.created_at DESC LIMIT 200`, [req.user.id]);
+  res.json(rows.map((r) => ({ ...r, number: `#${r.id}` })));
+});
+
 router.get('/', async (req, res) => {
   const scope = scopeConditions(req.user, 1);
   const params = [...scope.params];

@@ -18,13 +18,24 @@ router.get('/', requireAuth, async (req, res) => {
   const mine = await query(
     `SELECT DISTINCT n.ticket_id FROM inapp_notifications n
      JOIN tickets t ON t.id = n.ticket_id
-     WHERE n.user_id = $1 AND n.is_read = FALSE
+     WHERE n.user_id = $1 AND n.is_read = FALSE AND n.link IS DISTINCT FROM '#/meus-pedidos'
        AND (t.requester_id = $1 OR t.assigned_user_id = $1)`, [req.user.id]);
-  res.json({ list: rows, unread: unread.rows[0].c, mine_tickets: mine.rows.map((r) => Number(r.ticket_id)) });
+  // "Meus pedidos" com novidade: pedidos de material meus que mudaram de situação (comprado, chegou, entregue...)
+  const pedidos = await query(
+    `SELECT DISTINCT n.ticket_id FROM inapp_notifications n
+     WHERE n.user_id = $1 AND n.is_read = FALSE AND n.link = '#/meus-pedidos' AND n.ticket_id IS NOT NULL`, [req.user.id]);
+  res.json({ list: rows, unread: unread.rows[0].c, mine_tickets: mine.rows.map((r) => Number(r.ticket_id)), mine_orders: pedidos.rows.map((r) => Number(r.ticket_id)) });
 });
 
 // Marca como lidas: todas, ou so as de um chamado (body.ticket_id: ao abrir o chamado)
 router.post('/read', requireAuth, async (req, res) => {
+  // { pedidos: true } marca como vistos os avisos de pedido (todos, ou só de um chamado com ticket_id)
+  if (req.body && req.body.pedidos) {
+    const tid = /^\d+$/.test(String(req.body.ticket_id || '')) ? req.body.ticket_id : null;
+    await query(`UPDATE inapp_notifications SET is_read = TRUE
+                 WHERE user_id = $1 AND link = '#/meus-pedidos' AND is_read = FALSE ${tid ? 'AND ticket_id = $2' : ''}`, tid ? [req.user.id, tid] : [req.user.id]);
+    return res.json({ ok: true });
+  }
   const ticketId = req.body && req.body.ticket_id;
   const notifId = req.body && req.body.id;
   if (ticketId != null && /^\d+$/.test(String(ticketId))) {

@@ -1461,7 +1461,7 @@ async function atualizarItemPedido(req, res, forcar = {}) {
     const texto = `${atual.quantity} ${atual.unit || 'un'} · ${atual.name}: ${SITUACAO_MATERIAL[novo.status]}${posto && novo.status !== 'cancelado' ? ` · vai para ${posto}${onde}` : ''}`;
     await query(`INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)`, [ticket.id, user.id, `Pedido de material — ${texto}`]);
     if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
-      await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: ${SITUACAO_MATERIAL[novo.status].toLowerCase()}`, texto, ticket.id).catch(() => {});
+      await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: ${SITUACAO_MATERIAL[novo.status].toLowerCase()}`, texto, ticket.id, '#/meus-pedidos').catch(() => {});
     }
   }
   res.json({ ok: true, asset_ids: ids, asset_id: ids[0] || null });

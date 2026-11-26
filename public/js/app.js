@@ -24,6 +24,8 @@ function buildNav(u) {
   // Para o cliente a lista "Chamados" ja e a dele: o atalho aponta para ela e ela sai do grupo.
   const listaJaEMinha = client || (!can('ticket.view_all') && !can('ticket.view_company'));
   items.push({ top: true, href: listaJaEMinha ? '#/tickets' : '#/mine', icon: 'bi-ticket-detailed', label: 'Meus chamados' });
+  // Meus pedidos: os pedidos de material que eu fiz, com sininho quando mudam (a caminho, chegou, entregue...)
+  if (can('ticket.create')) items.push({ pedidos: true, href: '#/meus-pedidos', icon: 'bi-bag-check', label: 'Meus pedidos' });
   // Em atendimento (quem atende chamados): o chamado que a pessoa está atendendo agora
   if (Atendimento.pode(u)) items.push({ atend: true, href: '#/atendimento', icon: 'bi-play-circle', label: 'Em atendimento' });
   // Chat interno (todo mundo), com a bolinha de mensagens não lidas
@@ -83,6 +85,7 @@ function pageTitleFromPath() {
     '/tickets': 'Chamados',
     '/team-tickets': 'Chamados da Equipe',
     '/mine': 'Meus chamados',
+    '/meus-pedidos': 'Meus pedidos',
     '/atendimento': 'Meu atendimento',
     '/causas': 'Causas e notas',
     '/urgencia': 'Score de urgência',
@@ -128,6 +131,7 @@ function pageDescFromPath() {
     '/visitas': 'Os dias em que a TI vai passar no seu local (rotas planejadas pelos técnicos).',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
+    '/meus-pedidos': 'Os materiais que você pediu e onde cada um está: pedido, a caminho, chegou, entregue. O sininho marca o que mudou.',
     '/team-tickets': 'Os chamados de todas as pessoas das empresas que você acompanha.',
     '/new': 'Conte o problema e onde ele está. A equipe de TI recebe o chamado na hora.',
     '/inventory': 'Computadores, impressoras e outros equipamentos: o que são, onde estão, quanto custaram e em que estado estão.',
@@ -191,6 +195,9 @@ function renderNav() {
       aberto = true;
     } else if (it.sep) {
       html += '<hr class="nav-sep">';
+    } else if (it.pedidos) {
+      html += `<a class="nav-item nav-top" id="nav-pedidos" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
+        + '<span class="nav-bell d-none" title="Seus pedidos tiveram novidade"><i class="bi bi-bell-fill"></i><b></b></span></a>';
     } else if (it.chat) {
       html += `<a class="nav-item nav-top" id="nav-chat" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
         + '<b class="nav-chat-n d-none" title="Mensagens não lidas"></b></a>';
@@ -356,6 +363,7 @@ const routes = [
   { re: /^#\/chat\/(\d+)$/, view: (m) => Views.chatConversa(m[1]) },
   { re: /^#\/estoque$/, view: () => Views.estoque },
   { re: /^#\/pedidos$/, view: () => Views.pedidos },
+  { re: /^#\/meus-pedidos$/, view: () => Views.meusPedidos },
   { re: /^#\/inventario\/relatorio$/, view: () => Views.estoqueRelatorio },
   { re: /^#\/estoque\/relatorio$/, view: () => () => { location.replace('#/inventario/relatorio'); } }, // endereço antigo
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
@@ -612,6 +620,22 @@ function pintarNovidades() {
   });
 }
 window.temNovidade = (id) => novidades.includes(Number(id));
+// pedidos com novidade (sininho de "Meus pedidos")
+let novidadesPedidos = [];
+window.pedidoTemNovidade = (id) => novidadesPedidos.includes(Number(id));
+function pintarNovidadesPedidos() {
+  const n = novidadesPedidos.length;
+  const b = document.querySelector('#nav-pedidos .nav-bell');
+  if (b) {
+    b.classList.toggle('d-none', n === 0);
+    b.querySelector('b').textContent = n > 99 ? '99+' : String(n);
+    b.title = n === 1 ? '1 pedido seu teve novidade' : `${n} pedidos seus tiveram novidade`;
+  }
+  document.querySelectorAll('[data-pd-novidade]').forEach((el) => {
+    el.classList.toggle('d-none', !novidadesPedidos.includes(Number(el.dataset.pdNovidade)));
+  });
+}
+window.recarregarSino = () => loadBell();
 // o calendário escuta para pôr/tirar o sininho das bolinhas
 let novidadesAntes = '';
 function avisarNovidades() {
@@ -627,6 +651,10 @@ async function loadBell() {
     novidades = (Array.isArray(data.mine_tickets) ? data.mine_tickets : []).map(Number);
     pintarNovidades();
     avisarNovidades();
+    const antesPd = novidadesPedidos.slice().sort().join(',');
+    novidadesPedidos = (Array.isArray(data.mine_orders) ? data.mine_orders : []).map(Number);
+    pintarNovidadesPedidos();
+    if (novidadesPedidos.slice().sort().join(',') !== antesPd) document.dispatchEvent(new CustomEvent('novidades-pedidos'));
     const countEl = document.getElementById('notif-count');
     const listEl = document.getElementById('notif-list');
     countEl.classList.toggle('d-none', data.unread === 0);

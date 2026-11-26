@@ -164,3 +164,97 @@ Views.pedidos = async function pedidos(el) {
   el.querySelector('#pd-q').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(carregar, 300); });
   carregar();
 };
+
+// ---------------------------------------------------------------
+// Views.meusPedidos — Meus pedidos: os materiais que eu pedi e onde cada um está
+//   Pedido -> A caminho (comprado) -> Chegou -> Entregue (ou Cancelado)
+//   O sininho marca os pedidos que mudaram desde a última vez que vi.
+// ---------------------------------------------------------------
+Views.meusPedidos = async function meusPedidos(el) {
+  const ETAPAS = [
+    ['solicitado', 'Pedido', 'bi-hourglass-split'],
+    ['comprado', 'A caminho', 'bi-truck'],
+    ['chegou', 'Chegou', 'bi-box-seam'],
+    ['entregue', 'Entregue', 'bi-check2-circle'],
+  ];
+  const FRASE = {
+    solicitado: 'Pedido recebido pela TI. Aguardando compra.',
+    comprado: 'Comprado: está a caminho.',
+    chegou: 'Chegou na TI. Logo vai ser entregue.',
+    entregue: 'Entregue.',
+    cancelado: 'Este item foi cancelado.',
+  };
+  let filtro = 'andamento';
+  try { filtro = localStorage.getItem('meus_pedidos_filtro') || 'andamento'; } catch { /* padrão */ }
+  el.innerHTML = `
+    <div class="mp-topo">
+      <div class="seg" role="group" aria-label="Mostrar">
+        <button type="button" data-f="andamento">Em andamento</button>
+        <button type="button" data-f="todos">Todos</button>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="mp-vistos"><i class="bi bi-check2-all"></i> Marcar tudo como visto</button>
+      <a class="btn btn-sm btn-primary ms-auto" href="#/new"><i class="bi bi-plus-lg"></i> Pedir material</a>
+    </div>
+    <div id="mp-corpo">${spinner()}</div>`;
+
+  const linhaTempo = (m) => {
+    if (m.status === 'cancelado') return `<div class="mp-cancel"><i class="bi bi-x-circle"></i> Cancelado</div>`;
+    const atual = Math.max(0, ETAPAS.findIndex(([k]) => k === (m.status || 'solicitado')));
+    return `<ol class="mp-tempo" style="--p:${(atual / (ETAPAS.length - 1)) * 100}%">${ETAPAS.map(([k, nome, ic], i) => `
+      <li class="${i < atual ? 'feito' : i === atual ? 'agora' : ''}"><span class="mp-bola"><i class="bi ${ic}"></i></span><small>${nome}</small></li>`).join('')}</ol>`;
+  };
+
+  let lista = [];
+  function desenhar() {
+    el.querySelectorAll('[data-f]').forEach((b) => b.classList.toggle('active', b.dataset.f === filtro));
+    const corpo = el.querySelector('#mp-corpo');
+    const andamento = (p) => (p.materiais || []).some((m) => !['entregue', 'cancelado'].includes(m.status || 'solicitado'));
+    const ver = lista.filter((p) => filtro === 'todos' || andamento(p) || window.pedidoTemNovidade?.(p.id));
+    el.querySelector('#mp-vistos').classList.toggle('d-none', !lista.some((p) => window.pedidoTemNovidade?.(p.id)));
+    if (!ver.length) {
+      corpo.innerHTML = emptyState(lista.length ? 'Nenhum pedido em andamento' : 'Você ainda não pediu material',
+        lista.length ? 'Todos os seus pedidos já foram entregues. Veja em "Todos".' : 'Abra um chamado de pedido de material para pedir mouse, teclado, cabo, toner...', 'bi-bag');
+      return;
+    }
+    corpo.innerHTML = ver.map((p) => {
+      const ms = p.materiais || [];
+      const entregues = ms.filter((m) => m.status === 'entregue').length;
+      const ativos = ms.filter((m) => m.status !== 'cancelado').length;
+      return `<div class="card panel-card mp-card ${window.pedidoTemNovidade?.(p.id) ? 'novo' : ''}" data-id="${p.id}">
+        <div class="mp-cab">
+          <span class="knovo ${window.pedidoTemNovidade?.(p.id) ? '' : 'd-none'}" data-pd-novidade="${p.id}" title="Mudou desde a última vez que você viu"><i class="bi bi-bell-fill"></i></span>
+          <a class="mp-tit" href="#/tickets/${p.id}"><b>${esc(p.number)}</b> ${esc(p.title)}</a>
+          <span class="mp-meta">${p.location_name ? `<i class="bi bi-geo-alt"></i> ${esc(p.location_name)} · ` : ''}pedido em ${fmt.date(p.created_at)}${p.assigned_name ? ` · com ${esc(p.assigned_name)}` : ''}</span>
+          <span class="mp-conta ${ativos && entregues === ativos ? 'ok' : ''}">${entregues}/${ativos} entregue(s)</span>
+        </div>
+        <div class="mp-itens">${ms.map((m) => `
+          <div class="mp-item">
+            <div class="mp-item-tx"><b>${esc(m.name)}</b> <span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span>
+              <small class="text-muted d-block">${esc(FRASE[m.status || 'solicitado'] || '')}${m.status_at && m.status && m.status !== 'solicitado' ? ` · ${fmt.timeAgo(m.status_at)}` : ''}${m.location_name && m.status !== 'cancelado' ? ` · vai para ${esc(m.location_name)}` : ''}</small></div>
+            ${linhaTempo(m)}
+          </div>`).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function carregar() {
+    try { lista = await API.get('/pedidos/meus'); } catch (e) { el.querySelector('#mp-corpo').innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
+    desenhar();
+  }
+  el.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => {
+    filtro = b.dataset.f; try { localStorage.setItem('meus_pedidos_filtro', filtro); } catch { /* sem armazenamento */ }
+    desenhar();
+  }));
+  // abrir o chamado do pedido marca a novidade como vista
+  el.querySelector('#mp-corpo').addEventListener('click', (e) => {
+    const a = e.target.closest('.mp-tit');
+    if (a) API.post('/notifications/read', { pedidos: true, ticket_id: a.closest('.mp-card').dataset.id }).then(() => window.recarregarSino && window.recarregarSino()).catch(() => {});
+  });
+  el.querySelector('#mp-vistos').addEventListener('click', async () => {
+    try { await API.post('/notifications/read', { pedidos: true }); if (window.recarregarSino) await window.recarregarSino(); desenhar(); } catch (e) { showError(e); }
+  });
+  // chegou aviso novo: atualiza a lista
+  const aoMudar = () => { if (!document.body.contains(el.querySelector('#mp-corpo'))) { document.removeEventListener('novidades-pedidos', aoMudar); return; } carregar(); };
+  document.addEventListener('novidades-pedidos', aoMudar);
+  carregar();
+};
