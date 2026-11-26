@@ -298,25 +298,27 @@
   // Menu lateral. Gestor: Início, (Meu dia se também faz visitas), Visitas, Resultados, Orcim,
   // Configurar. Técnico: Meu dia, Visitas e Orcim. Tutoriais e Minha conta no rodapé.
   // [rota, ícone, nome, contador]
-  const SECAO_MENU = { Visitas: 'vis', 'Painel do Gestor - Resultados': 'pg', Orcim: 'orc', Configurar: 'cfg' };
+  const SECAO_MENU = { 'Dia a dia da TI': 'vis', 'Rotas agendadas': 'rot', 'Painel do Gestor - Resultados': 'pg', Orcim: 'orc', Configurar: 'cfg' };
   function montarMenu() {
     const g = ehGestor();
     const itens = [
       ...(g ? [['#/', 'house', 'Início', 'inicio']] : [['#/', 'sun', 'Meu dia', 'meu_dia']]),
       ...(g && fazVisitas() ? [['#/meu-dia', 'sun', 'Meu dia', 'meu_dia']] : []),
-      ['grp', 'Visitas'],
+      ['grp', 'Dia a dia da TI'],
       ['#/agenda', 'calendar3', 'Agenda'],
-      ['#/solicitacoes', 'megaphone', 'Visitas pedidas', 'visitas_pedidas'],
-      ['#/postos', 'geo-alt', 'Postos'],
-      ['#/urgencia', 'speedometer2', 'Score de urgência'],
-      ['#/rotas', 'signpost-split', 'Sugerir rota'],
       ['#/atividades', 'kanban', g ? 'Atividades' : 'Minhas atividades', 'atividades'],
-      ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor'], ['#/inventario', 'pc-display', 'Inventário']] : []),
+      ['#/solicitacoes', 'megaphone', 'Visitas pedidas', 'visitas_pedidas'],
+      ...(g ? [] : [['#/postos', 'geo-alt', 'Postos']]),
+      ['grp', 'Rotas agendadas'],
+      ['#/rotas', 'signpost-split', 'Montar rota'],
+      ['#/rotas-agendadas', 'calendar-week', 'Rotas da semana'],
+      ...(g ? [['grp', 'Painel do Gestor - Resultados'], ['#/painel', 'graph-up-arrow', 'Painel do gestor'],
+        ['#/urgencia', 'speedometer2', 'Score de urgência'], ['#/inventario', 'pc-display', 'Inventário']] : []),
       ['grp', 'Orcim'],
       ['#/demandas', 'inboxes', 'Chamados'],
       ['#/orcim', 'speedometer2', 'Visão Orcim'],
       ['#/manutencoes', 'tools', 'Manutenções'],
-      ...(g ? [['grp', 'Configurar'], ['#/checklists', 'ui-checks', 'Checklists'], ['#/usuarios', 'people', 'Usuários'],
+      ...(g ? [['grp', 'Configurar'], ['#/postos', 'geo-alt', 'Postos'], ['#/checklists', 'ui-checks', 'Checklists'], ['#/usuarios', 'people', 'Usuários'],
         ['#/config', 'sliders', 'Configurações'], ['#/tudo', 'database', 'Tudo da Orcim']] : []),
       ['sep'],
       ['#/tutoriais', 'question-circle', 'Tutoriais'],
@@ -389,8 +391,9 @@
     conta: 'Seus dados e sua senha.',
     tudo: 'Todas as tabelas copiadas da Orcim, só para consulta.',
     novo: 'Peça uma visita ao posto ou crie uma atividade. Só o essencial: o resto já vem preenchido.',
-    urgencia: 'Os postos que mais precisam da TI agora: cada pendência vale pontos pela urgência, pelo atraso e pelo prazo.',
-    rotas: 'Escolha quantos postos vai atender: o painel sugere os mais urgentes e a ordem de visita pela menor distância.',
+    urgencia: 'Os locais com mais chamados urgentes na Orcim: cada chamado em aberto vale pontos pela urgência, pelo atraso e pelo prazo.',
+    'rotas-agendadas': 'As rotas salvas para cada dia, com o técnico e as paradas. Marque cada parada quando passar pelo posto.',
+    rotas: 'Escolha quantos postos vai atender: o painel sugere os que têm mais pendências da TI e a ordem pela menor distância. Depois, agende a rota para um dia e um técnico.',
     inventario: 'Todos os equipamentos dos postos: os nossos (origem que a gente escolhe, ex.: Setor de Compras) e os que vêm da Orcim (só consulta).',
     notificacoes: 'Tudo o que aconteceu no painel e envolve você ou a equipe: pedidos, mudanças, comentários e reagendamentos.',
   };
@@ -536,8 +539,9 @@
       else if (a === 'checklists' && b) { marcarMenu('#/checklists'); await vFormChecklist(b === 'novo' ? null : b, seq); }
       else if (a === 'checklists') { marcarMenu('#/checklists'); await vChecklists(seq); }
       else if (a === 'novo') { marcarMenu('#/novo'); await vNovoPedido(qs, seq); }
-      else if (a === 'urgencia') { marcarMenu('#/urgencia'); await vUrgencia(seq); }
+      else if (a === 'urgencia' && ehGestor()) { marcarMenu('#/urgencia'); await vUrgencia(seq); }
       else if (a === 'rotas') { marcarMenu('#/rotas'); await vRotas(seq); }
+      else if (a === 'rotas-agendadas') { marcarMenu('#/rotas-agendadas'); await vRotasAgendadas(qs, seq); }
       else if (a === 'inventario' && b === 'novo') { marcarMenu('#/inventario'); await vInventarioForm(null, qs, seq); }
       else if (a === 'inventario' && b === 'orcim' && partes[2]) { marcarMenu('#/inventario'); await vInventarioItem(`orcim/${partes[2]}`, seq); }
       else if (a === 'inventario' && b && partes[2] === 'editar') { marcarMenu('#/inventario'); await vInventarioForm(b, qs, seq); }
@@ -2427,7 +2431,7 @@ function itemHistorico(e) {
   // ------------------------------- Meu dia ------------------------------
   async function vHoje(seq, meu = false) {
     titulo(ehGestor() && !meu ? 'Dia do técnico' : 'Meu dia');
-    const h = await API.get(meu ? '/hoje?meu=1' : '/hoje');
+    const [h, rotasHoje] = await Promise.all([API.get(meu ? '/hoje?meu=1' : '/hoje'), API.get(`/rotas-agendadas?de=${hojeSP()}&ate=${hojeSP()}${ehGestor() && !meu ? '' : '&meu=1'}`).catch(() => [])]);
     if (seq !== renderSeq) return;
     const atrasadasV = h.visitas_hoje.filter((v) => v.atrasada).length;
     const novas = h.solicitacoes.filter((s) => s.status === 'a_fazer').length;
@@ -2442,6 +2446,10 @@ function itemHistorico(e) {
     cls: 'ok', hint: `${h.concluidas_hoje.visitas} visita(s) · ${h.concluidas_hoje.atividades} atividade(s) · ${h.concluidas_hoje.solicitacoes} solicitação(ões)`, icon: 'check2-all',
   })}
       </div>
+      ${rotasHoje.filter((r) => r.status !== 'cancelada').map((r) => `<div class="rt-hoje" data-href="#/rotas-agendadas?data=${r.data}">
+        <i class="bi bi-signpost-split"></i><div class="min-w-0"><b>${esc(r.titulo || 'Rota de hoje')}${ehGestor() && !meu ? ` · ${esc(r.tecnico || '')}` : ''}</b>
+        <div class="small">${r.paradas.map((p) => `${p.feita_em ? '✓ ' : ''}${esc(p.nome)}`).join(' → ')}</div></div>
+        <span class="tag ${r.status === 'concluida' ? 'tag-green' : 'tag-teal'}">${r.feitas} de ${r.paradas.length}</span></div>`).join('')}
       ${h.em_andamento.map((v) => `<div class="banner-andamento" data-href="#/visitas/${v.id}">
         <div><strong>Visita em andamento — ${esc(v.location_name)}</strong>
           <div class="small">${v.faltam ? `Faltam ${v.faltam} item(ns) do checklist` : 'Checklist completo, falta concluir'} · desde ${fmtData(v.started_at)}${ehGestor() && v.user_name ? ` · ${esc(v.user_name)}` : ''}</div></div>
@@ -3367,12 +3375,12 @@ function itemHistorico(e) {
     ['atividades', 'Atividades', ['atividade', 'atividade_prazo', 'atividade_atrasada']],
     ['comentarios', 'Comentários', ['comentario']],
     ['pedidos', 'Pedidos de visita', ['solicitacao']],
-    ['visitas', 'Visitas', ['visita', 'visita_prevista']],
+    ['visitas', 'Visitas e rotas', ['visita', 'visita_prevista', 'rota']],
     ['reagendamentos', 'Reagendamentos', ['reagendamento']],
     ['cadastros', 'Postos e checklists', ['posto', 'checklist']],
   ];
   const ICONE_NOTIF = {
-    mencao: 'at', atividade: 'check2-square', atividade_prazo: 'hourglass-split', atividade_atrasada: 'alarm', comentario: 'chat-left-text',
+    mencao: 'at', rota: 'signpost-split', atividade: 'check2-square', atividade_prazo: 'hourglass-split', atividade_atrasada: 'alarm', comentario: 'chat-left-text',
     solicitacao: 'megaphone', visita: 'geo-alt', visita_prevista: 'calendar-event', reagendamento: 'arrow-left-right',
     posto: 'shop', checklist: 'ui-checks', demanda_nova: 'inbox', demanda_status: 'inbox', demanda_atrasada: 'alarm',
   };
@@ -3419,7 +3427,7 @@ function itemHistorico(e) {
   // Score de urgência e Sugerir rota
   // ------------------------------------------------------------------
   const n1 = (x) => String(Math.round(Number(x) * 100) / 100).replace('.', ',');
-  const TIPO_URG = { atividade: ['check2-square', 'Atividade'], pedido: ['megaphone', 'Pedido de visita'], rotina: ['arrow-repeat', 'Rotina'], chamado: ['inbox', 'Chamado Orcim'] };
+  const TIPO_URG = { rota: ['signpost-split', 'Rota'], atividade: ['check2-square', 'Atividade'], pedido: ['megaphone', 'Pedido de visita'], rotina: ['arrow-repeat', 'Rotina'], chamado: ['inbox', 'Chamado Orcim'] };
   const situacaoPrazo = (c) => (c.dias_atraso > 0 ? tag('tag-red', `${c.dias_atraso} dia(s) atrasado`)
     : c.dias_para_prazo === 0 ? tag('tag-amber', 'vence hoje')
       : c.dias_para_prazo !== null ? tag('tag-gray', `vence ${c.prazo.slice(8, 10)}/${c.prazo.slice(5, 7)} (em ${c.dias_para_prazo} dia${c.dias_para_prazo > 1 ? 's' : ''})`)
@@ -3428,8 +3436,8 @@ function itemHistorico(e) {
   const regrasUrg = (r) => `<details class="ur-regras">
       <summary><i class="bi bi-calculator"></i> Como o score é calculado</summary>
       <div class="ur-regras-corpo">
-        <p><b>Score de cada pendência = peso da urgência × fator de atraso × fator de prazo.</b> O score do posto é a soma das pendências dele
-          (atividades, pedidos de visita, visita de rotina e chamados da Orcim quando chegarem).</p>
+        <p><b>Score de cada item = peso da urgência × fator de atraso × fator de prazo.</b> O score do local é a soma dos itens em aberto dele.
+          No Score de urgência entram os chamados da Orcim; em Montar rota, as pendências da TI em cada posto.</p>
         <div class="ur-regras-grade">
           <div><b>Peso da urgência</b>${[1, 2, 3, 4].map((p) => `<div><i class="ur-dot urg-${p}"></i>${esc(r.nomes[p])} <b>×${n1(r.peso_urgencia[p])}</b></div>`).join('')}</div>
           <div><b>Fator de atraso</b><div>1 + 1 por dia de atraso</div><div class="small-muted">1 dia atrasado ×2 · 3 dias ×4 · conta até ${r.atraso_max} dias</div></div>
@@ -3440,23 +3448,23 @@ function itemHistorico(e) {
       </div></details>`;
   const linhaUrg = (c) => `<a class="ur-ch urg-borda-${c.prioridade}" href="${c.link}">
       <span class="ur-ch-ic"><i class="bi bi-${(TIPO_URG[c.tipo] || ['dot'])[0]}"></i></span>
-      <span class="ur-ch-tx"><b>${esc(c.titulo)}</b><small>${esc((TIPO_URG[c.tipo] || ['', ''])[1])} · ${esc(PRIO_TAREFA[c.prioridade] || '')} · ${esc(c.detalhe || '')}</small></span>
+      <span class="ur-ch-tx"><b>${esc(c.titulo)}</b><small>${esc((TIPO_URG[c.tipo] || ['', ''])[1])} · ${esc(c.urg_nome || PRIO_TAREFA[c.prioridade] || '')} · ${esc(c.detalhe || '')}</small></span>
       <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
       <span class="ur-ch-score" title="${contaScore(c)}"><b>${n1(c.score)}</b><small>${contaScore(c)}</small></span></a>`;
 
   async function vUrgencia(seq) {
     titulo('Score de urgência');
-    const d = await API.get('/urgencia');
+    const d = await API.get('/urgencia?fonte=orcim');
     if (seq !== renderSeq) return;
     const max = Math.max(1, ...d.postos.map((p) => p.score));
     view().innerHTML = `
-      <div class="d-flex justify-content-end mb-2"><a class="btn btn-brand btn-sm" href="#/rotas"><i class="bi bi-signpost-split"></i> Sugerir rota</a></div>
+      ${d.orcim_ok ? '' : '<div class="alert alert-light small"><i class="bi bi-cloud-arrow-down"></i> Os chamados da Orcim ainda não chegam ao painel: o ranking aparece quando o envio de dados da Orcim estiver ligado.</div>'}
       <div class="card-x">
-        <h3><i class="bi bi-sort-down"></i>Postos por urgência</h3>
+        <h3><i class="bi bi-sort-down"></i>Locais por urgência (chamados da Orcim)</h3>
         ${d.postos.length ? d.postos.map((p, i) => `<details class="ur-loc" ${i === 0 ? 'open' : ''}>
           <summary>
             <span class="ur-pos">${i + 1}º</span>
-            <span class="ur-loc-tx"><b>${esc(p.nome)}</b><small>${plural(p.itens.length, 'pendência', 'pendências')}${p.atrasados ? ` · <span class="text-danger">${p.atrasados} atrasada(s)</span>` : ''}${p.lat === null ? ' · sem coordenadas' : ''}</small></span>
+            <span class="ur-loc-tx"><b>${esc(p.nome)}</b><small>${plural(p.itens.length, 'chamado', 'chamados')}${p.atrasados ? ` · <span class="text-danger">${p.atrasados} atrasado(s)</span>` : ''}</small></span>
             <span class="ur-barra"><i style="width:${Math.round((p.score / max) * 100)}%"></i></span>
             <span class="ur-loc-score"><b>${n1(p.score)}</b><small>score</small></span>
           </summary>
@@ -3488,8 +3496,88 @@ function itemHistorico(e) {
     return ordem;
   }
 
+  // Agendar a rota montada para um dia e um técnico
+  async function agendarRota(ordem, inicio) {
+    const users = (await carregarUsuarios()).filter((u) => u.role === 'tecnico' || u.faz_visitas);
+    const amanha = isoSoma(hojeSP(), 1);
+    janela('Agendar rota', `
+      <div class="small-muted mb-2">${ordem.map((p, i) => `${i + 1}. ${esc(p.nome)}`).join(' → ')}</div>
+      <label class="form-label" for="ra-data">Dia</label>
+      <input type="date" class="form-control mb-3" id="ra-data" value="${amanha}">
+      <label class="form-label" for="ra-tec">Técnico</label>
+      <select class="form-select mb-3" id="ra-tec">${(users.length ? users : [EU]).map((u) => `<option value="${u.id}" ${String(u.id) === String(EU.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
+      <label class="form-label" for="ra-tit">Nome da rota <span class="small-muted">(opcional)</span></label>
+      <input class="form-control" id="ra-tit" maxlength="120" placeholder="Ex.: Rota Norte">`, {
+      ok: 'Agendar',
+      onOk: async (m) => {
+        const data = m.querySelector('#ra-data').value;
+        if (!data) throw new Error('Escolha o dia.');
+        await API.post('/rotas-agendadas', {
+          data, tecnico_id: m.querySelector('#ra-tec').value, titulo: m.querySelector('#ra-tit').value,
+          saida: inicio ? { nome: inicio.nome, lat: inicio.lat, lng: inicio.lng } : null, paradas: ordem.map((p) => p.id),
+        });
+        toast('Rota agendada. O técnico foi avisado.');
+        location.hash = `#/rotas-agendadas?data=${data}`;
+      },
+    });
+  }
+
+  // Rotas da semana (de domingo a sábado)
+  const urlMaps = (paradas, saida) => {
+    const pt = (p) => `${p.lat},${p.lng}`;
+    const ok = paradas.filter((p) => p.lat !== null && p.lng !== null);
+    if (!ok.length) return null;
+    const destino = ok[ok.length - 1]; const meio = ok.slice(0, -1);
+    return `https://www.google.com/maps/dir/?api=1${saida && saida.lat !== null ? `&origin=${encodeURIComponent(pt(saida))}` : ''}&destination=${encodeURIComponent(pt(destino))}${meio.length ? `&waypoints=${encodeURIComponent(meio.map(pt).join('|'))}` : ''}&travelmode=driving`;
+  };
+  async function vRotasAgendadas(qs, seq) {
+    titulo('Rotas da semana');
+    const ref = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('data') || '') ? qs.get('data') : hojeSP();
+    const de = segunda(ref); const ate = isoMais(de, 6);
+    const rotas = await API.get(`/rotas-agendadas?de=${de}&ate=${ate}`);
+    if (seq !== renderSeq) return;
+    const dias = []; for (let d = de; d <= ate; d = isoMais(d, 1)) dias.push(d);
+    const g = ehGestor();
+    const cartao = (r) => {
+      const maps = urlMaps(r.paradas, { lat: r.saida_lat, lng: r.saida_lng });
+      const podeMexer = g || String(r.tecnico_id) === String(EU.id);
+      return `<div class="rt-card ${r.status}">
+        <div class="rt-cab"><i class="bi bi-signpost-split"></i><b>${esc(r.titulo || `Rota de ${r.tecnico || '—'}`)}</b>
+          ${r.status === 'concluida' ? tag('tag-green', 'Concluída') : tag(r.feitas ? 'tag-teal' : 'tag-gray', `${r.feitas} de ${r.paradas.length}`)}</div>
+        <div class="small-muted"><i class="bi bi-person"></i> ${esc(r.tecnico || '—')}${r.saida_nome ? ` · saída: ${esc(r.saida_nome)}` : ''}</div>
+        <ol class="rt-paradas">${r.paradas.map((p) => `<li class="${p.feita_em ? 'feita' : ''}">
+          <label><input type="checkbox" data-rota="${r.id}" data-parada="${p.id}" ${p.feita_em ? 'checked' : ''} ${podeMexer && r.status !== 'cancelada' ? '' : 'disabled'}>
+          <span><b>${esc(p.nome)}</b>${p.feita_em ? ` <small>feita ${fmtData(p.feita_em)}${p.feita_por ? ` · ${esc(p.feita_por)}` : ''}</small>` : `<small>${esc(p.endereco || '')}</small>`}</span></label></li>`).join('')}</ol>
+        <div class="rt-acoes">${maps ? `<a class="btn btn-sm btn-brand" href="${maps}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Google Maps</a>` : ''}
+          ${podeMexer && r.status !== 'concluida' ? `<button class="btn btn-sm btn-outline-danger" data-cancelar="${r.id}"><i class="bi bi-x-lg"></i> Cancelar</button>` : ''}</div>
+      </div>`;
+    };
+    view().innerHTML = `
+      <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <a class="btn btn-sm btn-outline-secondary" href="#/rotas-agendadas?data=${isoMais(de, -7)}" aria-label="Semana anterior"><i class="bi bi-chevron-left"></i></a>
+        <strong>${dataBR(de).slice(0, 5)} a ${dataBR(ate).slice(0, 5)}</strong>
+        <a class="btn btn-sm btn-outline-secondary" href="#/rotas-agendadas?data=${isoMais(de, 7)}" aria-label="Próxima semana"><i class="bi bi-chevron-right"></i></a>
+        ${de <= hojeSP() && hojeSP() <= ate ? '' : `<a class="btn btn-sm btn-link" href="#/rotas-agendadas">Hoje</a>`}
+        <a class="btn btn-sm btn-brand ms-auto" href="#/rotas"><i class="bi bi-plus-lg"></i> Montar rota</a>
+      </div>
+      <div class="rt-semana">${dias.map((d) => {
+    const doDia = rotas.filter((r) => r.data === d);
+    return `<section class="rt-dia ${d === hojeSP() ? 'hoje' : ''} ${[0, 6].includes(diaSemana(d)) ? 'fds' : ''}" id="dia-${d}">
+          <h3>${dataCurta(d)}${d === hojeSP() ? ' <span class="tag tag-teal">hoje</span>' : ''}</h3>
+          ${doDia.length ? doDia.map(cartao).join('') : '<div class="small-muted">Nenhuma rota.</div>'}</section>`;
+  }).join('')}</div>`;
+    $$('[data-parada]').forEach((c) => c.addEventListener('change', async () => {
+      try { await API.post(`/rotas-agendadas/${c.dataset.rota}/paradas/${c.dataset.parada}`, { feita: c.checked }); render(); } catch (e) { toast(e.message, true); c.checked = !c.checked; }
+    }));
+    $$('[data-cancelar]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Cancelar esta rota?')) return;
+      try { await API.patch(`/rotas-agendadas/${b.dataset.cancelar}`, { status: 'cancelada' }); toast('Rota cancelada.'); render(); } catch (e) { toast(e.message, true); }
+    }));
+    if (qs.get('data')) document.getElementById(`dia-${qs.get('data')}`)?.scrollIntoView({ block: 'start' });
+  }
+
   async function vRotas(seq) {
-    titulo('Sugerir rota');
+    titulo('Montar rota');
     const d = await API.get('/urgencia');
     if (seq !== renderSeq) return;
     const comCoord = d.postos.filter((p) => p.lat !== null && p.lng !== null);
@@ -3556,7 +3644,8 @@ function itemHistorico(e) {
       // o que fazer/levar: tarefas dos pedidos de visita e as atividades das paradas
       box.innerHTML = `<h3><i class="bi bi-signpost-split"></i>Rota sugerida
           <span class="sub d-flex gap-1"><a class="btn btn-sm btn-brand" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Abrir no Google Maps</a>
-          <button class="btn btn-sm btn-outline-secondary" id="rt-imprimir"><i class="bi bi-printer"></i> Relatório</button></span></h3>
+          <button class="btn btn-sm btn-outline-secondary" id="rt-imprimir"><i class="bi bi-printer"></i> Relatório</button>
+          <button class="btn btn-sm btn-outline-brand" id="rt-agendar"><i class="bi bi-calendar-plus"></i> Agendar rota</button></span></h3>
         <div class="ur-resumo">${plural(ordem.length, 'parada', 'paradas')} · ~${n1(Math.round(total))} km · ~${horas < 1 ? `${Math.round(horas * 60)} min` : `${n1(Math.round(horas * 10) / 10)} h`} de estrada
           <small>estimativa pela distância em linha reta × ${n1(FATOR_ESTRADA)} a ${VELOCIDADE} km/h; o Google Maps calcula o trânsito real</small></div>
         <ol class="ur-paradas">
@@ -3569,6 +3658,7 @@ function itemHistorico(e) {
           </li>`).join('')}
         </ol>`;
       $('#rt-imprimir').addEventListener('click', () => { document.body.classList.add('imprimindo-rota'); window.print(); setTimeout(() => document.body.classList.remove('imprimindo-rota'), 500); });
+      $('#rt-agendar').addEventListener('click', () => agendarRota(ordem, inicio));
       ligarCliques();
     };
     const sugerir = () => { escolhidos = new Set(comCoord.slice(0, prefs.n).map((p) => String(p.id))); pintarCands(); pintarRota(); };
@@ -4164,6 +4254,7 @@ function itemHistorico(e) {
     ['inicio', 'Primeiros passos', 'compass'],
     ['pedidos', 'Pedidos e atividades', 'kanban'],
     ['visitas', 'Visitas', 'geo-alt'],
+    ['rotas', 'Rotas agendadas', 'signpost-split'],
     ['resultados', 'Acompanhar e resultados', 'graph-up-arrow'],
     ['inventario', 'Inventário', 'pc-display'],
   ];
@@ -4180,7 +4271,7 @@ function itemHistorico(e) {
       passos: [
         { titulo: 'Bem-vindo ao Painel Beija-Flor', texto: 'Aqui a TI do grupo organiza visitas aos postos, atividades e pedidos dos gestores. Este tour mostra onde fica cada coisa.' },
         { alvo: '.side-cta', titulo: 'Novo pedido', texto: 'O botão mais usado. De qualquer tela, pede uma visita ao posto ou cria uma atividade.' },
-        { alvo: '.side-nav .grp.sec-vis', titulo: 'Seções por cor', texto: 'Cada parte do menu tem uma cor: Visitas (azul), Painel do Gestor (amarelo), Configurar (rosa). O item aberto fica destacado na cor da seção.' },
+        { alvo: '.side-nav .grp.sec-vis', titulo: 'Seções por cor', texto: 'Cada parte do menu tem uma cor: Dia a dia da TI (azul), Rotas agendadas (verde), Painel do Gestor (amarelo), Orcim (lilás) e Configurar (rosa). O item aberto fica destacado na cor da seção.' },
         { alvo: '.side-nav a[href="#/agenda"]', titulo: 'Agenda', texto: 'Tudo o que está marcado para a TI: visitas de rotina, visitas pedidas e atividades.' },
         { alvo: '.side-nav a[href="#/atividades"]', titulo: 'Atividades', texto: 'O quadro de tarefas da TI. O número ao lado mostra o que está esperando.' },
         { alvo: '#side-notif', titulo: 'Notificações', texto: 'Tudo o que acontece no painel aparece aqui: pedidos, mudanças, comentários e reagendamentos. O número vermelho são as não lidas.' },
@@ -4277,15 +4368,24 @@ function itemHistorico(e) {
       ],
     },
     {
-      id: 'urgencia-rotas', cat: 'visitas', papeis: ['gestor', 'tecnico'], icone: 'signpost-split', titulo: 'Score de urgência e Sugerir rota',
-      resumo: 'Ver os postos que mais precisam da TI e montar a rota do dia.',
+      id: 'rotas', cat: 'rotas', papeis: ['gestor', 'tecnico'], icone: 'signpost-split', titulo: 'Montar e agendar uma rota',
+      resumo: 'Escolher os postos que mais precisam da TI, a ordem pela distância e agendar para um dia e um técnico.',
       passos: [
-        { alvo: '.side-nav a[href="#/urgencia"]', titulo: 'Score de urgência', texto: 'No menu, em Visitas. Cada pendência do posto (atividade, pedido de visita, rotina, chamado da Orcim) vale pontos: urgência × atraso × prazo.' },
-        { rota: '#/urgencia', alvo: '.ur-loc', titulo: 'Ranking dos postos', texto: 'O posto do topo é o que mais precisa de atenção. Clique para ver as pendências e a conta de cada uma.' },
-        { alvo: '.ur-regras', titulo: 'Como é calculado', texto: 'Rotineira ×1, Programada ×1,5, Impeditiva ×2, Emergencial ×3; cada dia de atraso soma; o que é para daqui a muitos dias pesa menos.' },
-        { rota: '#/rotas', alvo: '.ur-form', titulo: 'Sugerir rota', texto: 'Diga quantos postos vai atender e de onde sai (um posto ou a sua localização). O painel escolhe os de maior score.' },
-        { alvo: '#rt-rota', titulo: 'A rota', texto: 'A ordem pela menor distância, o tempo estimado, o botão para abrir no Google Maps e o relatório para imprimir com o que fazer em cada posto.' },
-        { titulo: 'Coordenadas', texto: 'A rota precisa da latitude e longitude de cada posto: cadastre na edição do posto (dá para colar do Google Maps).' },
+        { alvo: '.side-nav a[href="#/rotas"]', titulo: 'Montar rota', texto: 'No menu, em Rotas agendadas (a parte verde).' },
+        { rota: '#/rotas', alvo: '.ur-form', titulo: 'Quantos postos e de onde sai', texto: 'O painel marca os postos com mais pendências da TI (atividades, pedidos de visita, rotina) e monta a ordem pela menor distância.' },
+        { alvo: '#rt-rota', titulo: 'A rota', texto: 'Distância e tempo estimados, botão para o Google Maps, relatório para imprimir e o botão "Agendar rota".' },
+        { alvo: '#rt-agendar', titulo: 'Agendar', texto: 'Escolha o dia e o técnico. Ele recebe o aviso e a rota aparece na Agenda e no "Meu dia" dele.' },
+        { rota: '#/rotas-agendadas', alvo: '.rt-semana', titulo: 'Rotas da semana', texto: 'As rotas de cada dia, de domingo a sábado. Marque cada parada quando passar pelo posto; com todas marcadas, a rota fica concluída.' },
+        { titulo: 'Coordenadas', texto: 'A rota precisa da latitude e da longitude de cada posto: cadastre em Configurar → Postos (dá para colar do Google Maps).' },
+      ],
+    },
+    {
+      id: 'score', cat: 'resultados', papeis: ['gestor'], icone: 'speedometer2', titulo: 'Score de urgência (Orcim)',
+      resumo: 'Os locais com mais chamados urgentes em aberto na Orcim.',
+      passos: [
+        { alvo: '.side-nav a[href="#/urgencia"]', titulo: 'Score de urgência', texto: 'No menu, em Painel do Gestor - Resultados (a parte amarela).' },
+        { rota: '#/urgencia', alvo: '.card-x', titulo: 'Ranking dos locais', texto: 'Cada chamado da Orcim em aberto vale pontos: urgência × atraso × prazo. O local do topo é o que mais precisa de atenção. Clique para ver os chamados e a conta.' },
+        { alvo: '.ur-regras', titulo: 'Como é calculado', texto: 'Requisição ×1, Operação prejudicada ×1,5, Parada iminente ×2, Operação parada ×3; cada dia de atraso soma; o que é para daqui a muitos dias pesa menos.' },
       ],
     },
     {

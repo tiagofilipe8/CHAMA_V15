@@ -675,6 +675,24 @@ router.get('/calendario', ah(async (req, res) => {
     });
   }
 
+  // rotas agendadas no período
+  const rotas = await query(
+    `SELECT r.id, r.data::text AS dia, r.titulo, r.status, u.name AS tecnico,
+            (SELECT count(*)::int FROM gbf_rota_paradas p WHERE p.rota_id = r.id) AS total,
+            (SELECT count(*)::int FROM gbf_rota_paradas p WHERE p.rota_id = r.id AND p.feita_em IS NOT NULL) AS feitas,
+            (SELECT string_agg(l.name, ' → ' ORDER BY p.ordem) FROM gbf_rota_paradas p JOIN gbf_locations l ON l.id = p.location_id WHERE p.rota_id = r.id) AS caminho
+     FROM gbf_rotas r LEFT JOIN gbf_users u ON u.id = r.tecnico_id
+     WHERE r.status <> 'cancelada' AND r.data BETWEEN $1::date AND $2::date`, [inicio, fim]);
+  for (const r of rotas.rows) {
+    const feita = r.status === 'concluida';
+    itens.push({
+      fonte: 'ti', tipo: 'rota', id: r.id, numero: `R-${String(r.id).padStart(4, '0')}`, titulo: r.titulo || `Rota: ${r.caminho || ''}`, dia: r.dia, hora: '',
+      prioridade: 1, situacao: feita ? 'Rota concluída' : `${r.feitas} de ${r.total} paradas`, estado: feita ? 'concluida' : (r.feitas ? 'em_andamento' : 'a_fazer'),
+      aberto: !feita, feito: feita, atrasado: !feita && r.dia < hoje,
+      detalhe: [r.tecnico, r.caminho].filter(Boolean).join(' · '), responsavel: r.tecnico, link: `#/rotas-agendadas?data=${r.dia}`,
+    });
+  }
+
   res.json({ mes, primeiro, ultimo, inicio, fim, hoje, orcim_ok: orcimOk, urgencias: PRIORIDADE_CENTRAL, urgencias_ti: PRIORIDADE_TAREFA, itens, faixas });
 }));
 

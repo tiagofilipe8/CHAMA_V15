@@ -1,13 +1,15 @@
-// Score de urgência por posto (telas "Score de urgência" e "Sugerir rota").
+// Score de urgência.
 //
 //   score do item = peso da urgência × fator de atraso × fator de prazo
-//     peso:  Rotineira ×1 · Programada ×1,5 · Impeditiva ×2 · Emergencial ×3
+//     peso:  ×1 · ×1,5 · ×2 · ×3 (da urgência mais baixa para a mais alta)
 //     atraso: 1 + 1 por dia de atraso (até ATRASO_MAX dias)
 //     prazo (balanceamento): atrasado ou vence hoje/amanhã ×1 · 2–3 dias ×0,75 · 4–7 dias ×0,5 · mais ×0,25 · sem data ×0,75
-//   score do posto = soma dos itens em aberto dele
+//   score do local = soma dos itens em aberto dele
 //
-// Itens: atividades e pedidos de visita em aberto, a visita de rotina prevista e, quando a cópia da
-// Orcim estiver chegando, os chamados abertos do posto (pela localização ligada ao posto).
+// GET /urgencia?fonte=orcim  -> Score de urgência do Painel do gestor: só os chamados da Orcim, por local
+//                              da Orcim (mesma conta do sistema deles).
+// GET /urgencia              -> pendências da TI por posto (atividades, pedidos de visita, visita de rotina e
+//                              chamados da Orcim do posto): usado em "Montar rota".
 const express = require('express');
 const { query } = require('../db');
 const { queryCentral } = require('./fonte');
@@ -44,8 +46,46 @@ function calcular(prioridade, prazo, hoje) {
   };
 }
 
+const somar = (itens) => Math.round(itens.reduce((s, i) => s + i.score, 0) * 100) / 100;
+
+// Chamados da Orcim em aberto (prazo: "precisa até" quando existir; senão o prazo do SLA)
+async function chamadosOrcim() {
+  const sql = (comPrecisa) => `
+    SELECT t.id, t.number, t.title, t.priority, t.location_id, t.entity_id,
+           ${comPrecisa ? "to_char(t.needed_by, 'YYYY-MM-DD')" : 'NULL'} AS precisa,
+           to_char(t.due_at AT TIME ZONE '${TZ}', 'YYYY-MM-DD') AS prazo_sla,
+           l.name AS local, e.name AS empresa, u.name AS tecnico
+    FROM tickets t LEFT JOIN locations l ON l.id = t.location_id LEFT JOIN entities e ON e.id = t.entity_id
+    LEFT JOIN users u ON u.id = t.assigned_user_id
+    WHERE t.status NOT IN (5,6,7)`;
+  try { return { ok: true, rows: (await queryCentral(sql(true))).rows }; } catch { /* Central sem "precisa até" */ }
+  try { return { ok: true, rows: (await queryCentral(sql(false))).rows }; } catch { return { ok: false, rows: [] }; }
+}
+
+async function scoreOrcim(hoje) {
+  const { ok, rows } = await chamadosOrcim();
+  const grupos = new Map();
+  for (const t of rows) {
+    const k = t.location_id ? `l${t.location_id}` : `e${t.entity_id}`;
+    if (!grupos.has(k)) grupos.set(k, { id: k, nome: t.local || t.empresa || 'Sem local', endereco: null, lat: null, lng: null, itens: [] });
+    grupos.get(k).itens.push({
+      tipo: 'chamado', id: t.id, titulo: t.title, prioridade: Number(t.priority) || 1, link: `#/demandas/${t.id}`,
+      urg_nome: PRIORIDADE_CENTRAL[t.priority] || '',
+      detalhe: [t.number || `#${t.id}`, t.tecnico || 'sem técnico', t.precisa ? 'prazo: precisa até' : 'prazo do SLA'].join(' · '),
+      levar: [], ...calcular(t.priority, t.precisa || t.prazo_sla, hoje),
+    });
+  }
+  const postos = [...grupos.values()].map((p) => {
+    const itens = p.itens.sort((a, b) => b.score - a.score);
+    return { ...p, itens, score: somar(itens), atrasados: itens.filter((i) => i.dias_atraso > 0).length };
+  }).sort((a, b) => b.score - a.score || a.nome.localeCompare(b.nome));
+  return { hoje, orcim_ok: ok && rows.length > 0, regras: { ...REGRAS, nomes: PRIORIDADE_CENTRAL }, postos, todos: [] };
+}
+
 router.get('/', ah(async (req, res) => {
   const hoje = diaSP(new Date());
+  if (req.query.fonte === 'orcim') return res.json(await scoreOrcim(hoje));
+
   const [postos, tarefas, pedidos] = await Promise.all([
     query(`SELECT id, name, address, latitude::float AS lat, longitude::float AS lng, central_location_id,
                   next_visit_date::text AS proxima, to_char(next_visit_time, 'HH24:MI') AS hora_visita,
@@ -60,7 +100,7 @@ router.get('/', ah(async (req, res) => {
            FROM gbf_requests r WHERE r.status IN ('a_fazer','em_andamento') AND r.location_id IS NOT NULL`),
   ]);
 
-  // coordenadas da Orcim (localização ligada ao posto), quando o posto não tem as suas
+  // coordenadas e chamados da Orcim do posto (pela localização da Orcim ligada a ele)
   const coordCentral = new Map();
   const chamadosPorLocal = new Map();
   const ligados = postos.rows.filter((p) => p.central_location_id).map((p) => String(p.central_location_id));
@@ -109,27 +149,22 @@ router.get('/', ah(async (req, res) => {
     for (const t of chamadosPorLocal.get(String(p.central_location_id)) || []) {
       add(p.id, {
         tipo: 'chamado', id: t.id, titulo: t.title, prioridade: Number(t.priority) || 1, link: `#/demandas/${t.id}`,
-        detalhe: `Chamado da Orcim ${t.number || `#${t.id}`} · ${PRIORIDADE_CENTRAL[t.priority] || ''}`,
+        urg_nome: PRIORIDADE_CENTRAL[t.priority] || '',
+        detalhe: `Chamado da Orcim ${t.number || `#${t.id}`}`,
         levar: [], ...calcular(t.priority, t.prazo, hoje),
       });
     }
   }
 
+  const coord = (p) => {
+    const c = coordCentral.get(String(p.central_location_id)) || {};
+    return { lat: p.lat ?? c.lat ?? null, lng: p.lng ?? c.lng ?? null };
+  };
   const lista = postos.rows.map((p) => {
     const itens = (porPosto.get(String(p.id)) || []).sort((a, b) => b.score - a.score);
-    const c = coordCentral.get(String(p.central_location_id)) || {};
-    const lat = p.lat ?? c.lat ?? null; const lng = p.lng ?? c.lng ?? null;
-    return {
-      id: p.id, nome: p.name, endereco: p.address, lat, lng,
-      score: Math.round(itens.reduce((s, i) => s + i.score, 0) * 100) / 100,
-      atrasados: itens.filter((i) => i.dias_atraso > 0).length, itens,
-    };
+    return { id: p.id, nome: p.name, endereco: p.address, ...coord(p), score: somar(itens), atrasados: itens.filter((i) => i.dias_atraso > 0).length, itens };
   }).filter((p) => p.itens.length).sort((a, b) => b.score - a.score || a.nome.localeCompare(b.nome));
-
-  const todos = postos.rows.map((p) => {
-    const c = coordCentral.get(String(p.central_location_id)) || {};
-    return { id: p.id, nome: p.name, lat: p.lat ?? c.lat ?? null, lng: p.lng ?? c.lng ?? null };
-  });
+  const todos = postos.rows.map((p) => ({ id: p.id, nome: p.name, endereco: p.address, ...coord(p) }));
   res.json({ hoje, regras: REGRAS, postos: lista, todos });
 }));
 

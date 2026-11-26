@@ -1164,3 +1164,26 @@ html[data-bs-theme="dark"] .g-p[fill="#fff"] { fill: var(--card); }
 .inv-origem.orcim { background: #ede9fe; color: #5b21b6; }
 .inv-origem.nossa { background: #ecfdf5; color: #0f766e; }
 .inv-ro { max-width: 280px; text-align: right; }
+
+/* Menu: Rotas agendadas (verde) */
+.side-nav .sec-rot { --sec: #86efac; }
+/* Rotas da semana */
+.rt-semana { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.rt-dia { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.rt-dia.hoje { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(15, 118, 110, .12); }
+.rt-dia.fds { background: #f6f8fa; }
+.rt-dia h3 { font-size: .9rem; font-weight: 700; margin: 0 0 8px; display: flex; gap: 6px; align-items: center; text-transform: capitalize; }
+.rt-card { border: 1px solid var(--line); border-left: 3px solid var(--brand); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.rt-card.concluida { border-left-color: #16a34a; opacity: .85; }
+.rt-cab { display: flex; align-items: center; gap: 6px; }
+.rt-cab .tag { margin-left: auto; }
+.rt-paradas { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; counter-reset: p; }
+.rt-paradas li label { display: flex; gap: 8px; align-items: flex-start; margin: 0; cursor: pointer; font-size: .84rem; }
+.rt-paradas li span { display: flex; flex-direction: column; }
+.rt-paradas li small { color: var(--muted); font-size: .7rem; }
+.rt-paradas li.feita b { text-decoration: line-through; color: var(--muted); }
+.rt-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.rt-hoje { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 12px; border-radius: 12px; cursor: pointer;
+  background: #ecfdf5; border: 1px solid #a7f3d0; }
+.rt-hoje > i { font-size: 1.3rem; color: var(--brand); }
+.rt-hoje .tag { margin-left: auto; }

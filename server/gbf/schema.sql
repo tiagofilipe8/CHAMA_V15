@@ -330,3 +330,28 @@ BEGIN
     ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_type_check;
   END IF;
 END $$;
+
+-- Rotas agendadas: rota montada salva para um dia e um técnico, com as paradas (postos) em ordem
+CREATE TABLE IF NOT EXISTS gbf_rotas (
+    id          BIGSERIAL PRIMARY KEY,
+    data        DATE        NOT NULL,
+    tecnico_id  BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    titulo      TEXT,
+    saida_nome  TEXT,
+    saida_lat   NUMERIC(9,6),
+    saida_lng   NUMERIC(9,6),
+    status      TEXT        NOT NULL DEFAULT 'agendada' CHECK (status IN ('agendada','concluida','cancelada')),
+    created_by  BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_rotas_data ON gbf_rotas(data);
+CREATE TABLE IF NOT EXISTS gbf_rota_paradas (
+    id          BIGSERIAL PRIMARY KEY,
+    rota_id     BIGINT      NOT NULL REFERENCES gbf_rotas(id) ON DELETE CASCADE,
+    ordem       INTEGER     NOT NULL DEFAULT 0,
+    location_id BIGINT      NOT NULL REFERENCES gbf_locations(id) ON DELETE CASCADE,
+    feita_em    TIMESTAMPTZ,
+    feita_por   BIGINT      REFERENCES gbf_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gbf_rota_paradas ON gbf_rota_paradas(rota_id, ordem);
