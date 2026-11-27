@@ -186,7 +186,8 @@ Views.adminUsers = async function adminUsers(el) {
         </div>
         <div class="row">
           <div class="col-md-6 mb-2"><label class="form-label small">Localização (posto)</label>
-            <select class="form-select" id="f-location"><option value="">—</option></select></div>
+            <select class="form-select" id="f-location"><option value="">—</option></select>
+            <div class="form-text">O usuário vê e pega itens só do Estoque de T.I. deste local.</div></div>
           <div class="col-md-6 mb-2 multi-empresa" id="f-extra-box" style="display:none"><label class="form-label small">Outras empresas que o gestor acompanha</label>
             <select class="form-select" id="f-extra" multiple size="4"></select>
             <div class="form-text">Segure Ctrl para escolher mais de uma.</div></div>

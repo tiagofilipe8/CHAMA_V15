@@ -184,10 +184,13 @@ const Estoque = (() => {
     try { aba = sessionStorage.getItem('estoque_aba') || 'itens'; } catch { /* padrão */ }
     let ents = [];
     try { ents = (await API.get('/entities')).filter((e) => e.active); } catch { /* sem filtro */ }
+    // quem só dá baixa (sem "Ver o inventário") vê só o estoque do local do seu cadastro
+    const preso = !can('inventory.view') && !Roles.isMaster(u());
     el.innerHTML = `
+      ${preso ? `<div class="es-meu-local mb-2"><i class="bi bi-geo-alt-fill"></i><span>${u().location_name ? `Estoque de T.I. de <b>${esc(u().location_name)}</b>. Você vê e pega itens só do seu local.` : 'Seu usuário não está ligado a um local. Peça ao gestor para escolher o local no seu cadastro.'}</span></div>` : ''}
       <div class="card panel-card mb-3"><div class="card-body py-2 es-filtros">
-        <select class="form-select form-select-sm" id="es-f-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
-        <select class="form-select form-select-sm" id="es-f-loc"><option value="">Todos os postos</option></select>
+        <select class="form-select form-select-sm ${preso ? 'd-none' : ''}" id="es-f-ent"><option value="">Todas as empresas</option>${ents.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+        <select class="form-select form-select-sm ${preso ? 'd-none' : ''}" id="es-f-loc"><option value="">Todos os postos</option></select>
         <select class="form-select form-select-sm" id="es-f-st"><option value="">Todos os estados</option>${Object.entries(NO_ESTOQUE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
         <input class="form-control form-control-sm" id="es-f-q" placeholder="Buscar item, etiqueta, modelo">
         ${can('inventory.manage') ? '<a class="btn btn-sm btn-primary ms-auto" href="#/inventory" title="Cadastre o item no inventário com o estado Em estoque"><i class="bi bi-plus-lg"></i> Colocar item no estoque</a>' : ''}

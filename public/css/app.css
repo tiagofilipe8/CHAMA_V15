@@ -2652,3 +2652,7 @@ label.ro-lv-item { cursor: pointer; }
   body.imprimindo-rota .ro-nao-imprime, body.imprimindo-rota .ro-barra, body.imprimindo-rota .ro-nav, body.imprimindo-rota .ro-mover, body.imprimindo-rota .ro-alca { display: none !important; }
   body.imprimindo-rota .ro-parada { break-inside: avoid; }
 }
+
+/* Estoque de T.I.: quem só dá baixa vê o estoque do seu local */
+.es-meu-local { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: #e0f2fe; color: #075985; font-size: .88rem; }
+[data-bs-theme="dark"] .es-meu-local { background: rgba(56,189,248,.14); color: #7dd3fc; }

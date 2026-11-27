@@ -21,6 +21,11 @@ const PODE_PEGAR = ['STOCK', 'READY'];
 const veSegredos = (u) => has(u, 'inventory.secrets');
 const podeVer = (u) => has(u, 'stock.withdraw') || has(u, 'inventory.view');
 
+// Quem só dá baixa (sem "Ver o inventário", ex.: perfil Usuário) fica preso ao local do seu cadastro:
+//   vê e pega itens só do Estoque de T.I. desse local. Devolve o id do local, 0 se o usuário não tem local,
+//   ou null quando a pessoa vê todos os postos (gestor, técnico, admin).
+const localFixo = (u) => (has(u, 'inventory.view') ? null : Number(u.location_id) || 0);
+
 function filtroEmpresas(user, params, alias = 'a') {
   const ents = entityIdsOf(user);
   if (ents === null) return '';
@@ -65,6 +70,8 @@ router.get('/', async (req, res) => {
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { params.push(req.query.entity_id); where += ` AND a.entity_id = $${params.length}`; }
   if (/^\d+$/.test(String(req.query.location_id || ''))) { params.push(req.query.location_id); where += ` AND a.location_id = $${params.length}`; }
   if (req.query.status && NO_ESTOQUE.includes(req.query.status)) { params.push(req.query.status); where += ` AND a.status = $${params.length}`; }
+  const fixo = localFixo(req.user);
+  if (fixo !== null) { params.push(fixo); where += ` AND a.location_id = $${params.length}`; }
   if (req.query.q) {
     params.push(`%${req.query.q}%`);
     where += ` AND (a.name ILIKE $${params.length} OR a.asset_tag ILIKE $${params.length} OR a.model ILIKE $${params.length} OR a.serial_number ILIKE $${params.length})`;
@@ -117,6 +124,10 @@ router.post('/:id/withdraw', async (req, res) => {
   const item = await carregarItem(req.params.id);
   if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
   if (!canAccessEntity(req.user, item.entity_id)) return res.status(403).json({ error: 'Esse item não é do estoque da sua empresa.' });
+  const fixo = localFixo(req.user);
+  if (fixo !== null && String(item.location_id || '') !== String(fixo)) {
+    return res.status(403).json({ error: fixo ? `Você só pega itens do estoque do seu local${req.user.location_name ? ` (${req.user.location_name})` : ''}.` : 'Seu usuário não está ligado a um local. Peça ao gestor para escolher o local no seu cadastro.' });
+  }
   if (!PODE_PEGAR.includes(item.status)) return res.status(422).json({ error: 'Esse item não está disponível no estoque.' });
   const reservado = await pedidoReservado(item.id);
   if (reservado) return res.status(422).json({ error: `Esse item está reservado para o pedido do chamado #${reservado}. Ele fica livre depois de entregue.` });
@@ -247,6 +258,8 @@ router.get('/movements', async (req, res) => {
   if (ents !== null) { params.push(ents); where += `AND (m.from_entity_id::text = ANY($1::text[]) OR m.to_entity_id::text = ANY($1::text[])) `; }
   if (/^\d+$/.test(String(req.query.asset_id || ''))) { params.push(req.query.asset_id); where += `AND m.asset_id = $${params.length} `; }
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { params.push(req.query.entity_id); where += `AND (m.from_entity_id = $${params.length} OR m.to_entity_id = $${params.length}) `; }
+  const fixo = localFixo(req.user);
+  if (fixo !== null) { params.push(fixo); where += `AND (m.from_location_id = $${params.length} OR m.to_location_id = $${params.length}) `; }
   const { rows } = await query(
     `SELECT m.*, a.name AS asset_name, a.asset_tag, a.type, u.name AS user_name,
             lf.name AS from_location_name, lt.name AS to_location_name, ef.name AS from_entity_name, et.name AS to_entity_name
