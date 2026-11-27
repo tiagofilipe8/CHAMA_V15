@@ -18,7 +18,7 @@ router.get('/meus', async (req, res) => {
             EXISTS (SELECT 1 FROM inapp_notifications n WHERE n.user_id = $1 AND n.ticket_id = t.id AND n.link = '#/meus-pedidos' AND n.is_read = FALSE) AS novidade,
             (SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
                      'status', m.status, 'status_at', m.status_at, 'destino', m.destino, 'location_name', lm.name,
-                     'etapas', m.etapas, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim) ORDER BY m.id)
+                     'etapas', m.etapas, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim, 'asset_type', m.asset_type, 'location_id', m.location_id) ORDER BY m.id)
                FROM ticket_materials m LEFT JOIN locations lm ON lm.id = m.location_id WHERE m.ticket_id = t.id) AS materiais
      FROM tickets t
      LEFT JOIN locations l ON l.id = t.location_id

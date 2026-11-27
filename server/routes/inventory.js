@@ -103,6 +103,13 @@ function sanitizeTz(v) {
 
 // ------------------- ASSETS -------------------
 
+// Pedido de material que trouxe o item (o mais recente não cancelado): etapa e chamado
+//   (o selo da etapa aparece ao lado do nome do item em todas as telas)
+const PEDIDO_DO_ITEM = `LEFT JOIN LATERAL (
+       SELECT tm.status AS pedido_status, tm.ticket_id AS pedido_ticket_id FROM ticket_materials tm
+       WHERE (tm.asset_id = a.id OR tm.asset_ids @> ARRAY[a.id]) AND tm.status <> 'cancelado'
+       ORDER BY tm.id DESC LIMIT 1) pd ON TRUE`;
+
 // Lista ativos com filtros
 router.get('/assets', requireInv, async (req, res) => {
   const { entity_id, type, status, q, limit } = req.query;
@@ -134,12 +141,13 @@ router.get('/assets', requireInv, async (req, res) => {
               a.primary_photo_id,
               (SELECT ap.id FROM asset_photos ap WHERE ap.asset_id=a.id ORDER BY ap.is_primary DESC, ap.created_at ASC LIMIT 1)
             ) AS display_photo_id,
-            ag.status AS agent_status, ag.last_seen_at AS agent_last_seen
+            ag.status AS agent_status, ag.last_seen_at AS agent_last_seen, pd.pedido_status, pd.pedido_ticket_id
      FROM assets a
      JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
      LEFT JOIN agents ag ON ag.asset_id=a.id
      LEFT JOIN locations lo ON lo.id=a.location_id
+     ${PEDIDO_DO_ITEM}
      ${where}
      ORDER BY a.updated_at DESC LIMIT ${lim}`, params);
   res.json(rows.map((a) => limpar(a, user)));
@@ -148,11 +156,12 @@ router.get('/assets', requireInv, async (req, res) => {
 // Detalhe do ativo
 router.get('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query(
-    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name
+    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name, pd.pedido_status, pd.pedido_ticket_id
      FROM assets a
      JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
      LEFT JOIN locations lo ON lo.id=a.location_id
+     ${PEDIDO_DO_ITEM}
      WHERE a.id=$1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   const asset = rows[0];

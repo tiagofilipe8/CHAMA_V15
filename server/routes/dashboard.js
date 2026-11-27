@@ -155,7 +155,9 @@ router.get('/noc', async (req, res) => {
        WHERE t.status IN (5,6) AND t.updated_at::date = CURRENT_DATE ${scope.sql ? 'AND ' + scope.sql : ''}
        GROUP BY u.id, u.name ORDER BY closed_today DESC`, baseParams);
     const qMaint = await query(
-      `SELECT a.id, a.name, a.asset_tag, a.next_maintenance_date, a.next_maintenance_notes, e.name AS entity_name,
+      `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.controle, a.quantity, a.entity_id, a.location_id,
+              (SELECT lo.name FROM locations lo WHERE lo.id = a.location_id) AS location_name,
+              a.next_maintenance_date, a.next_maintenance_notes, e.name AS entity_name,
               (CURRENT_DATE - a.next_maintenance_date)::int AS days_overdue
        FROM assets a
        JOIN entities e ON e.id = a.entity_id
@@ -456,7 +458,7 @@ router.get('/urgencia', async (req, res) => {
             il.name AS impact_name, u.name AS assigned_name,
             COALESCE(sc.name, c.name) AS category_name,
             COALESCE((SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
-                                                         'status', m.status, 'destino', m.destino, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim) ORDER BY m.id)
+                                                         'status', m.status, 'destino', m.destino, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim, 'asset_type', m.asset_type) ORDER BY m.id)
                       FROM ticket_materials m WHERE m.ticket_id = t.id), '[]') AS materiais
      FROM tickets t
      JOIN entities e ON e.id = t.entity_id

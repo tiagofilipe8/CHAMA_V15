@@ -32,8 +32,7 @@ const Estoque = (() => {
     bm.show();
     return { m, fechar: () => bm.hide() };
   }
-  const cabecalhoItem = (it) => `<div class="es-item-cab"><i class="bi bi-hdd"></i><div><b>${esc(it.name)}</b>
-    <small>${esc([it.asset_tag, tipoNome(it.type), it.location_name].filter(Boolean).join(' · '))}</small></div>${it.controle === 'quantidade' ? `<span class="tg tg-teal">×${it.quantity}</span>` : invEstado(it.status)}</div>`;
+  const cabecalhoItem = (it) => `<div class="es-item-cab">${Item.titulo(it, { link: false })}</div>`;
   async function opcoesPostos(entityId, atual) {
     let locs = [];
     try { locs = await API.get(`/locations?entity_id=${entityId}&active=true`); } catch { /* sem lista */ }
@@ -234,12 +233,12 @@ const Estoque = (() => {
             <small class="text-muted">${g.itens.reduce((s, i) => s + (i.controle === 'quantidade' ? Number(i.quantity || 0) : 1), 0)} item(ns)${vePreco ? ` · ${invMoeda(g.itens.reduce((s, i) => s + Number(i.price || 0) * (i.controle === 'quantidade' ? Number(i.quantity || 0) : 1), 0))}` : ''}</small></div>
           <div class="es-grade">${g.itens.map((it) => `
             <div class="es-card">
-              <div class="es-card-cab">${it.controle === 'quantidade' ? (it.quantity > 0 ? `<span class="tg tg-teal">×${it.quantity} no estoque</span>` : '<span class="tg tg-red">Esgotado</span>') : invEstado(it.status)}<span class="es-tipo">${esc(tipoNome(it.type))}</span></div>
-              <b class="es-nome">${can('inventory.view') ? `<a href="#/inventory/${it.id}">${esc(it.name)}</a>` : esc(it.name)}</b>
-              <small class="text-muted">${esc([it.asset_tag, [it.manufacturer, it.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ') || '—')}</small>
+              ${Item.titulo(it, { local: false, semEtiqueta: true })}
+              ${it.controle === 'quantidade' && !(it.quantity > 0) ? '<span class="tg tg-red align-self-start">Esgotado</span>' : ''}
+              <small class="text-muted">${esc([tipoNome(it.type), [it.manufacturer, it.model].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</small>
               ${it.notes ? `<small class="es-obs">${esc(it.notes)}</small>` : ''}
               <div class="es-card-rodape">
-                <small class="text-muted">${it.desde ? `no estoque desde ${dataCurta(it.desde)}` : ''}${it.price !== undefined && it.price !== null ? (it.controle === 'quantidade' ? ` · ${invMoeda(it.price)}/un · <b>${invMoeda(Number(it.price) * Number(it.quantity || 0))}</b>` : ` · <b>${invMoeda(it.price)}</b>`) : ''}</small>
+                <small class="text-muted">${[it.desde ? `no estoque desde ${dataCurta(it.desde)}` : '', it.price !== undefined && it.price !== null ? (it.controle === 'quantidade' ? `${invMoeda(it.price)}/un · <b>${invMoeda(Number(it.price) * Number(it.quantity || 0))}</b>` : `<b>${invMoeda(it.price)}</b>`) : ''].filter(Boolean).join(' · ')}</small>
                 <span class="d-flex gap-1">
                   ${can('inventory.manage') ? `<button class="btn btn-sm btn-outline-secondary" data-transf="${it.id}" title="Transferir para outra unidade"><i class="bi bi-arrow-left-right"></i></button>` : ''}
                   ${can('stock.withdraw') && PODE_PEGAR.includes(it.status) && !(it.controle === 'quantidade' && !(it.quantity > 0)) ? `<button class="btn btn-sm btn-primary" data-baixa="${it.id}"><i class="bi bi-box-arrow-up"></i> Dar baixa</button>` : ''}
@@ -269,7 +268,7 @@ const Estoque = (() => {
     return `<tr>
           <td class="small text-nowrap">${fmt.dateTime(m.created_at)}</td>
           <td><span class="mv ${cls}"><i class="bi ${ic}"></i> ${nome}</span></td>
-          <td class="small">${can('inventory.view') ? `<a href="#/inventory/${m.asset_id}">${esc(m.asset_name)}</a>` : esc(m.asset_name)}<br><span class="text-muted">${esc(m.asset_tag || '')}</span></td>
+          <td class="small">${Item.titulo({ asset_id: m.asset_id, asset_name: m.asset_name, asset_tag: m.asset_tag, type: m.type }, { estado: false, local: false })}</td>
           <td class="small">${m.reason_name ? `<b>${esc(m.reason_name)}</b>` : ''}${m.note ? `<br><span class="text-muted">${esc(m.note)}</span>` : ''}</td>
           <td class="small">${esc(m.from_location_name || m.from_entity_name || '—')} → ${esc(m.to_location_name || m.to_entity_name || '—')}</td>
           <td class="small">${esc(m.user_name || '—')}</td>
@@ -293,7 +292,17 @@ const Estoque = (() => {
     el.querySelector('#es-f-st').addEventListener('change', render);
     let t = null;
     el.querySelector('#es-f-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(render, 300); });
+    // #/estoque?local=ID (link do selo de local): abre nos itens daquele posto
+    const localPedido = (location.hash.match(/[?&]local=(\d+)/) || [])[1];
+    if (localPedido) {
+      try {
+        const L = (await API.get('/locations')).find((l) => String(l.id) === localPedido);
+        if (L && [...fEnt.options].some((o) => o.value === String(L.entity_id))) fEnt.value = String(L.entity_id);
+      } catch { /* sem o filtro */ }
+      aba = 'itens';
+    }
     await carregarPostos();
+    if (localPedido && [...fLoc.options].some((o) => o.value === localPedido)) fLoc.value = localPedido;
     render();
   }
 
@@ -381,7 +390,7 @@ const Estoque = (() => {
             </tbody></table>` : '<div class="dp-vazio">Nenhum equipamento.</div>'}</div>
           <div class="card panel-card"><div class="dp-bloco-cab"><span><i class="bi bi-list-ol"></i> ${loc ? `Itens de ${esc((r.valor_por_posto.find((x) => String(x.location_id) === String(loc)) || {}).posto || 'posto')}` : 'Itens do posto'} ${ajuda('Os itens do posto escolhido, do mais caro para o mais barato. Itens contados por quantidade mostram o total (preço por unidade × quantidade).')}</span>${loc ? '<a href="javascript:void 0" id="er-limpa-loc">todos os postos</a>' : ''}</div>
             ${!loc ? '<div class="dp-vazio">Escolha um posto no filtro ou clique num posto ao lado.</div>' : r.itens_posto.length ? `<div class="er-itens">${r.itens_posto.map((a) => `<a href="#/inventory/${a.id}" class="er-item ${['LOST', 'BROKEN'].includes(a.status) ? 'perdido' : ''}">
-              <span><b>${esc(a.name)}</b> <small class="text-muted">${a.controle === 'quantidade' ? `×${a.quantity}` : esc(a.asset_tag || 'sem etiqueta')}</small><br>${invEstado(a.status)}</span>
+              <span>${Item.titulo(a, { link: false, local: false, semEtiqueta: true })}</span>
               ${v ? `<span class="text-end text-nowrap"><b>${a.total !== null ? invMoeda(a.total) : '—'}</b>${a.controle === 'quantidade' && a.price !== null ? `<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : ''}</span>` : ''}</a>`).join('')}</div>` : '<div class="dp-vazio">Nenhum item nesse posto.</div>'}</div>
         </div>
         <div class="card panel-card mt-3"><div class="dp-bloco-cab"><span><i class="bi bi-palette"></i> Equipamentos por estado ${ajuda('Quantos equipamentos estão em cada estado agora (operando, em conserto, estragado, comprado, pronto para entregar, em estoque...) e quanto valem.')}</span><small class="text-muted">hoje</small></div>
@@ -390,7 +399,7 @@ const Estoque = (() => {
           ${r.recentes.length ? `<div class="er-recentes">${r.recentes.map((m) => {
     const [nome, cls, ic] = TIPO_MOV[m.kind] || [m.kind, '', 'bi-dot'];
     return `<div><span class="mv ${cls}"><i class="bi ${ic}"></i> ${nome}</span>
-            <span class="er-rec-tx"><b>${esc(m.asset_name)}</b> <small class="text-muted">${esc(m.asset_tag || '')}</small><br>
+            <span class="er-rec-tx">${Item.titulo({ asset_id: m.asset_id, asset_name: m.asset_name, asset_tag: m.asset_tag, type: m.type }, { estado: false, local: false })}<br>
             <small>${esc(m.user_name || '—')} · ${esc(m.to_location_name || m.from_location_name || '')}${m.reason_name ? ` · ${esc(m.reason_name)}` : ''}</small></span>
             <small class="text-muted text-nowrap">${fmt.timeAgo(m.created_at)}${m.price !== undefined && m.price !== null ? `<br><b>${invMoeda(m.price)}</b>` : ''}</small></div>`;
   }).join('')}</div>` : '<div class="dp-vazio">Nenhuma movimentação no período.</div>'}</div>`;

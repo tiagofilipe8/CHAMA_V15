@@ -255,7 +255,7 @@ const Urgencia = (() => {
           <div class="lv-item ${feito ? 'feito' : ''}" data-t="${c.id}" data-m="${m.id}" data-nome="${esc(m.name)}" ${m.status === 'rota' ? 'data-rota="1"' : ''}>
             <label class="lv-check" title="${feito ? 'Já entregue' : 'Entregar este item'}"><input type="checkbox" class="lv-marca" ${feito ? 'checked disabled' : ''} ${!feito && !podeEntregar ? 'disabled' : ''}></label>
             <span class="lv-qtd">${m.quantity} ${esc(m.unit || 'un')}</span>
-            <span class="lv-nome">${esc(m.name)}</span>
+            <span class="lv-nome">${Item.titulo({ name: m.name, type: m.asset_type || 'PERIPHERAL' }, { link: false, estado: false, local: false, etapa: false, etiqueta: false })}</span>
             <span class="lv-st">${feito ? `${pedidoTag('entregue')}${m.destino && m.destino !== 'nenhum' ? ` <small class="text-muted">${m.destino === 'estoque' ? 'no Estoque de T.I.' : 'no Inventário da Empresa'}</small>` : ''}` : m.status === 'rota' ? `${pedidoTag('rota')}${m.previsao ? ` <small class="text-muted">prev. ${esc(String(m.previsao).slice(8, 10))}/${esc(String(m.previsao).slice(5, 7))}</small>` : ''}` : (o ? tagOrcim(m) : pedidoTag(m.status))}</span>
             ${!feito && podeEntregar ? `<span class="lv-acao">
               ${o ? `<label class="lv-origem" title="${daOrcim ? 'O item sai do Estoque da ORCIM e vai para a empresa' : 'A ORCIM não tem a quantidade toda'}"><input type="checkbox" class="lv-usa-orcim" ${daOrcim && (m.status !== 'rota' || m.origem_orcim) ? 'checked' : ''} ${daOrcim ? '' : 'disabled'}> do Estoque da ORCIM</label>` : ''}

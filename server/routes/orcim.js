@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
      WHERE a.entity_id IS NULL AND a.status <> 'DISPOSED'
      ORDER BY a.type, a.name`);
   const enviados = await query(
-    `SELECT m.id, m.created_at, m.quantity, m.price, m.note, a.id AS asset_id, a.name, a.asset_tag,
+    `SELECT m.id, m.created_at, m.quantity, m.price, m.note, a.id AS asset_id, a.name, a.asset_tag, a.type,
             e.name AS empresa, l.name AS posto, us.name AS quem
      FROM stock_movements m JOIN assets a ON a.id = m.asset_id
      LEFT JOIN entities e ON e.id = m.to_entity_id LEFT JOIN locations l ON l.id = m.to_location_id

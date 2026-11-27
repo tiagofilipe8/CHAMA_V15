@@ -124,7 +124,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
       <div class="dp-bloco-cab"><span><i class="bi bi-tools"></i> Manutenção de equipamentos vencida</span>
         <span class="tg tg-red">${maint.overdue_count}</span></div>
       <div class="dp-manut-lista">${(maint.items || []).map((a) => `
-        <a class="dp-manut-item" href="#/inventory/${a.id}"><b>${esc(a.name)}</b> ${esc(a.asset_tag || '')}
+        <a class="dp-manut-item" href="#/inventory/${a.id}">${Item.titulo(a, { link: false })}
           <span class="multi-empresa text-muted">· ${esc(a.entity_name || '')}</span>
           <span class="tg tg-red ms-auto">${a.days_overdue} dia(s)</span></a>`).join('')}</div>
     </div>` : '';

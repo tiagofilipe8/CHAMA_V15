@@ -40,14 +40,16 @@ const PedidoUI = (() => {
     const localSel = m.location_id || t.location_id || '';
     const ativos = (m.asset_ids || []).filter(Boolean);
     const noInventario = ativos.length ? `<a class="pd-inv" href="#/inventory/${ativos[0]}" title="Ver no inventário"><i class="bi ${st === 'entregue' && m.destino === 'estoque' ? 'bi-box-seam' : 'bi-hdd-stack'}"></i> ${ativos.length} no ${st === 'entregue' && m.destino === 'estoque' ? 'estoque' : 'inventário'}</a>` : '';
+    // o item do pedido com o mesmo título do inventário: ícone do tipo, posto (link) e etapa
+    const comoItem = { asset_id: ativos[0] || null, name: m.name, type: m.asset_type || 'PERIPHERAL', pedido_status: st,
+      location_id: m.location_id || t.location_id, location_name: m.location_name || t.location_name, entity_id: t.entity_id };
     if (!podeMudar) {
-      return `<div class="pd-item"><span class="pd-qtd">${m.quantity} ${esc(m.unit || 'un')}</span><span class="pd-nome">${esc(m.name)}
-        <small>${m.location_name ? `vai para ${esc(m.location_name)}` : ''}</small></span>${pedidoTag(st)}</div>`;
+      return `<div class="pd-item"><span class="pd-qtd">${m.quantity} ${esc(m.unit || 'un')}</span><span class="pd-nome">${Item.titulo(comoItem, { estado: false })}</span></div>`;
     }
     const bloqueado = ['entregue', 'cancelado'].includes(st);
     return `<div class="pd-item pd-editavel" data-t="${t.id}" data-mat="${m.id}">
       <span class="pd-qtd">${m.quantity} ${esc(m.unit || 'un')}</span>
-      <span class="pd-nome">${esc(m.name)}${noInventario}</span>
+      <span class="pd-nome">${Item.titulo(comoItem, { estado: false, local: false, etapa: false, depois: noInventario })}</span>
       ${vePreco ? `<label class="pd-campo" title="Preço de cada unidade"><span>R$/un</span><input type="number" min="0" step="0.01" class="form-control form-control-sm pd-preco" value="${m.price ?? ''}" placeholder="0,00" ${bloqueado ? 'disabled' : ''}>
         ${total !== null ? `<small class="pd-total">= ${invMoeda(total)}</small>` : ''}</label>` : ''}
       <label class="pd-campo" title="Posto para onde o item vai"><span><i class="bi bi-geo-alt"></i></span><select class="form-select form-select-sm pd-local" ${bloqueado ? 'disabled' : ''}>
@@ -55,7 +57,7 @@ const PedidoUI = (() => {
       <label class="pd-campo" title="Tipo do equipamento no inventário"><span><i class="bi bi-tag"></i></span><select class="form-select form-select-sm pd-tipo" ${bloqueado ? 'disabled' : ''}>
         ${Object.entries(INV_TYPES).map(([k, v]) => `<option value="${k}" ${k === (m.asset_type || 'PERIPHERAL') ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
       <label class="pd-campo" title="Entrega prevista no local (quem pediu vê em Meus pedidos)"><span><i class="bi bi-calendar-event"></i></span><input type="date" class="form-control form-control-sm pd-prev" value="${m.previsao ? String(m.previsao).slice(0, 10) : ''}" ${bloqueado ? 'disabled' : ''}></label>
-      <select class="form-select form-select-sm pd-sel pd-${esc(st)}" title="Situação">${Object.entries(PEDIDO_STATUS).map(([k, v]) => `<option value="${k}" ${k === st ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
+      <select class="form-select form-select-sm pd-sel pd-${esc(st)}" title="${st === 'entregue' ? 'Já entregue: o item está no inventário (para mudar, ajuste lá)' : 'Situação'}" ${st === 'entregue' ? 'disabled' : ''}>${Object.entries(PEDIDO_STATUS).map(([k, v]) => `<option value="${k}" ${k === st ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
     </div>`;
   }
 
@@ -262,7 +264,7 @@ Views.meusPedidos = async function meusPedidos(el) {
         </div>
         <div class="mp-itens">${ms.map((m) => `
           <div class="mp-item">
-            <div class="mp-item-tx"><b>${esc(m.name)}</b> <span class="tg tg-teal">${m.quantity} ${esc(m.unit || 'un')}</span>
+            <div class="mp-item-tx">${Item.titulo({ name: m.name, type: m.asset_type || 'PERIPHERAL', pedido_status: m.status, location_id: m.location_id || p.location_id, location_name: m.location_name }, { estado: false, etiqueta: false, local: false, link: false, depois: ` <span class="tg tg-teal align-self-start">${m.quantity} ${esc(m.unit || 'un')}</span>` })}
               <small class="text-muted d-block">${esc(FRASE[m.status || 'solicitado'] || '')}${m.status_at && m.status && m.status !== 'solicitado' ? ` · ${fmt.timeAgo(m.status_at)}` : ''}${m.location_name && m.status !== 'cancelado' ? ` · vai para ${esc(m.location_name)}` : ''}</small>
               ${!['entregue', 'cancelado'].includes(m.status) ? previsto(m.previsao) : ''}
               ${m.status === 'rota' ? `<button type="button" class="btn btn-sm btn-success mp-recebi" data-t="${p.id}" data-m="${m.id}"><i class="bi bi-check2-circle"></i> Recebi</button>` : ''}</div>

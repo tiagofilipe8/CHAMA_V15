@@ -64,8 +64,11 @@ router.get('/', async (req, res) => {
   const { rows } = await query(
     `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, a.manufacturer, a.model, a.notes, a.updated_at, a.controle, a.quantity,
             a.entity_id, e.name AS entity_name, a.location_id, l.name AS location_name,
-            (SELECT max(m.created_at) FROM stock_movements m WHERE m.asset_id = a.id AND m.kind IN ('entry','return','transfer')) AS desde
+            (SELECT max(m.created_at) FROM stock_movements m WHERE m.asset_id = a.id AND m.kind IN ('entry','return','transfer')) AS desde,
+            pd.pedido_status, pd.pedido_ticket_id
      FROM assets a JOIN entities e ON e.id = a.entity_id LEFT JOIN locations l ON l.id = a.location_id
+     LEFT JOIN LATERAL (SELECT tm.status AS pedido_status, tm.ticket_id AS pedido_ticket_id FROM ticket_materials tm
+       WHERE (tm.asset_id = a.id OR tm.asset_ids @> ARRAY[a.id]) AND tm.status <> 'cancelado' ORDER BY tm.id DESC LIMIT 1) pd ON TRUE
      WHERE ${where}
      ORDER BY e.name, l.name NULLS LAST, a.name LIMIT 1000`, params);
   const ver = veSegredos(req.user);
@@ -292,7 +295,7 @@ router.get('/report', async (req, res) => {
                   count(*) FILTER (WHERE m.kind IN ('entry','return'))::int AS entradas
            FROM stock_movements m LEFT JOIN stock_reasons r ON r.id = m.reason_id LEFT JOIN assets ra ON ra.id = m.replaced_asset_id
            WHERE ${periodo} ${fM}`, pM),
-    query(`SELECT m.id, m.kind, m.created_at, m.reason_name, m.price, m.note, m.quantity, a.id AS asset_id, a.name AS asset_name, a.asset_tag,
+    query(`SELECT m.id, m.kind, m.created_at, m.reason_name, m.price, m.note, m.quantity, a.id AS asset_id, a.name AS asset_name, a.asset_tag, a.type,
                   u.name AS user_name, lt.name AS to_location_name, lf.name AS from_location_name
            FROM stock_movements m JOIN assets a ON a.id = m.asset_id LEFT JOIN users u ON u.id = m.user_id
            LEFT JOIN locations lt ON lt.id = m.to_location_id LEFT JOIN locations lf ON lf.id = m.from_location_id

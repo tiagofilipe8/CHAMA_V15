@@ -43,11 +43,9 @@ Views.orcim = async function orcim(el) {
         <div class="card panel-card mb-2 oc-grupo">
           <div class="iv-tipo-cab"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${esc(INV_TYPES[tp] || tp)} <span>${lista.reduce((s, a) => s + qtdDe(a), 0)}</span></div>
           ${lista.map((a) => `<div class="oc-item">
-            <span class="iv-ico"><i class="bi ${INV_ICONES[a.type] || 'bi-box'}"></i></span>
-            <span class="iv-tx"><b>${esc(a.name)}</b>${a.controle === 'quantidade' ? `<code class="iv-tag iv-qtd ${a.quantity > 0 ? '' : 'zero'}">×${Number(a.quantity) || 0}</code>` : a.asset_tag ? `<code class="iv-tag">${esc(a.asset_tag)}</code>` : '<code class="iv-tag sem">sem etiqueta</code>'}
-              <small>${esc([[a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_number ? `S/N ${a.serial_number}` : '', a.criado_por ? `registrado por ${a.criado_por}` : ''].filter(Boolean).join(' · ') || '—')}</small></span>
+            <span class="iv-tx">${Item.titulo(a, { link: false, local: false, semEtiqueta: true,
+              depois: `<small>${esc([[a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_number ? `S/N ${a.serial_number}` : '', a.criado_por ? `registrado por ${a.criado_por}` : ''].filter(Boolean).join(' · ') || '—')}</small>` })}</span>
             ${vePreco ? `<span class="iv-preco">${a.price != null ? (a.controle === 'quantidade' ? `${invMoeda(Number(a.price) * qtdDe(a))}<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : invMoeda(a.price)) : ''}</span>` : ''}
-            <span class="oc-est est est-${esc(a.status)}">${esc(ESTADOS[a.status] || a.status)}</span>
             <span class="oc-btns">
               <button class="btn btn-sm btn-outline-secondary" data-editar="${a.id}" title="Editar"><i class="bi bi-pencil"></i></button>
               <button class="btn btn-sm btn-outline-danger" data-tirar="${a.id}" title="Tirar do estoque (cadastrado por engano ou descartado)"><i class="bi bi-trash3"></i></button>
@@ -59,7 +57,7 @@ Views.orcim = async function orcim(el) {
         <div class="dp-bloco-cab"><span><i class="bi bi-send-check"></i> Últimas transferências para as empresas</span></div>
         ${dados.enviados.length ? `<div class="oc-enviados">${dados.enviados.map((m) => `<a class="oc-env" href="#/inventory/${m.asset_id}">
           <span class="oc-env-ico"><i class="bi bi-arrow-right-circle"></i></span>
-          <span class="oc-env-tx"><b>${m.quantity > 1 ? `${m.quantity}× ` : ''}${esc(m.name)}</b> ${m.asset_tag ? `<small class="text-muted">${esc(m.asset_tag)}</small>` : ''}<br>
+          <span class="oc-env-tx">${Item.titulo({ asset_name: `${m.quantity > 1 ? `${m.quantity}× ` : ''}${m.name}`, asset_tag: m.asset_tag, type: m.type }, { link: false, estado: false, local: false })}<br>
             <small>${esc(m.empresa || '')} · ${esc(m.posto || '')} · por ${esc(m.quem || '—')}</small></span>
           <small class="text-muted text-nowrap">${fmt.timeAgo(m.created_at)}${m.price != null && vePreco ? `<br><b>${invMoeda(m.price)}</b>` : ''}</small></a>`).join('')}</div>`
     : '<div class="dp-vazio">Nenhuma transferência ainda.</div>'}
@@ -142,8 +140,7 @@ Views.orcim = async function orcim(el) {
     m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
       <div class="modal-header"><h6><i class="bi bi-send me-1"></i> Transferir para uma empresa</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <div class="es-item-cab"><i class="bi ${INV_ICONES[a.type] || 'bi-box'}"></i><div><b>${esc(a.name)}</b><small>${esc([a.asset_tag, INV_TYPES[a.type]].filter(Boolean).join(' · '))}</small></div>
-          ${porQtd ? `<span class="tg tg-teal">×${a.quantity}</span>` : ''}</div>
+        <div class="es-item-cab">${Item.titulo(a, { link: false, local: false })}</div>
         <div class="oc-rota"><span><i class="bi bi-boxes"></i> Estoque da ORCIM</span><i class="bi bi-arrow-right"></i><span id="oc-para"><i class="bi bi-building"></i> escolha a empresa</span></div>
         <label class="form-label small fw-semibold mt-2 mb-1">Empresa *</label>
         <select class="form-select form-select-sm" id="oc-ent"><option value="">— escolha —</option>${empresas.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>

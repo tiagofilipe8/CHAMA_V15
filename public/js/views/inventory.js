@@ -2,21 +2,11 @@
 // Views.inventory — Orcim Inventário
 // ---------------------------------------------------------------
 
-const INV_TYPES = {
-  COMPUTER: 'Computador', NOTEBOOK: 'Notebook', SERVER: 'Servidor',
-  PRINTER: 'Impressora', MONITOR: 'Monitor', UPS: 'Nobreak',
-  NETWORK_DEVICE: 'Rede', MOBILE_DEVICE: 'Celular / tablet', PERIPHERAL: 'Periférico / acessório', OTHER: 'Outro'
-};
-// Estados do equipamento (cada um com a sua cor: classe .est-<ESTADO> no CSS)
-const INV_STATUS = {
-  OPERATING: 'Operando', REPAIR: 'Em conserto', BROKEN: 'Estragado', ORDERED: 'Comprado - aguardando chegar',
-  READY: 'Pronto para entregar', STOCK: 'Em estoque', DISPOSED: 'Descartado', LOST: 'Extraviado'
-};
-const invEstado = (s) => `<span class="est est-${esc(s)}">${esc(INV_STATUS[s] || s)}</span>`;
+// INV_TYPES, INV_STATUS, INV_ICONES, invEstado e Item.titulo ficam em /js/item.js (usados em todas as telas)
 const INV_COM_ACESSO = ['COMPUTER', 'NOTEBOOK']; // AnyDesk e acesso mestre
 const invMoeda = (v) => (v === null || v === undefined || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const invVeSegredos = () => Roles.can(API.user || {}, 'inventory.secrets');
-window.invEstado = invEstado; window.invMoeda = invMoeda;
+window.invMoeda = invMoeda;
 
 // <img> nao envia Authorization — usa ?token= na URL
 function invPhotoUrl(assetId, photoId) {
@@ -230,13 +220,6 @@ async function openAssetModal(asset, cb) {
   modal.show();
 }
 
-// Ícone de cada categoria de equipamento
-const INV_ICONES = {
-  COMPUTER: 'bi-pc-display', NOTEBOOK: 'bi-laptop', SERVER: 'bi-hdd-rack', PRINTER: 'bi-printer',
-  MONITOR: 'bi-display', UPS: 'bi-battery-charging', NETWORK_DEVICE: 'bi-router', MOBILE_DEVICE: 'bi-phone',
-  PERIPHERAL: 'bi-mouse2', OTHER: 'bi-box',
-};
-window.INV_ICONES = INV_ICONES;
 
 Views.inventory = async function inventory(el) {
   const user = API.user || {};
@@ -278,17 +261,28 @@ Views.inventory = async function inventory(el) {
     try { locs = await API.get(`/locations?active=true${selEnt.value ? `&entity_id=${selEnt.value}` : ''}`); } catch { /* sem lista */ }
     selLoc.innerHTML = '<option value="">Todos os locais</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
   };
+  // #/inventory?local=ID (link do selo de local): já abre filtrado naquele posto
+  const localPedido = (location.hash.match(/[?&]local=(\d+)/) || [])[1];
+  if (localPedido) {
+    try {
+      const todos = await API.get('/locations');
+      const L = todos.find((l) => String(l.id) === localPedido);
+      if (L && !selEnt.disabled) selEnt.value = String(L.entity_id || '');
+      if (L) prefs.abertos[`${L.entity_id}:${L.id}`] = true;
+    } catch { /* sem o filtro */ }
+  }
   await carregarLocais();
+  if (localPedido && [...selLoc.options].some((o) => o.value === localPedido)) selLoc.value = localPedido;
 
   const hoje = new Date().toISOString().slice(0, 10);
   const linha = (a) => {
     const manutVencida = a.next_maintenance_date && String(a.next_maintenance_date).slice(0, 10) <= hoje && !['DISPOSED', 'LOST'].includes(a.status);
     const detalhe = [[a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_number ? `S/N ${a.serial_number}` : '', a.responsible_name ? `com ${a.responsible_name}` : '']
       .filter(Boolean).join(' · ');
+    // o local já é o grupo da lista: aqui vão estado, etiqueta e etapa do pedido
     return `<a class="iv-item est-borda-${esc(a.status)}" href="#/inventory/${a.id}">
-      <span class="iv-ico"><i class="bi ${INV_ICONES[a.type] || 'bi-box'}"></i></span>
-      <span class="iv-tx"><b>${esc(a.name)}</b>${a.controle === 'quantidade' ? `<code class="iv-tag iv-qtd ${a.quantity > 0 ? '' : 'zero'}" title="Sem etiqueta, contado por quantidade">×${Number(a.quantity) || 0}</code>` : a.asset_tag ? `<code class="iv-tag" title="Etiqueta Orcim">${esc(a.asset_tag)}</code>` : '<code class="iv-tag sem" title="Sem etiqueta Orcim">sem etiqueta</code>'}
-        <small>${esc(detalhe || INV_TYPES[a.type] || '')}</small></span>
+      <span class="iv-tx">${Item.titulo(a, { link: false, local: false, semEtiqueta: true,
+        depois: `<small>${esc(detalhe || INV_TYPES[a.type] || '')}</small>` })}</span>
       <span class="iv-marcas">
         ${a.display_photo_id || a.photos_count ? '<i class="bi bi-camera" title="Tem foto"></i>' : ''}
         ${a.anydesk_id ? '<i class="bi bi-pc-display-horizontal" title="Tem AnyDesk"></i>' : ''}
@@ -296,7 +290,6 @@ Views.inventory = async function inventory(el) {
         ${a.agent_status === 'ONLINE' ? '<i class="bi bi-wifi text-success" title="Agente online"></i>' : ''}
       </span>
       ${invVeSegredos() ? `<span class="iv-preco">${a.price !== null && a.price !== undefined ? (a.controle === 'quantidade' ? `${invMoeda(Number(a.price) * Number(a.quantity || 0))}<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : invMoeda(a.price)) : ''}</span>` : ''}
-      <span class="iv-estado">${invEstado(a.status)}</span>
     </a>`;
   };
 
@@ -444,7 +437,7 @@ Views.assetDetail = async function assetDetail(id, el) {
   if (window.migalhaDetalhe) window.migalhaDetalhe(`${a.name}${a.asset_tag ? ` (${a.asset_tag})` : ''}`.slice(0, 70));
   el.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h4 class="mb-0"><i class="bi bi-hdd me-2"></i>${esc(a.name)} <small class="text-muted">${esc(a.asset_tag||'')}</small></h4>
+      <h4 class="mb-0">${Item.titulo(a, { link: false, semEtiqueta: true }).replace('class="it-tit"', 'class="it-tit it-grande"')}</h4>
       <div class="d-flex gap-2">
         ${Roles.can(user, 'inventory.manage') && a.status !== 'STOCK' ? '<button class="btn btn-sm btn-outline-success" id="btn-devolver"><i class="bi bi-box-arrow-in-down"></i> Devolver ao estoque</button>' : ''}
         ${Roles.can(user, 'inventory.manage') ? '<button class="btn btn-sm btn-outline-secondary" id="btn-transferir"><i class="bi bi-arrow-left-right"></i> Transferir</button>' : ''}
@@ -456,9 +449,9 @@ Views.assetDetail = async function assetDetail(id, el) {
     <div class="row g-3">
       <div class="col-lg-8">
         <div class="card panel-card mb-3"><div class="card-header">Identificação</div><div class="card-body small">
-          <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>Etiqueta Orcim:</b> ${esc(a.asset_tag||'—')}</div></div>
+          <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>Etiqueta da ORCIM:</b> ${a.asset_tag ? Item.tags(a, { estado: false, local: false, etapa: false }) : '—'}</div></div>
           <div class="row"><div class="col-6"><b>Categoria:</b> ${INV_TYPES[a.type]||a.type}</div><div class="col-6"><b>Estado:</b> ${invEstado(a.status)}</div></div>
-          <div class="row"><div class="col-6"><b>Local (posto):</b> ${esc(a.location_name||'—')}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
+          <div class="row"><div class="col-6"><b>Local (posto):</b> ${Item.tags(a, { estado: false, etiqueta: false, etapa: false }) || '—'}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
           ${a.controle === 'quantidade' ? `<div class="row"><div class="col-6"><b>Quantidade:</b> ${a.quantity} un <small class="text-muted">(sem etiqueta, contado por quantidade)</small></div></div>` : ''}
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
           <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>

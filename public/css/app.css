@@ -2433,3 +2433,42 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
   body.imprimindo-relatorio .rl-fogo .rl-fogo-a { animation: none; opacity: 1; }
   body.imprimindo-relatorio .rl-fogo .rl-fogo-b { animation: none; opacity: 0; }
 }
+
+/* =====================================================================
+   Título do item com selos (Item.titulo em /js/item.js), em todas as telas
+   ===================================================================== */
+.it-tit { display: inline-flex; align-items: flex-start; gap: 9px; min-width: 0; max-width: 100%; text-align: left; }
+.it-ico { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: 1rem;
+  background: rgba(14,124,102,.1); color: var(--bs-primary); }
+.it-corpo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.it-nome { font-weight: 700; color: var(--ink, inherit); line-height: 1.25; word-break: break-word; }
+.it-nome.it-link:hover { text-decoration: underline; color: var(--bs-primary); }
+.it-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.it-tags .est, .it-tags .pd-tag, .it-chip { font-size: .68rem; padding: 1px 8px; line-height: 1.5; gap: 4px; }
+.it-tags .est i, .it-tags .pd-tag i, .it-chip i { font-size: .7rem; }
+.it-chip { display: inline-flex; align-items: center; border-radius: 999px; white-space: nowrap; font-weight: 600;
+  background: rgba(127,127,127,.12); color: var(--ink, inherit); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.it-local { background: #e0f2fe; color: #0369a1; }
+.it-local.it-orcim { background: #ede9fe; color: #6d28d9; }
+.it-etq { background: #f1f5f9; color: #0f172a; font-family: var(--bs-font-monospace); font-weight: 700; letter-spacing: .2px; border: 1px solid #cbd5e1; }
+.it-qtd { background: rgba(13,148,136,.14); color: #0f766e; font-weight: 700; }
+.it-qtd.zero { background: rgba(220,38,38,.12); color: #b91c1c; }
+.it-sem { color: var(--muted); font-style: italic; font-weight: 400; }
+.it-link { cursor: pointer; }
+.it-chip.it-link:hover, .pd-tag.it-link:hover { filter: brightness(.93); text-decoration: underline; }
+.it-link:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 1px; }
+[data-bs-theme="dark"] .it-ico { background: rgba(43,184,148,.16); }
+[data-bs-theme="dark"] .it-local { background: rgba(56,189,248,.16); color: #7dd3fc; }
+[data-bs-theme="dark"] .it-local.it-orcim { background: rgba(124,58,237,.2); color: #c4b5fd; }
+[data-bs-theme="dark"] .it-etq { background: rgba(127,127,127,.18); color: var(--ink); border-color: rgba(127,127,127,.4); }
+[data-bs-theme="dark"] .it-qtd { color: #5eead4; }
+/* Ficha do item: título grande */
+.it-tit.it-grande .it-ico { width: 44px; height: 44px; font-size: 1.4rem; border-radius: 11px; }
+.it-tit.it-grande .it-nome { font-size: 1.35rem; }
+.it-tit.it-grande .it-tags .est, .it-tit.it-grande .it-tags .pd-tag, .it-tit.it-grande .it-chip { font-size: .78rem; padding: 2px 10px; }
+/* selos: o estado já tem ícone (sem a bolinha); pedido: o nome do item não some quando a linha aperta */
+.it-tags .est::before { display: none; }
+.pd-nome .it-tit { width: 100%; }
+.pd-editavel .pd-nome { min-width: 170px; }
+.pd-nome .pd-inv { margin-left: 0; }
+.es-card .it-tit { margin-bottom: 2px; }

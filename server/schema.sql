@@ -889,8 +889,9 @@ ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS status_by BIGINT REFERENCE
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS destino TEXT;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS asset_id BIGINT REFERENCES assets(id) ON DELETE SET NULL;
 ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_status_check;
+-- (aceita também as etapas que vieram depois; a regra final fica mais abaixo, em "Etapas do pedido de material")
 ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_status_check
-  CHECK (status IN ('solicitado','comprado','chegou','entregue','cancelado'));
+  CHECK (status IN ('solicitado','comprado','transito','chegou','rota','entregue','cancelado'));
 ALTER TABLE ticket_materials DROP CONSTRAINT IF EXISTS ticket_materials_destino_check;
 ALTER TABLE ticket_materials ADD CONSTRAINT ticket_materials_destino_check
   CHECK (destino IS NULL OR destino IN ('estoque','inventario','nenhum'));
@@ -988,6 +989,9 @@ ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS etapas JSONB NOT NULL DEFA
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS previsao DATE;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS origem_orcim BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS confirmado_por BIGINT REFERENCES users(id) ON DELETE SET NULL;
+-- achar o pedido de um item do inventário (selo da etapa ao lado do nome do item)
+CREATE INDEX IF NOT EXISTS idx_ticket_materials_asset_ids ON ticket_materials USING gin (asset_ids);
+CREATE INDEX IF NOT EXISTS idx_ticket_materials_asset_id ON ticket_materials (asset_id);
 DO $marco$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM schema_marcos WHERE nome = 'pedido_etapas') THEN
     UPDATE ticket_materials SET etapas = jsonb_build_object(status, COALESCE(status_at, now()))

@@ -100,7 +100,8 @@ const TICKET_SELECT = `
          l.name AS location_name, l.code AS location_code,
          il.name AS impact_name, il.description AS impact_description,
          rc.name AS resolution_cause_name, u_res.name AS resolved_by_name,
-         a.name AS asset_name, a.asset_tag,
+         a.name AS asset_name, a.asset_tag, a.type AS asset_type, a.status AS asset_status, a.location_id AS asset_location_id,
+         (SELECT alo.name FROM locations alo WHERE alo.id = a.location_id) AS asset_location_name,
          tA.name AS approval_requested_by_name,
          tB.name AS approval_responded_by_name,
          COALESCE((SELECT array_agg(w.user_id ORDER BY w.created_at)
@@ -662,7 +663,8 @@ router.get('/:id', async (req, res) => {
            LEFT JOIN locations l ON l.id = u.location_id
            WHERE w.ticket_id = $1 ORDER BY w.created_at`, [id]),
     query(`SELECT m.id, m.name, m.unit, m.quantity, m.status, m.status_at, m.destino, m.asset_id, m.asset_ids, m.asset_type,
-                  m.price, m.location_id, l.name AS location_name, u.name AS status_by_name
+                  m.price, m.location_id, l.name AS location_name, u.name AS status_by_name,
+                  m.etapas, m.previsao, m.origem_orcim, m.confirmado_por
            FROM ticket_materials m LEFT JOIN users u ON u.id = m.status_by LEFT JOIN locations l ON l.id = m.location_id
            WHERE m.ticket_id = $1 ORDER BY m.id`, [id]),
   ]);
@@ -1422,6 +1424,11 @@ async function atualizarItemPedido(req, res, forcar = {}) {
   const novo = { ...atual };
   if (b.status !== undefined) {
     if (!SITUACAO_MATERIAL[b.status]) return res.status(422).json({ error: 'Situação inválida.' });
+    // entregue = o item já vive no inventário (pode ter sido retirado, transferido, somado ao estoque do posto):
+    //   voltar a etapa aqui duplicaria ou apagaria itens de lá
+    if (atual.status === 'entregue' && b.status !== 'entregue') {
+      return res.status(422).json({ error: 'Este item já foi entregue e está no inventário. Para mudar, ajuste o item no Inventário (devolver, transferir ou dar baixa).' });
+    }
     novo.status = b.status;
   }
   if (b.price !== undefined) {
@@ -1463,9 +1470,10 @@ async function atualizarItemPedido(req, res, forcar = {}) {
   let ids = atual.asset_ids || [];
   await withTransaction(async (q) => {
     // o inventário acompanha (também quando só o preço, o posto ou o destino mudam)
-    // periférico entregue no estoque já foi somado ao que tinha lá (sem registro próprio): não cria de novo
-    const jaSomado = !mudouSituacao && atual.status === 'entregue' && !ids.length && atual.destino === novo.destino;
-    if (!jaSomado && (mudouSituacao || ids.length || mexeInventario)) ids = await sincronizarEquipamentos(q, ticket, novo, novo.status, user);
+    // item já entregue: o que está no inventário segue a vida dele (baixas, transferências, conserto);
+    //   mudar preço, posto ou previsão do pedido não mexe mais lá
+    const jaEntregue = !mudouSituacao && atual.status === 'entregue';
+    if (!jaEntregue && (mudouSituacao || ids.length || mexeInventario)) ids = await sincronizarEquipamentos(q, ticket, novo, novo.status, user);
     await q(`UPDATE ticket_materials SET status = $2, price = $3, location_id = $4, destino = $5, asset_type = $6, asset_ids = $7::bigint[],
                     asset_id = $8, status_at = CASE WHEN $9 THEN now() ELSE status_at END,
                     status_by = CASE WHEN $9 THEN $10 ELSE status_by END,
