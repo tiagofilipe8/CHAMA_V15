@@ -21,6 +21,20 @@ const notificationRoutes = require('./routes/notifications');
 const backupRoutes = require('./routes/backup');
 const whatsappRoutes = require('./routes/whatsapp');
 const inventoryRoutes = require('./routes/inventory');
+const locationRoutes = require('./routes/locations');
+const impactLevelRoutes = require('./routes/impactLevels');
+const resolutionCauseRoutes = require('./routes/resolutionCauses');
+const permissionRoutes = require('./routes/permissions');
+const materialRoutes = require('./routes/materials');
+const optionProfileRoutes = require('./routes/optionProfiles');
+const chatRoutes = require('./routes/chat');
+const stockRoutes = require('./routes/stock');
+const stockReasonRoutes = require('./routes/stockReasons');
+const pedidoRoutes = require('./routes/pedidos');
+const orcimRoutes = require('./routes/orcim');
+const rotaRoutes = require('./routes/rotas');
+const relatorioRoutes = require('./routes/relatorios');
+const manutencaoRoutes = require('./routes/manutencoes');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
 
@@ -60,6 +74,20 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/impact-levels', impactLevelRoutes);
+app.use('/api/resolution-causes', resolutionCauseRoutes);
+app.use('/api/permissions', permissionRoutes);
+app.use('/api/materials', materialRoutes);
+app.use('/api/option-profiles', optionProfileRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/stock', stockRoutes);
+app.use('/api/stock-reasons', stockReasonRoutes);
+app.use('/api/pedidos', pedidoRoutes);
+app.use('/api/orcim', orcimRoutes);
+app.use('/api/rotas', rotaRoutes);
+app.use('/api/relatorios', relatorioRoutes);
+app.use('/api/manutencoes', manutencaoRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -75,7 +103,9 @@ function wrapRouter(r) {
   });
 }
 [authRoutes, userRoutes, entityRoutes, categoryRoutes, ticketRoutes,
- dashboardRoutes, settingRoutes, notificationRoutes, backupRoutes, whatsappRoutes, inventoryRoutes].forEach(wrapRouter);
+ dashboardRoutes, settingRoutes, notificationRoutes, backupRoutes, whatsappRoutes, inventoryRoutes,
+ locationRoutes, impactLevelRoutes, resolutionCauseRoutes, permissionRoutes, materialRoutes,
+ optionProfileRoutes].forEach(wrapRouter);
 
 process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err?.message || err);
@@ -84,8 +114,19 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err?.message || err);
 });
 
+
 // Arquivos estaticos
-app.use('/uploads', express.static(config.uploadsDir, { fallthrough: true, index: false }));
+// /uploads publico serve SO as imagens do sistema (logo e fundo), que ficam
+// na raiz da pasta. Anexos de chamados e fotos de equipamentos ficam em
+// subpastas e so saem pelas rotas com login (que conferem o acesso).
+app.use('/uploads', (req, res, next) => {
+  const nome = decodeURIComponent(req.path || '');
+  if (nome.slice(1).includes('/') || nome.includes('\\') || !/\.(png|jpe?g|webp|gif)$/i.test(nome)) {
+    return res.status(404).json({ error: 'Arquivo não encontrado.' });
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+}, express.static(config.uploadsDir, { fallthrough: false, index: false, dotfiles: 'deny' }));
 app.use('/vendor', express.static(path.join(config.publicDir, 'vendor'), { index: false }));
 app.use(express.static(config.publicDir));
 
@@ -111,6 +152,7 @@ app.get(/^\/(?!api|uploads|vendor|healthz).*/, (req, res) => {
 
 initSocket(server);
 backupService.startScheduler();
+require('./services/pausas').startScheduler(); // chamados em pausa voltam para a fila na data marcada
 maintenanceAlerts.startScheduler();
 
 server.listen(config.port, () => {

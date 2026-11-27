@@ -111,7 +111,7 @@ function saveState(state) {
 
 function loadConfig() {
   return readJson(configPath(), {
-    server_url: 'http://localhost:3000',
+    server_url: 'http://localhost:7070',
     provision_token: '',
     interval_seconds: 900,
     inventory_interval_seconds: 3600,

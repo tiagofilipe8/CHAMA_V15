@@ -13,53 +13,102 @@ Views.ticketDetail = function ticketDetail(id) {
       return;
     }
 
-    const isRequester = t.requester_id === user.id;
-    const isManager = user.role === 'client' && (user.client_level || 1) === 2 && t.entity_id === user.entity_id;
-    const canClientApprove = t.approval_status === 'pending' && user.role === 'client';
-    const techCanEdit = user.role === 'technician' && t.assigned_user_id === user.id;
-    const isMyAssigned = user.role === 'technician' && t.assigned_user_id === user.id;
-    const isUnassignedTech = user.role === 'technician' && !t.assigned_user_id;
+    const isRequester = String(t.requester_id) === String(user.id);
+    if (window.migalhaDetalhe) window.migalhaDetalhe(`${t.number} · ${t.title || ''}`.slice(0, 70));
+    // O que este usuario pode fazer neste chamado (calculado no servidor
+    // a partir das permissoes do perfil)
+    const can = t.can || {};
+    const triage = !!can.triage;
+    // "Instrucao de gestor": quem tem a permissao e nao faz parte da equipe
+    const isManager = !!can.manager_note && !can.internal_notes && !Roles.isMaster(user);
+    const canClientApprove = t.approval_status === 'pending' && !!can.approve;
+    const support = !!can.estimate; // pode alterar previsao/prazo
+    const canEdit = !!can.edit;
+    // Chamado do WhatsApp ainda na empresa padrao: o tecnico que vai resolver
+    // tambem precisa atribuir empresa (obrigatorio antes de resolver).
+    const empresaWaPadrao = !!t.via_whatsapp
+      && String(t.entity_name || '').trim() === 'WhatsApp - não identificado';
+    const podeAtribuirEmpresa = triage || (empresaWaPadrao && !!can.resolve);
 
     // ---------------- Barra de acoes ----------------
+    // Só as ações principais. Empresa, técnico, situação e moderador ficam no card "Responsáveis",
+    // cada um com a sua ação ao lado (Trocar, Assumir, Alterar).
     const actions = [];
-    if (user.role !== 'client') {
-      if (!t.assigned_user_id && user.role === 'technician') {
-        actions.push(`<button class="btn btn-outline-success btn-sm" id="act-take"><i class="bi bi-person-check"></i> Assumir chamado</button>`);
-      }
-      if (user.role === 'admin' || isMyAssigned) {
-        actions.push(`<button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar status</button>`);
-        actions.push(`<button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-approval"><i class="bi bi-check2-square"></i> Solicitar aprovação</button>`);
-      }
-      if (user.role === 'admin') {
-        actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-assign"><i class="bi bi-person-plus"></i> Atribuir técnico</button>`);
-      }
-      if (user.role === 'admin' || isMyAssigned) {
-        actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> Editar</button>`);
-      }
-    } else {
-      if (canClientApprove) {
-        actions.push(`<button class="btn btn-success btn-sm" id="act-approve"><i class="bi bi-check-circle"></i> Aprovar solução</button>`);
-        actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-reject"><i class="bi bi-x-circle"></i> Reprovar</button>`);
-      }
-      if ((isRequester || isManager) && [1, 2, 3, 4].includes(t.status)) {
-        actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-cancel"><i class="bi bi-slash-circle"></i> Cancelar chamado</button>`);
-      }
-      if ((isRequester || isManager) && [5, 6].includes(t.status)) {
-        actions.push(`<button class="btn btn-outline-primary btn-sm" id="act-reopen"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button>`);
-      }
-      if (isRequester && t.status === 1) {
-        actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> Editar</button>`);
-      }
-      if (isManager) {
-        actions.push(`<button class="btn btn-outline-warning btn-sm" id="act-note-focus"><i class="bi bi-chat-square-quote"></i> Instrução</button>`);
-      }
+    // quem pode fechar direto (o solicitante ainda reabre em até 3 dias) vê "Fechar chamado"
+    const fechaDireto = !can.needs_approval;
+    // quem abriu o chamado usa só o "Resolvi / não preciso mais" (sem o "Fechar chamado" ao lado, que seria repetido)
+    const mostraEncerrarUsuario = isRequester && can.cancel && [1, 2, 3, 4].includes(t.status);
+    if (can.resolve && !mostraEncerrarUsuario && (![5, 6, 7].includes(t.status) || (t.status === 5 && t.awaiting_evaluation))) {
+      actions.push(t.awaiting_evaluation
+        ? '<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-clipboard-check"></i> Avaliar e fechar</button>'
+        : `<button class="btn btn-success btn-sm" id="act-resolve"><i class="bi bi-check2-circle"></i> ${fechaDireto ? 'Fechar chamado' : 'Resolver chamado'}</button>`);
     }
-
+    if (can.status && [1, 2, 3].includes(t.status)) {
+      actions.push('<button class="btn btn-outline-warning btn-sm" id="act-pause"><i class="bi bi-pause-circle"></i> Pausar</button>');
+    }
+    // quem abriu: "Resolvi / não preciso mais" (com motivo)
+    if (mostraEncerrarUsuario) {
+      actions.push('<button class="btn btn-outline-success btn-sm" id="act-encerrar-usuario"><i class="bi bi-check2-square"></i> Resolvi / não preciso mais</button>');
+    }
+    if (canEdit) {
+      actions.push(`<button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-edit"><i class="bi bi-pencil"></i> ${triage ? 'Triagem / editar' : 'Editar'}</button>`);
+    }
+    if (can.cancel && !can.status && !isRequester && [1, 2, 3, 4].includes(t.status)) {
+      actions.push(`<button class="btn btn-outline-danger btn-sm" id="act-cancel"><i class="bi bi-slash-circle"></i> Cancelar chamado</button>`);
+    }
+    const prazoReabrirAcabou = t.reopen_until && new Date(t.reopen_until) < new Date();
+    if (can.cancel && !can.status && [5, 6].includes(t.status) && !prazoReabrirAcabou && !t.closed_by_requester) {
+      actions.push(`<button class="btn btn-outline-primary btn-sm" id="act-reopen"><i class="bi bi-arrow-counterclockwise"></i> Não resolveu? Reabrir</button>`);
+    }
+    if (isManager) {
+      actions.push(`<button class="btn btn-outline-warning btn-sm" id="act-note-focus"><i class="bi bi-chat-square-quote"></i> Instrução</button>`);
+    }
     const actionBar = actions.length
       ? `<div class="d-flex flex-wrap gap-2 mb-3">${actions.join('')}</div>` : '';
 
+    // ---------------- Responsáveis (empresa, técnico, situação, moderador) ----------------
+    const comigo = String(t.assigned_user_id || '') === String(user.id) && ![5, 6, 7].includes(t.status);
+    const tecAcoes = [];
+    if (comigo && window.Atendimento && Atendimento.pode(user)) {
+      tecAcoes.push(String(Atendimento.atualId || '') === String(t.id)
+        ? `<button class="btn btn-sm btn-atendendo" id="act-parar" title="Você está atendendo este chamado. Clique para pausar."><i class="dp-pulso"></i> Atendendo · pausar</button>`
+        : `<button class="btn btn-sm btn-outline-success" id="act-atender" title="Marca este como o chamado que você está atendendo agora"><i class="bi bi-play-fill"></i> Atender agora</button>`);
+    }
+    if (can.take) tecAcoes.push(`<button class="btn btn-sm btn-success" id="act-take" title="Fica com você"><i class="bi bi-person-check"></i> Assumir</button>`);
+    if (can.assign) tecAcoes.push(`<button class="btn btn-sm btn-outline-secondary" id="act-assign"><i class="bi bi-person-gear"></i> ${t.assigned_user_id ? 'Trocar' : 'Escolher'}</button>`);
+    // Novidade: o que mudou depois do aviso mais antigo não lido pisca de leve (3 vezes) e fica amarelinho
+    //   (o aviso é criado logo depois da mudança: 1 minuto de folga)
+    const nov = window.novidadeAberta && String(window.novidadeAberta.id) === String(t.id) ? new Date(window.novidadeAberta.desde).getTime() - 60000 : null;
+    const depoisDoAviso = (d) => !!(nov && d && new Date(d).getTime() >= nov);
+    const tecnicoNovo = depoisDoAviso(t.assigned_at);
+    const pedidoNovo = (t.materials || []).some((m) => depoisDoAviso(m.status_at));
+    // sem técnico e eu posso assumir ou escolher: a linha do técnico fica piscando até alguém pegar
+    const tecPiscando = !t.assigned_name && [1, 2, 3, 4].includes(Number(t.status)) && (can.take || can.assign);
+    const respItem = (icone, rotulo, valor, acoes = '', extra = '') => `
+      <div class="resp-item ${extra}">
+        <i class="bi ${icone} resp-ico"></i>
+        <div class="resp-tx"><span class="resp-rot">${rotulo}</span><span class="resp-val">${valor}</span></div>
+        ${acoes ? `<div class="resp-acoes">${acoes}</div>` : ''}
+      </div>`;
+    const respCard = `
+      <div class="card panel-card mb-3 resp-card">
+        <div class="card-header"><i class="bi bi-people me-1"></i> Responsáveis</div>
+        <div class="resp-lista">
+          ${respItem('bi-building', 'Empresa',
+            empresaWaPadrao ? '<span class="text-warning-emphasis fw-semibold"><i class="bi bi-exclamation-triangle"></i> Não atribuída</span>' : esc(t.entity_name || '—'),
+            podeAtribuirEmpresa ? `<button class="btn btn-sm ${empresaWaPadrao ? 'btn-warning' : 'btn-outline-secondary'}" data-bs-toggle="modal" data-bs-target="#modal-entity" title="Atribuir este chamado a uma empresa${empresaWaPadrao ? ' (obrigatório antes de resolver)' : ''}"><i class="bi bi-building-add"></i> ${empresaWaPadrao ? 'Atribuir' : 'Trocar'}</button>` : '',
+            empresaWaPadrao ? 'resp-alerta' : 'multi-empresa')}
+          ${respItem('bi-person-badge', 'Técnico',
+            t.assigned_name ? `${esc(t.assigned_name)}${comigo ? ' <span class="tg tg-teal">você</span>' : ''}${t.assigned_at ? `<small>desde ${esc(fmt.timeAgo(t.assigned_at))}</small>` : ''}` : '<span class="tg tg-amber">Não atribuído</span>',
+            tecAcoes.join(''), t.assigned_name ? (tecnicoNovo ? 'atencao pisca-3' : '') : `resp-alerta ${tecPiscando ? 'pisca-atencao' : ''}`)}
+          ${respItem('bi-flag', 'Situação', badgeStatus(t.status),
+            can.status ? '<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar</button>' : '')}
+          ${respItem('bi-shield-check', 'Moderador', t.moderator_name ? esc(t.moderator_name) : '<span class="text-muted">—</span>')}
+        </div>
+      </div>`;
+
     // ---------------- Aprovacao pendente (box para o cliente) ----------------
-    const approvalBox = user.role === 'client' && canClientApprove ? `
+    const approvalBox = canClientApprove ? `
       <div class="alert alert-warning d-flex flex-column gap-2 pending-box">
         <div><i class="bi bi-hourglass-split me-1"></i><b>Solução proposta aguardando sua aprovação</b></div>
         <div class="small text-muted">${esc(t.approval_comment || '')}</div>
@@ -70,30 +119,68 @@ Views.ticketDetail = function ticketDetail(id) {
         </div>
       </div>` : '';
 
+    // ---------------- Avisos do encerramento e da pausa ----------------
+    const dataBR = (d) => new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const motivoUsuario = LABELS.encerraUsuario[t.requester_close_reason] || '';
+    const avisos = [];
+    if (t.status === 4 && t.pause_reason) {
+      avisos.push(`<div class="alert alert-warning small d-flex gap-2 align-items-start"><i class="bi bi-pause-circle-fill"></i><div>
+        <b>Em pausa: ${esc(LABELS.pausa[t.pause_reason] || t.pause_reason)}</b>${t.pause_until ? ` · volta para a fila em <b>${esc(String(t.pause_until).slice(0, 10).split('-').reverse().join('/'))}</b>` : ''}</div></div>`);
+    }
+    if (t.status === 5 && t.awaiting_evaluation) {
+      avisos.push(can.resolve
+        ? `<div class="alert alert-success small d-flex gap-2 align-items-start"><i class="bi bi-clipboard-check"></i><div>
+            <b>${esc(t.requester_name || 'O usuário')} avisou que foi resolvido.</b> Avalie (causa e checklist da nota) para fechar.
+            ${t.requester_close_note ? `<br><span class="text-muted">${esc(t.requester_close_note)}</span>` : ''}</div></div>`
+        : '<div class="alert alert-success small"><i class="bi bi-check2-circle me-1"></i>Você avisou que foi resolvido. O técnico vai confirmar e fechar o chamado.</div>');
+    }
+    if (t.closed_by_requester && motivoUsuario) {
+      avisos.push(`<div class="alert alert-secondary small"><i class="bi bi-person-check me-1"></i><b>Encerrado por ${esc(t.requester_name || 'quem abriu')}:</b> ${esc(motivoUsuario)}${t.requester_close_ref ? ` (mesmo problema do <a href="#/tickets/${t.requester_close_ref}">#${t.requester_close_ref}</a>)` : ''}${t.requester_close_note ? `<br>${t.requester_close_reason === 'sozinho' ? '<b>Como resolveu:</b> ' : ''}${esc(t.requester_close_note)}` : ''}</div>`);
+    }
+    if (isRequester && t.status === 6 && t.reopen_until && !t.closed_by_requester) {
+      avisos.push(prazoReabrirAcabou
+        ? `<div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>O prazo para reabrir acabou em ${esc(dataBR(t.reopen_until))}. Se o problema voltou, abra um chamado novo e cite o ${esc(t.number)}.</div>`
+        : `<div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Se o problema não foi resolvido, você pode reabrir até ${esc(dataBR(t.reopen_until))}.</div>`);
+    }
+    // equipamento sem etiqueta encontrada: a equipe marca qual é
+    if (t.asset_pendente && !t.asset_id) {
+      avisos.push(canEdit || can.resolve
+        ? `<div class="alert alert-warning small d-flex flex-wrap gap-2 align-items-center" id="aviso-equip"><i class="bi bi-upc-scan"></i>
+            <div class="flex-grow-1"><b>${esc(t.requester_name || 'O usuário')} não encontrou a etiqueta do equipamento.</b> Marque qual é:</div>
+            <select class="form-select form-select-sm" id="eq-pend" style="max-width:320px"><option value="">Carregando...</option></select>
+            <button class="btn btn-sm btn-warning" id="eq-pend-ok">Marcar</button></div>`
+        : '<div class="small text-muted mb-3"><i class="bi bi-upc-scan me-1"></i>Você não encontrou a etiqueta do equipamento: a TI vai identificar qual é.</div>');
+    }
+    const avisosHtml = avisos.join('');
+
     // ---------------- Timeline ----------------
     const timeline = (t.messages || []).map((m) => {
       if (m.kind === 'system') {
-        return `<li class="timeline-item system">
+        const nova = depoisDoAviso(m.created_at) && String(m.user_id) !== String(user.id);
+        return `<li class="timeline-item system ${nova ? 'tl-nova' : ''}">
           <div class="tl-badge"><i class="bi bi-gear"></i></div>
-          <div class="tl-body">
-            <div class="tl-content text-muted">${esc(m.content)}</div>
+          <div class="tl-body ${nova ? 'atencao pisca-3' : ''}">
+            <div class="tl-content text-muted">${Mencoes.formatar(esc(m.content))}</div>
             <small class="text-muted">${m.author_name} · ${fmt.dateTime(m.created_at)}</small>
           </div>
         </li>`;
       }
       const icon = m.kind === 'note' ? 'bi-chat-square-quote' : m.kind === 'approval'
-        ? 'bi-check2-square' : 'bi-chat-dots';
-      const tone = m.kind === 'note' ? 'tl-warning' : m.kind === 'approval' ? 'tl-primary' : 'tl-info';
+        ? 'bi-check2-square' : m.kind === 'internal' ? 'bi-lock' : 'bi-chat-dots';
+      const tone = m.kind === 'note' ? 'tl-warning' : m.kind === 'approval' ? 'tl-primary'
+        : m.kind === 'internal' ? 'tl-secondary' : 'tl-info';
       const badgeCls = { 'tl-warning': 'text-bg-warning', 'tl-primary': 'text-bg-primary', 'tl-info': 'text-bg-info' }[tone] || 'text-bg-secondary';
-      return `<li class="timeline-item ${m.kind === 'system' ? 'system' : ''}">
+      const kindLabel = { note: 'Instrução', approval: 'Aprovação', internal: 'Nota interna (só equipe)' }[m.kind] || 'Mensagem';
+      const nova = depoisDoAviso(m.created_at) && String(m.user_id) !== String(user.id);
+      return `<li class="timeline-item ${m.kind === 'internal' ? 'tl-internal' : ''} ${nova ? 'tl-nova' : ''}">
         <div class="tl-badge ${tone}"><i class="bi ${icon}"></i></div>
-        <div class="tl-body">
+        <div class="tl-body ${nova ? 'atencao pisca-3' : ''}">
           <div class="tl-head">
             <strong>${esc(m.author_name)}</strong>
-            <span class="badge ${badgeCls} ms-1">${m.kind === 'note' ? 'Instrução' : m.kind === 'approval' ? 'Aprovação' : 'Comentário'}</span>
+            <span class="badge ${badgeCls} ms-1">${kindLabel}</span>${nova ? '<span class="tl-novo"><i class="bi bi-bell-fill"></i> nova</span>' : ''}
             <span class="text-muted small ms-auto">${fmt.dateTime(m.created_at)}</span>
           </div>
-          <div class="tl-content">${esc(m.content).replace(/\n/g, '<br>')}</div>
+          <div class="tl-content">${Mencoes.formatar(esc(m.content)).replace(/\n/g, '<br>')}</div>
         </div>
       </li>`;
     }).join('');
@@ -104,16 +191,20 @@ Views.ticketDetail = function ticketDetail(id) {
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <h4 class="mb-0 text-primary">${esc(t.number)}</h4>
             ${badgeStatus(t.status)}
-            ${badgePriority(t.priority)}
+            ${badgeImpact(t)}
             ${t.approval_status !== 'none' ? `<span class="badge bd-approval-${t.approval_status}">${LABELS.approval[t.approval_status]}</span>` : ''}
           </div>
           <h5 class="mt-1 mb-0">${esc(t.title)}</h5>
-          <small class="text-muted">${esc(t.entity_name || '')} · ${esc(t.category_name || '')}</small>
+          <small class="text-muted"><span class="multi-empresa">${esc(t.entity_name || '')} · </span>${t.location_name ? esc(t.location_name) + ' · ' : ''}${esc(t.display_category || '')}</small>
+          ${empresaWaPadrao ? `<div class="mt-1"><span class="badge text-bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>Empresa não atribuída — obrigatório antes de resolver</span></div>` : ''}
         </div>
-        <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary" href="#/tickets"><i class="bi bi-arrow-left"></i> Voltar</a>
+        </div>
       </div>
 
       ${actionBar}
+      ${avisosHtml}
       ${approvalBox}
 
       <div class="row g-3">
@@ -121,14 +212,22 @@ Views.ticketDetail = function ticketDetail(id) {
           <div class="card panel-card mb-3">
             <div class="card-header"><i class="bi bi-card-text me-1"></i> Descrição</div>
             <div class="card-body">
-              <p class="mb-0 ticket-desc">${esc(t.description).replace(/\n/g, '<br>')}</p>
+              <p class="mb-0 ticket-desc">${Mencoes.formatar(esc(t.description)).replace(/\n/g, '<br>')}</p>
             </div>
           </div>
+          ${(t.materials || []).length ? `
+          <div class="card panel-card mb-3 ${pedidoNovo ? 'atencao pisca-3' : ''}">
+            <div class="card-header"><i class="bi bi-box-seam me-1"></i> Materiais pedidos${pedidoNovo ? ' <span class="tl-novo"><i class="bi bi-bell-fill"></i> mudou</span>' : ''}</div>
+            <div class="pd-itens" id="td-pedido">${t.materials.map((m) => PedidoUI.linhaItem(t, m, { podeMudar: !!(can.resolve || Roles.can(user, 'inventory.manage')), vePreco: Roles.can(user, 'inventory.secrets'), locais: [] })).join('')}</div>
+          </div>` : ''}
 
           <div class="card panel-card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span><i class="bi bi-paperclip me-1"></i> Anexos <span class="badge text-bg-secondary">${(t.attachments||[]).length}</span></span>
-              <button class="btn btn-sm btn-outline-primary" id="td-add-att"><i class="bi bi-plus-lg"></i> Adicionar</button>
+            <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <span class="text-nowrap"><i class="bi bi-paperclip me-1"></i> Anexos <span class="badge text-bg-secondary">${(t.attachments||[]).length}</span></span>
+              <span class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary btn-anexo" id="td-add-att"><i class="bi bi-paperclip me-1"></i>Anexar arquivo</button>
+                <button class="btn btn-sm btn-outline-primary btn-anexo" id="td-add-photo"><i class="bi bi-camera me-1"></i>Tirar foto</button>
+              </span>
             </div>
             <div class="list-group list-group-flush" id="td-att-list">${(t.attachments||[]).map(f => {
               const isImg = /^image\//.test(f.mime_type || '');
@@ -144,46 +243,76 @@ Views.ticketDetail = function ticketDetail(id) {
                 <button class="btn btn-sm btn-outline-danger td-del-att" data-att="${f.id}" title="Remover"><i class="bi bi-trash"></i></button>
               </div>`;
             }).join('') || '<div class="p-3 text-muted small">Nenhum anexo</div>'}</div>
-            <input type="file" id="td-att-input" multiple hidden
-                   accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,video/mp4,audio/mpeg">
+            <input type="file" id="td-att-input" multiple hidden accept="${ANEXO_ACCEPT}">
+            <input type="file" id="td-photo-input" accept="image/*" capture="environment" hidden>
           </div>
 
-          <div class="card panel-card">
-            <div class="card-header"><i class="bi bi-clock-history me-1"></i> Timeline</div>
+          <div class="card panel-card conversa-card">
+            <div class="card-header"><i class="bi bi-chat-dots me-1"></i> Conversa</div>
             <div class="card-body">
               <ul class="timeline mb-0">${timeline}</ul>
               <div class="d-flex gap-2 mt-3">
-                <input class="form-control" id="msg-content" placeholder="${isManager ? 'Escreva uma instrução para a equipe...' : 'Escreva uma mensagem...'}" maxlength="2000">
+                <input class="form-control" id="msg-content" placeholder="${isManager ? 'Escreva uma instrução para a equipe...' : 'Escreva uma mensagem... (@ cita uma pessoa, # cita um chamado)'}" maxlength="2000" autocomplete="off">
                 <button class="btn btn-primary ${isManager ? 'btn-warning text-dark' : ''}" id="btn-send-msg">
                   <i class="bi bi-send"></i> ${isManager ? 'Instrução' : 'Enviar'}
                 </button>
               </div>
+              ${can.internal_notes ? `
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="msg-internal">
+                <label class="form-check-label small" for="msg-internal"><i class="bi bi-lock me-1"></i>Nota interna (só a equipe vê; o cliente não vê)</label>
+              </div>` : ''}
             </div>
           </div>
         </div>
 
         <div class="col-lg-4">
+          ${respCard}
           <div class="card panel-card mb-3">
             <div class="card-header"><i class="bi bi-info-circle me-1"></i> Informações</div>
             <div class="card-body p-0">
               <table class="table table-sm mb-0 info-table">
                 <tbody>
-                  <tr><th>Requerente</th><td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.requester_email || '')}</small></td></tr>
-                  <tr><th>Técnico</th><td>${t.assigned_name ? esc(t.assigned_name) : '<span class="text-danger">Não atribuído</span>'}</td></tr>
-                  <tr><th>Entidade</th><td>${esc(t.entity_name || '—')}</td></tr>
-                  <tr><th>Ativo</th><td>${t.asset_id ? `<a href="#/inventory/${t.asset_id}">${esc(t.asset_name||'Ativo')} ${t.asset_tag?`(${esc(t.asset_tag)})`:''}</a>` : '<span class="text-muted">—</span>'}</td></tr>
-                  <tr><th>Categoria</th><td>${esc(t.category_name || '—')}</td></tr>
-                  <tr><th>Prioridade</th><td>${esc(LABELS.priority[t.priority] || '—')}</td></tr>
+                  <tr><th>Solicitante</th><td>${esc(t.requester_name || '—')}<br><small class="text-muted">${esc(t.requester_email || '')}</small>
+                    ${t.requester_rating_summary && t.requester_rating_summary.count ? `<br><small title="Média das notas dadas pela equipe">${starsHtml(t.requester_rating_summary.avg)} ${String(t.requester_rating_summary.avg).replace('.', ',')} em ${t.requester_rating_summary.count} chamado(s)</small>` : ''}</td></tr>
+                  <tr><th>Localização</th><td>${t.location_name ? esc(t.location_name) + (t.location_code ? ` <small class="text-muted">(${esc(t.location_code)})</small>` : '') : '<span class="text-muted">—</span>'}</td></tr>
+                  <tr><th>Categoria</th><td>${esc(t.display_category || '—')}${triage && t.simple_category_name ? `<br><small class="text-muted">Na lista simples: ${esc(t.simple_category_icon || '')} ${esc(t.simple_category_name)}</small>` : ''}</td></tr>
+                  <tr><th>Urgência</th><td>${esc(t.impact_name || LABELS.priority[t.priority] || '—')}</td></tr>
+                  <tr><th>Precisa até</th><td>${t.needed_by ? fmt.date(String(t.needed_by).slice(0, 10) + 'T12:00:00') : '<span class="text-muted">não informado</span>'}</td></tr>
+                  <tr><th>Previsão</th><td>${t.estimated_at ? `<b>${fmt.dateTime(t.estimated_at)}</b>` : '<span class="text-muted">ainda não definida</span>'}</td></tr>
+                  ${t.due_at ? `<tr><th>Prazo (SLA)</th><td>${fmt.dateTime(t.due_at)}</td></tr>` : ''}
+                  <tr><th>Equipamento</th><td>${t.asset_id ? Item.titulo({ asset_id: t.asset_id, asset_name: t.asset_name || 'Equipamento', asset_tag: t.asset_tag, type: t.asset_type, status: t.asset_status, location_id: t.asset_location_id, location_name: t.asset_location_name, entity_id: t.entity_id }) : t.asset_pendente ? '<span class="tg tg-amber"><i class="bi bi-upc-scan"></i> etiqueta não encontrada</span>' : t.asset_nao_aplica ? '<span class="text-muted">Não se aplica (item sem etiqueta)</span>' : '<span class="text-muted">—</span>'}</td></tr>
                   <tr><th>Abertura</th><td>${fmt.dateTime(t.created_at)}</td></tr>
-                  <tr><th>Últ. atualização</th><td>${fmt.dateTime(t.updated_at)}</td></tr>
-                  ${t.due_at ? `<tr><th>Prazo</th><td>${fmt.dateTime(t.due_at)}</td></tr>` : ''}
+                  <tr><th>Tempo decorrido</th><td>${fmtDuration(t.created_at, t.closed_at || t.resolved_at)}</td></tr>
+                  <tr><th>Atribuído em</th><td>${t.assigned_at ? fmt.dateTime(t.assigned_at) : '—'}</td></tr>
+                  ${t.assigned_at ? `<tr><th>Desde a atribuição</th><td>${fmtDuration(t.assigned_at, t.resolved_at || t.closed_at)}</td></tr>` : ''}
+                  ${t.resolved_at ? `<tr><th>Resolvido em</th><td>${fmt.dateTime(t.resolved_at)}</td></tr>` : ''}
+                  ${t.closed_at ? `<tr><th>Fechado em</th><td>${fmt.dateTime(t.closed_at)}</td></tr>` : ''}
                   <tr><th>Aprovação</th><td>${esc(LABELS.approval[t.approval_status] || '—')}</td></tr>
+                  ${t.resolution_notes ? `<tr class="table-success"><th>O que foi feito</th><td>${esc(t.resolution_notes).replace(/\n/g, '<br>')}${t.resolved_by_name ? `<br><small class="text-muted">por ${esc(t.resolved_by_name)}</small>` : ''}</td></tr>` : ''}
+                  ${t.equipment_action_label ? `<tr><th>Com o equipamento</th><td>${esc(t.equipment_action_label)}</td></tr>` : ''}
+                  ${t.resolution_cause_name ? `<tr><th>Causa <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${esc(t.resolution_cause_name)}</td></tr>` : ''}
+                  ${t.requester_rating !== undefined && t.requester_rating !== null ? `<tr><th>Nota do usuário <i class="bi bi-lock" title="Só a equipe vê"></i></th><td>${starsHtml(t.requester_rating)} ${t.requester_rating}/5${t.requester_rating_criteria ? `<ul class="ck-resumo">${Object.entries(CHECKLIST_NOTA).map(([k, v]) => `<li class="${t.requester_rating_criteria[k] ? 'sim' : 'nao'}"><i class="bi ${t.requester_rating_criteria[k] ? 'bi-check-lg' : 'bi-x-lg'}"></i>${esc(v)}</li>`).join('')}</ul>` : ''}${t.requester_rating_comment ? `<small class="text-muted">${esc(t.requester_rating_comment)}</small>` : ''}</td></tr>` : ''}
+                  ${t.requester_close_reason ? `<tr><th>Encerramento pelo usuário</th><td>${esc(LABELS.encerraUsuario[t.requester_close_reason] || t.requester_close_reason)}</td></tr>` : ''}
                 </tbody>
               </table>
             </div>
           </div>
 
-          ${t.approval_status === 'pending' && user.role !== 'client' ? `
+          <div class="card panel-card mb-3">
+            <div class="card-header"><i class="bi bi-list-check me-1"></i> Histórico</div>
+            <ul class="list-group list-group-flush small" style="max-height:360px;overflow:auto">
+              ${(t.history || []).slice().reverse().map((h) => `
+                <li class="list-group-item">
+                  <div><b>${esc(LABELS.history[h.action] || h.action)}</b>${
+                    h.action === 'description' || h.action === 'solution' ? ''
+                    : (h.old_value || h.new_value) ? `: ${h.old_value ? `<span class="text-muted text-decoration-line-through">${esc(fmtHistValue(h.action, h.old_value))}</span> → ` : ''}${esc(fmtHistValue(h.action, h.new_value) || '—')}` : ''}</div>
+                  <small class="text-muted">${esc(h.user_name || 'Sistema')} · ${fmt.dateTime(h.created_at)}</small>
+                </li>`).join('') || '<li class="list-group-item text-muted">Sem registros.</li>'}
+            </ul>
+          </div>
+
+          ${t.approval_status === 'pending' && !canClientApprove ? `
           <div class="alert alert-secondary small"><i class="bi bi-hourglass-split me-1"></i>
             Solução proposta aguardando aprovação do cliente.</div>` : ''}
         </div>
@@ -194,15 +323,54 @@ Views.ticketDetail = function ticketDetail(id) {
     wireActions();
     wireModals();
 
+    // links antigos (?resolve=1 / ?assign=1): abre a janela certa
+    const q = new URLSearchParams(location.hash.split('?')[1] || '');
+    if ((q.get('resolve') || q.get('assign')) && !opts.silent) {
+      history.replaceState(null, '', `#/tickets/${t.id}`);
+      if (q.get('resolve') && can.resolve) TicketModals.resolve(t, { onDone: () => afterReload() });
+      else if (q.get('assign') && can.assign) TicketModals.assign(t, { onDone: () => afterReload() });
+    }
+    el.querySelector('#act-resolve')?.addEventListener('click', () => TicketModals.resolve(t, { toStatus: (fechaDireto || t.awaiting_evaluation) ? 6 : 5, onDone: () => afterReload() }));
+    el.querySelector('#act-pause')?.addEventListener('click', () => TicketModals.pause(t, { onDone: () => afterReload() }));
+    // pedido de material: preço, posto, tipo e situação de cada item (ligado ao inventário)
+    const tdPedido = el.querySelector('#td-pedido');
+    if (tdPedido && (can.resolve || Roles.can(user, 'inventory.manage'))) {
+      API.get(`/locations?entity_id=${t.entity_id}&active=true`).catch(() => []).then((locais) => {
+        tdPedido.innerHTML = t.materials.map((m) => PedidoUI.linhaItem(t, m, { podeMudar: true, vePreco: Roles.can(user, 'inventory.secrets'), locais })).join('');
+        PedidoUI.ligar(tdPedido, () => afterReload());
+      });
+    }
+    const eqPend = el.querySelector('#eq-pend');
+    if (eqPend) {
+      API.get(`/inventory/assets?entity_id=${t.entity_id}&limit=500`).then((lista) => {
+        const aqui = lista.filter((a) => String(a.location_id) === String(t.location_id));
+        const outros = lista.filter((a) => String(a.location_id) !== String(t.location_id));
+        const opt = (a) => `<option value="${a.id}">${esc(a.asset_tag ? `${a.asset_tag} · ` : '')}${esc(a.name)}</option>`;
+        eqPend.innerHTML = '<option value="">— escolha —</option>' + (aqui.length ? `<optgroup label="${esc(t.location_name || 'Neste local')}">${aqui.map(opt).join('')}</optgroup>` : '')
+          + (outros.length ? `<optgroup label="Outros locais">${outros.map(opt).join('')}</optgroup>` : '');
+      }).catch(() => { eqPend.innerHTML = '<option value="">Não foi possível carregar</option>'; });
+      el.querySelector('#eq-pend-ok').addEventListener('click', async () => {
+        if (!eqPend.value) { toast('Escolha o equipamento.', 'warning'); return; }
+        try { await API.patch(`/tickets/${t.id}`, { asset_id: parseInt(eqPend.value, 10) }); toast('Equipamento marcado.', 'success'); afterReload(); } catch (e) { showError(e); }
+      });
+    }
+    el.querySelector('#act-encerrar-usuario')?.addEventListener('click', () => TicketModals.encerrarUsuario(t, { onDone: () => afterReload() }));
+    el.querySelector('#act-assign')?.addEventListener('click', () => TicketModals.assign(t, { onDone: () => afterReload() }));
+
     // ---------------- acoes ----------------
     function afterReload() { renderDetail(el, { silent: true }); }
 
     function wireActions() {
       const attInput = el.querySelector('#td-att-input');
+      const photoInput = el.querySelector('#td-photo-input');
       el.querySelector('#td-add-att')?.addEventListener('click', () => attInput?.click());
-      attInput?.addEventListener('change', async () => {
-        const files = Array.from(attInput.files || []);
+      el.querySelector('#td-add-photo')?.addEventListener('click', () => photoInput?.click());
+      const enviarAnexos = async (input) => {
+        const files = filtrarAnexos(input.files);
+        input.value = '';
         if (!files.length) return;
+        const grandes = files.filter((f) => f.size > 15 * 1024 * 1024);
+        if (grandes.length) { toast(`${grandes[0].name}: maior que 15 MB`, 'warning'); return; }
         const fd = new FormData();
         files.forEach(f => fd.append('files', f));
         try {
@@ -210,8 +378,9 @@ Views.ticketDetail = function ticketDetail(id) {
           toast(files.length === 1 ? 'Anexo enviado.' : `${files.length} anexos enviados.`, 'success');
           afterReload();
         } catch (e) { showError(e); }
-        attInput.value = '';
-      });
+      };
+      attInput?.addEventListener('change', () => enviarAnexos(attInput));
+      photoInput?.addEventListener('change', () => enviarAnexos(photoInput));
       el.querySelectorAll('.td-del-att').forEach((b) => b.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Remover anexo', body: 'Excluir este anexo do chamado?', confirmText: 'Remover', danger: true });
         if (!ok) return;
@@ -219,10 +388,19 @@ Views.ticketDetail = function ticketDetail(id) {
         catch (e) { showError(e); }
       }));
 
+      el.querySelector('#act-atender')?.addEventListener('click', async () => {
+        try { await Atendimento.atender(t.id); toast('Agora você está atendendo este chamado.', 'success'); afterReload(); }
+        catch (e) { showError(e); }
+      });
+      el.querySelector('#act-parar')?.addEventListener('click', async () => {
+        try { await Atendimento.parar(); toast('Atendimento pausado.', 'info'); afterReload(); }
+        catch (e) { showError(e); }
+      });
+
       el.querySelector('#act-take')?.addEventListener('click', async () => {
         const ok = await confirmDialog({ title: 'Assumir chamado', body: `Deseja assumir o chamado ${t.number}?`, confirmText: 'Assumir' });
         if (!ok) return;
-        try { await API.post(`/tickets/${t.id}/assign`, {}); toast('Chamado assumido.', 'success'); afterReload(); }
+        try { await API.post(`/tickets/${t.id}/assign`, { assumir: true }); toast('Agora o chamado está com você.', 'success'); afterReload(); }
         catch (e) { showError(e); }
       });
 
@@ -261,25 +439,23 @@ Views.ticketDetail = function ticketDetail(id) {
         catch (e) { showError(e); }
       });
 
-      el.querySelector('#act-reopen')?.addEventListener('click', async () => {
-        const ok = await confirmDialog({ title: 'Reabrir chamado', body: `Reabrir o chamado ${t.number}?`, confirmText: 'Reabrir' });
-        if (!ok) return;
-        try { await API.post(`/tickets/${t.id}/status`, { status: 3 }); toast('Chamado reaberto.', 'success'); afterReload(); }
-        catch (e) { showError(e); }
-      });
+      el.querySelector('#act-reopen')?.addEventListener('click', () => TicketModals.reopen(t, { onDone: () => afterReload() }));
 
       el.querySelector('#act-note-focus')?.addEventListener('click', () => el.querySelector('#msg-content').focus());
 
       const sendBtn = el.querySelector('#btn-send-msg');
       const content = el.querySelector('#msg-content');
+      const citacoes = Mencoes.ligar(content, t.id);
       const sendMsg = async () => {
-        const text = content.value.trim();
+        const text = citacoes.preparar(content.value.trim());
         if (!text) return;
-        const kind = isManager ? 'note' : 'comment';
+        const internal = el.querySelector('#msg-internal')?.checked;
+        const kind = internal ? 'internal' : isManager ? 'note' : 'comment';
         try {
           await API.post(`/tickets/${t.id}/messages`, { content: text, kind });
           content.value = '';
-          toast(isManager ? 'Instrução registrada e notificada.' : 'Comentário enviado.', 'success');
+          citacoes.limpar();
+          toast(kind === 'internal' ? 'Nota interna registrada.' : isManager ? 'Instrução registrada e notificada.' : 'Mensagem enviada.', 'success');
           afterReload();
         } catch (e) { showError(e); }
       };
@@ -291,9 +467,27 @@ Views.ticketDetail = function ticketDetail(id) {
     function modals() {
       return `
         ${statusModal()}
-        ${approvalModal()}
         ${editModal()}
-        ${assignModal()}`;
+        ${podeAtribuirEmpresa ? entityModal() : ''}
+`;
+    }
+
+    function entityModal() {
+      return `<div class="modal fade" id="modal-entity" tabindex="-1">
+        <div class="modal-dialog"><div class="modal-content">
+          <div class="modal-header"><h6>Atribuir empresa · ${esc(t.number)}</h6>
+            <button class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body">
+            <label class="form-label small">Empresa existente${empresaWaPadrao ? ' <span class="text-danger">*</span> <span class="text-muted">(obrigatória antes de resolver)</span>' : ''}</label>
+            <select class="form-select" id="ent-select"><option value="">Carregando...</option></select>
+            <div class="form-text">O chamado passa a pertencer à empresa escolhida. Localização e equipamento
+              só permanecem quando também pertencerem a ela.</div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button class="btn btn-primary" id="btn-save-entity">Atribuir</button>
+          </div>
+        </div></div></div>`;
     }
 
     function statusModal() {
@@ -303,10 +497,11 @@ Views.ticketDetail = function ticketDetail(id) {
             <button class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <select class="form-select mb-2" id="s-status">
-              ${[2, 3, 4, 5, 6, 7].filter((s) => s !== t.status).map((s) =>
+              ${[2, 3, 4, 6, 7].filter((s) => s !== t.status).map((s) =>
                 `<option value="${s}">${LABELS.status[s]}</option>`).join('')}
             </select>
-            <textarea class="form-control" id="s-comment" rows="3" placeholder="Comentário (obrigatório para marcar como resolvido/fechado)..."></textarea>
+            <textarea class="form-control" id="s-comment" rows="3" placeholder="Comentário (opcional)..."></textarea>
+            <div class="form-text">Para <b>Fechar</b>, o sistema abre o formulário de encerramento (causa e checklist da nota). <b>Em pausa</b> pede o motivo e a data para voltar.</div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -315,26 +510,15 @@ Views.ticketDetail = function ticketDetail(id) {
         </div></div></div>`;
     }
 
-    function approvalModal() {
-      return `<div class="modal fade" id="modal-approval" tabindex="-1">
-        <div class="modal-dialog"><div class="modal-content">
-          <div class="modal-header"><h6>Solicitar aprovação · ${esc(t.number)}</h6>
-            <button class="btn-close" data-bs-dismiss="modal"></button></div>
-          <div class="modal-body">
-            <p class="small text-muted mb-2">Descreva a solução aplicada. O cliente (gestor) será notificado por e-mail/WhatsApp para aprovar ou reprovar.</p>
-            <textarea class="form-control" id="ap-comment" rows="4" placeholder="Descrição da solução..."></textarea>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button class="btn btn-primary" id="btn-send-approval">Enviar</button>
-          </div>
-        </div></div></div>`;
-    }
-
     function editModal() {
+      const toLocalInput = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      };
       return `<div class="modal fade" id="modal-edit" tabindex="-1">
         <div class="modal-dialog modal-lg"><div class="modal-content">
-          <div class="modal-header"><h6>Editar chamado · ${esc(t.number)}</h6>
+          <div class="modal-header"><h6>${triage ? 'Triagem / editar' : 'Editar'} · ${esc(t.number)}</h6>
             <button class="btn-close" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <div class="mb-2"><label class="form-label small">Título</label>
@@ -343,18 +527,27 @@ Views.ticketDetail = function ticketDetail(id) {
               <textarea class="form-control" id="e-desc" rows="4">${esc(t.description)}</textarea></div>
             <div class="row">
               <div class="col-md-6 mb-2"><label class="form-label small">Categoria</label>
-                <select class="form-select" id="e-cat"></select></div>
-              <div class="col-md-3 mb-2"><label class="form-label small">Prioridade</label>
-                <select class="form-select" id="e-prio">
-                  <option value="1">Baixa</option><option value="2">Média</option>
-                  <option value="3">Alta</option><option value="4">Urgente</option>
-                </select></div>
-              <div class="col-md-3 mb-2"><label class="form-label small">Prazo</label>
-                <input class="form-control" type="datetime-local" id="e-due"></div>
+                <select class="form-select" id="e-cat"><option value="">Carregando...</option></select>
+                ${triage && t.simple_category_name ? `<div class="form-text">Na lista simples: "${esc(t.simple_category_name)}". Aqui você pode detalhar (ex.: Rede › Problemas de conexão › DNS).</div>` : ''}</div>
+              <div class="col-md-6 mb-2"><label class="form-label small">Urgência</label>
+                <select class="form-select" id="e-impact"><option value="">Carregando...</option></select></div>
             </div>
-            <div class="mb-2"><label class="form-label small">Ativo (inventário)</label>
-              <select class="form-select" id="e-asset"><option value="">— sem ativo —</option></select>
-              <div class="form-text">Equipamento vinculado a esta OS (filtrado pela entidade)</div>
+            <div class="row">
+              <div class="col-md-6 mb-2"><label class="form-label small">Localização</label>
+                <select class="form-select" id="e-location"><option value="">Carregando...</option></select></div>
+              <div class="col-md-6 mb-2"><label class="form-label small">Precisa até (data de necessidade)</label>
+                <input class="form-control" type="date" id="e-needed" value="${t.needed_by ? String(t.needed_by).slice(0, 10) : ''}"></div>
+            </div>
+            ${support ? `
+            <div class="row">
+              <div class="col-md-6 mb-2"><label class="form-label small">Previsão de atendimento</label>
+                <input class="form-control" type="datetime-local" id="e-estimated" value="${toLocalInput(t.estimated_at)}">
+                <div class="form-text">O solicitante é avisado.</div></div>
+              <div class="col-md-6 mb-2"><label class="form-label small">Prazo (SLA)</label>
+                <input class="form-control" type="datetime-local" id="e-due" value="${toLocalInput(t.due_at)}"></div>
+            </div>` : ''}
+            <div class="mb-2"><label class="form-label small">Equipamento (inventário)</label>
+              <select class="form-select" id="e-asset"><option value="">— sem equipamento —</option></select>
             </div>
           </div>
           <div class="modal-footer">
@@ -364,106 +557,133 @@ Views.ticketDetail = function ticketDetail(id) {
         </div></div></div>`;
     }
 
-    function assignModal() {
-      return `<div class="modal fade" id="modal-assign" tabindex="-1">
-        <div class="modal-dialog"><div class="modal-content">
-          <div class="modal-header"><h6>Atribuir técnico · ${esc(t.number)}</h6>
-            <button class="btn-close" data-bs-dismiss="modal"></button></div>
-          <div class="modal-body">
-            <select class="form-select" id="a-tech"><option value="">— Nenhum (desatribuir) —</option></select>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button class="btn btn-primary" id="btn-save-assign">Salvar</button>
-          </div>
-        </div></div></div>`;
-    }
-
     function wireModals() {
       const hideModal = (id) => { const el0 = document.getElementById(id); if (el0) bootstrap.Modal.getInstance(el0)?.hide(); };
 
       // status
       el.querySelector('#btn-save-status')?.addEventListener('click', async () => {
+        const novo = parseInt(el.querySelector('#s-status').value, 10);
+        // Em pausa: abre a janela da pausa (motivo e data)
+        if (novo === 4) {
+          hideModal('modal-status');
+          TicketModals.pause(t, { onDone: () => afterReload() });
+          return;
+        }
+        // Fechar sem ter resolvido antes (ou o usuário avisou que resolveu): passa pelo formulário de encerramento
+        if (novo === 6 && (t.status !== 5 || t.awaiting_evaluation)) {
+          hideModal('modal-status');
+          TicketModals.resolve(t, { toStatus: 6, onDone: () => afterReload() });
+          return;
+        }
         try {
           await API.post(`/tickets/${t.id}/status`, {
-            status: parseInt(el.querySelector('#s-status').value, 10),
+            status: novo,
             comment: el.querySelector('#s-comment').value.trim(),
           });
           hideModal('modal-status');
           toast('Status atualizado.', 'success'); afterReload();
         } catch (e) {
-          if (e.data?.request_approval) {
+          if (e.data?.resolution_form || e.data?.request_approval) {
             hideModal('modal-status');
-            const mEl = document.getElementById('modal-approval');
-            if (mEl) new bootstrap.Modal(mEl).show();
-            toast('Para resolver, solicite a aprovação do cliente.', 'warning');
-          } else showError(e);
+            TicketModals.resolve(t, { toStatus: novo, onDone: () => afterReload() });
+            return;
+          }
+          showError(e);
         }
       });
 
-      el.querySelector('#btn-send-approval')?.addEventListener('click', async () => {
-        const comment = el.querySelector('#ap-comment').value.trim();
-        if (!comment) { toast('Descreva a solução.', 'warning'); return; }
+      // empresa (triagem, ou tecnico que vai resolver chamado do WhatsApp sem empresa)
+      const entSel = el.querySelector('#ent-select');
+      if (entSel) {
+        API.get('/entities').then((ents) => {
+          const ativas = ents.filter((e) => e.active !== false
+            && !(empresaWaPadrao && String(e.name || '').trim() === 'WhatsApp - não identificado'));
+          entSel.innerHTML = ativas.map((e) =>
+            `<option value="${e.id}" ${String(e.id) === String(t.entity_id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+        }).catch(() => { entSel.innerHTML = '<option value="">Erro ao carregar as empresas</option>'; });
+      }
+      el.querySelector('#btn-save-entity')?.addEventListener('click', async () => {
+        const novo = entSel?.value ? parseInt(entSel.value, 10) : null;
+        if (!novo) return;
+        if (String(novo) === String(t.entity_id)) {
+          hideModal('modal-entity');
+          toast('O chamado já está nesta empresa.', 'info');
+          return;
+        }
         try {
-          await API.post(`/tickets/${t.id}/approval`, { comment });
-          hideModal('modal-approval');
-          toast('Solicitação de aprovação enviada.', 'success'); afterReload();
-        } catch (e) { showError(e); }
+          await API.patch(`/tickets/${t.id}`, { entity_id: novo });
+          hideModal('modal-entity');
+          toast('Empresa do chamado atualizada.', 'success'); afterReload();
+        } catch (e) {
+          showError(e);
+        }
       });
 
-      el.querySelector('#btn-save-assign')?.addEventListener('click', async () => {
-        const techId = el.querySelector('#a-tech').value;
-        try {
-          await API.post(`/tickets/${t.id}/assign`, { user_id: techId || null });
-          hideModal('modal-assign');
-          toast('Atribuição atualizada.', 'success'); afterReload();
-        } catch (e) { showError(e); }
-      });
-
+      let editSimpleMode = false;
       el.querySelector('#btn-save-edit')?.addEventListener('click', async () => {
-        const due = el.querySelector('#e-due').value;
+        const body = {
+          title: el.querySelector('#e-title').value.trim(),
+          description: el.querySelector('#e-desc').value.trim(),
+          needed_by: el.querySelector('#e-needed').value || null,
+        };
+        const catVal = el.querySelector('#e-cat').value;
+        if (catVal) body[editSimpleMode ? 'simple_category_id' : 'category_id'] = parseInt(catVal, 10);
+        const imp = el.querySelector('#e-impact').value;
+        if (imp) body.impact_id = parseInt(imp, 10);
+        const locSel = el.querySelector('#e-location');
+        if (!locSel.disabled) body.location_id = locSel.value ? parseInt(locSel.value, 10) : null;
+        const est = el.querySelector('#e-estimated');
+        if (est) body.estimated_at = est.value ? new Date(est.value).toISOString() : null;
+        const due = el.querySelector('#e-due');
+        if (due) body.due_at = due.value ? new Date(due.value).toISOString() : null;
         const assetVal = el.querySelector('#e-asset')?.value;
+        body.asset_id = assetVal ? parseInt(assetVal, 10) : null;
         try {
-          await API.patch(`/tickets/${t.id}`, {
-            title: el.querySelector('#e-title').value.trim(),
-            description: el.querySelector('#e-desc').value.trim(),
-            category_id: parseInt(el.querySelector('#e-cat').value, 10) || null,
-            priority: parseInt(el.querySelector('#e-prio').value, 10),
-            due_at: due ? new Date(due).toISOString() : null,
-            asset_id: assetVal ? parseInt(assetVal,10) : null,
-          });
+          await API.patch(`/tickets/${t.id}`, body);
           hideModal('modal-edit');
           toast('Chamado atualizado.', 'success'); afterReload();
-        } catch (e) { showError(e); }
+        } catch (e) {
+          if (e.status === 422 && /Nenhuma alteração/.test(e.message)) { hideModal('modal-edit'); return; }
+          showError(e);
+        }
       });
 
       // cargas de modais
       const editCat = el.querySelector('#e-cat');
       if (editCat) {
-        API.get('/categories').then((cats) => {
-          editCat.innerHTML = `<option value="">— sem categoria —</option>` +
-            cats.filter((c) => c.active).map((c) => `<option value="${c.id}" ${c.id === t.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+        API.get('/categories/for-entity/' + t.entity_id).then((data) => {
+          editSimpleMode = data.mode === 'simple';
+          if (editSimpleMode) {
+            editCat.innerHTML = data.categories.map((c) =>
+              `<option value="${c.id}" ${String(c.id) === String(t.display_simple_id) ? 'selected' : ''}>${esc(c.icon || '')} ${esc(c.name)}</option>`).join('');
+          } else {
+            editCat.innerHTML = categoryOptions(data.categories);
+            editCat.value = String(t.category_id || '');
+          }
         }).catch(() => {});
       }
-      const ePrio = el.querySelector('#e-prio');
-      if (ePrio) ePrio.value = String(t.priority || 2);
-      const eDue = el.querySelector('#e-due');
-      if (eDue && t.due_at) eDue.value = new Date(t.due_at).toISOString().slice(0, 16);
+      const eImpact = el.querySelector('#e-impact');
+      if (eImpact) {
+        API.get(`/impact-levels?entity_id=${encodeURIComponent(t.entity_id || '')}`).then((levels) => {
+          eImpact.innerHTML = levels.map((l) => `<option value="${l.id}" ${String(l.id) === String(t.impact_id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+        }).catch(() => {});
+      }
+      const eLoc = el.querySelector('#e-location');
+      if (eLoc) {
+        API.get(`/locations?entity_id=${t.entity_id}&active=true`).then((locs) => {
+          if (!locs.length) { eLoc.innerHTML = '<option value="">Nenhuma localização cadastrada</option>'; eLoc.disabled = true; return; }
+          eLoc.innerHTML = '<option value="">— nenhuma —</option>' + locs.map((l) =>
+            `<option value="${l.id}" ${String(l.id) === String(t.location_id) ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+        }).catch(() => {});
+      }
       const eAsset = el.querySelector('#e-asset');
       if (eAsset) {
         API.get('/inventory/assets?entity_id=' + t.entity_id).then((assets) => {
-          eAsset.innerHTML = `<option value="">— sem ativo —</option>` +
-            assets.map((a) => `<option value="${a.id}" ${String(a.id)===String(t.asset_id)?'selected':''}>${esc(a.name)} ${a.asset_tag?`(${esc(a.asset_tag)})`:''}</option>`).join('');
+          eAsset.innerHTML = `<option value="">— sem equipamento —</option>` +
+            assets.map((a) => `<option value="${a.id}" ${String(a.id) === String(t.asset_id) ? 'selected' : ''}>${esc(a.name)} ${a.asset_tag ? `(${esc(a.asset_tag)})` : ''}</option>`).join('');
         }).catch(() => {});
       }
 
-      const aTech = el.querySelector('#a-tech');
-      if (aTech) {
-        API.get('/users?role=technician&active=true').then((users) => {
-          aTech.innerHTML = `<option value="">— Nenhum (desatribuir) —</option>` +
-            users.map((u) => `<option value="${u.id}" ${u.id === t.assigned_user_id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-        }).catch(() => {});
-      }
     }
   };
 };

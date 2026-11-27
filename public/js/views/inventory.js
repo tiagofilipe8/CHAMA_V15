@@ -2,16 +2,11 @@
 // Views.inventory — Orcim Inventário
 // ---------------------------------------------------------------
 
-const INV_TYPES = {
-  COMPUTER: 'Computador', NOTEBOOK: 'Notebook', SERVER: 'Servidor',
-  PRINTER: 'Impressora', MONITOR: 'Monitor', UPS: 'Nobreak',
-  NETWORK_DEVICE: 'Rede', MOBILE_DEVICE: 'Móvel', OTHER: 'Outro'
-};
-const INV_STATUS = {
-  ACTIVE: 'Ativo', INACTIVE: 'Inativo', MAINTENANCE: 'Manutenção',
-  STOCK: 'Estoque', DISPOSED: 'Descartado', LOST: 'Extraviado'
-};
-const INV_STATUS_TONE = { ACTIVE:'success', INACTIVE:'secondary', MAINTENANCE:'warning', STOCK:'info', DISPOSED:'dark', LOST:'danger' };
+// INV_TYPES, INV_STATUS, INV_ICONES, invEstado e Item.titulo ficam em /js/item.js (usados em todas as telas)
+const INV_COM_ACESSO = ['COMPUTER', 'NOTEBOOK']; // AnyDesk e acesso mestre
+const invMoeda = (v) => (v === null || v === undefined || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const invVeSegredos = () => Roles.can(API.user || {}, 'inventory.secrets');
+window.invMoeda = invMoeda;
 
 // <img> nao envia Authorization — usa ?token= na URL
 function invPhotoUrl(assetId, photoId) {
@@ -37,8 +32,8 @@ async function openAssetModal(asset, cb) {
     <div class="modal-body">
       <div class="row">
         <div class="col-md-6 mb-2"><label class="form-label small">Nome *</label><input class="form-control inv-upper" id="a-name" value="${esc(up(a?.name).toUpperCase())}"></div>
-        <div class="col-md-3 mb-2"><label class="form-label small">ID ORCIM</label><input class="form-control inv-upper" id="a-tag" value="${esc(up(a?.asset_tag).toUpperCase())}"></div>
-        <div class="col-md-3 mb-2"><label class="form-label small">Tipo *</label><select class="form-select" id="a-type">${Object.entries(INV_TYPES).map(([k,v])=>`<option value="${k}" ${a?.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="col-md-3 mb-2"><label class="form-label small">Etiqueta Orcim</label><input class="form-control inv-upper" id="a-tag" value="${esc(up(a?.asset_tag).toUpperCase())}"></div>
+        <div class="col-md-3 mb-2"><label class="form-label small">Categoria *</label><select class="form-select" id="a-type">${Object.entries(INV_TYPES).map(([k,v])=>`<option value="${k}" ${a?.type===k?'selected':''}>${v}</option>`).join('')}</select></div>
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">Fabricante</label><input class="form-control inv-upper" id="a-man" value="${esc(up(a?.manufacturer).toUpperCase())}"></div>
@@ -46,18 +41,50 @@ async function openAssetModal(asset, cb) {
         <div class="col-md-4 mb-2"><label class="form-label small">N° Série / TAG</label><input class="form-control inv-upper" id="a-serial" value="${esc(up(a?.serial_number).toUpperCase())}"></div>
       </div>
       <div class="row">
-        <div class="col-md-4 mb-2"><label class="form-label small">Status</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${a?.status===k?'selected':''}>${v}</option>`).join('')}</select></div>
-        <div class="col-md-4 mb-2"><label class="form-label small">Entidade *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
-        <div class="col-md-4 mb-2"><label class="form-label small">Localização</label><input class="form-control inv-upper" id="a-location" value="${esc(up(a?.location).toUpperCase())}"></div>
+        <div class="col-md-3 mb-2"><label class="form-label small">Estado</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${(a?.status||'OPERATING')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="col-md-4 mb-2"><label class="form-label small">Empresa *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
+        <div class="col-md-5 mb-2"><div class="a-onde-cab"><label class="form-label small mb-0">Onde fica</label>
+            <span class="seg seg-mini" role="group" aria-label="Onde fica o item"><button type="button" data-onde="local"><i class="bi bi-geo-alt"></i> Num local</button><button type="button" data-onde="pessoa"><i class="bi bi-person"></i> Com uma pessoa</button></span></div>
+          <div data-onde-box="local"><select class="form-select" id="a-loc"><option value="">— sem local —</option></select></div>
+          <div data-onde-box="pessoa" class="d-none"><select class="form-select" id="a-dono"><option value="">— escolha a pessoa —</option></select>
+            <input class="form-control mt-1 d-none" id="a-dono-nome" maxlength="120" placeholder="Nome de quem fica com o item" value="${esc(a?.dono_nome || '')}"></div></div>
+      </div>
+      <div class="row">
+        <div class="col-md-8 mb-2"><label class="form-label small">Como é contado</label>
+          <select class="form-select" id="a-controle">
+            <option value="unidade" ${(a?.controle || 'unidade') === 'unidade' ? 'selected' : ''}>Por unidade — tem etiqueta (monitor, PC, impressora, nobreak)</option>
+            <option value="quantidade" ${a?.controle === 'quantidade' ? 'selected' : ''}>Por quantidade — sem etiqueta, contados juntos (mouse, teclado, cabo)</option>
+          </select></div>
+        <div class="col-md-4 mb-2 ${a?.controle === 'quantidade' ? '' : 'd-none'}" id="a-qtd-box"><label class="form-label small">Quantidade</label>
+          <input class="form-control" id="a-qtd" type="number" min="0" step="1" value="${a?.quantity ?? 1}"></div>
+      </div>
+      ${invVeSegredos() ? `<div class="row">
+        <div class="col-md-4 mb-2"><label class="form-label small">Preço (R$) <span class="text-muted" id="a-price-un">${a?.controle === 'quantidade' ? 'por unidade' : ''}</span> <i class="bi bi-lock" title="Só gestores, técnicos e o admin mestre veem"></i></label>
+          <input class="form-control" id="a-price" type="number" min="0" step="0.01" value="${a?.price ?? ''}" placeholder="0,00"></div>
+      </div>` : ''}
+      <div class="inv-acesso ${INV_COM_ACESSO.includes(a?.type || 'COMPUTER') ? '' : 'd-none'}" id="a-acesso">
+        <div class="inv-acesso-tit"><i class="bi bi-pc-display"></i> Acesso remoto (computador e notebook)</div>
+        <div class="row">
+          <div class="col-md-4 mb-2"><label class="form-label small">AnyDesk (ID)</label><input class="form-control" id="a-anydesk" value="${esc(up(a?.anydesk_id))}" placeholder="123 456 789"></div>
+          ${invVeSegredos() ? `<div class="col-md-4 mb-2"><label class="form-label small">Senha do AnyDesk <i class="bi bi-lock"></i></label>
+            <input class="form-control" id="a-anydesk-pw" type="password" autocomplete="new-password" placeholder="${a?.tem_senha_anydesk ? '•••••• (em branco = manter)' : ''}"></div>` : ''}
+        </div>
+        ${invVeSegredos() ? `<div class="row">
+          <div class="col-md-4 mb-2"><label class="form-label small">Acesso mestre Orcim: usuário <i class="bi bi-lock"></i></label>
+            <input class="form-control" id="a-master-user" autocomplete="off" placeholder="${a?.tem_acesso_mestre ? '•••••• (em branco = manter)' : ''}"></div>
+          <div class="col-md-4 mb-2"><label class="form-label small">Acesso mestre Orcim: senha <i class="bi bi-lock"></i></label>
+            <input class="form-control" id="a-master-pw" type="password" autocomplete="new-password" placeholder="${a?.tem_acesso_mestre ? '•••••• (em branco = manter)' : ''}"></div>
+          ${isEdit && (a?.tem_senha_anydesk || a?.tem_acesso_mestre) ? `<div class="col-md-4 mb-2 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" id="a-apagar-senhas"><label class="form-check-label small" for="a-apagar-senhas">Apagar as senhas guardadas</label></div></div>` : ''}
+        </div>
+        <div class="form-text mt-0 mb-2"><i class="bi bi-shield-lock"></i> As senhas ficam criptografadas. Só gestores, técnicos e o admin mestre veem, e quem vê fica registrado no histórico.</div>` : ''}
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">Setor</label><input class="form-control inv-upper" id="a-dept" value="${esc(up(a?.department).toUpperCase())}"></div>
-        <div class="col-md-4 mb-2"><label class="form-label small">Usuário / Posse</label><input class="form-control" id="a-resp" placeholder="ID usuário" value="${esc(a?.responsible_user_id||'')}"></div>
+        <div class="col-md-4 mb-2"><label class="form-label small">Data de compra</label><input class="form-control" id="a-purchase" type="date" value="${a?.purchase_date ? a.purchase_date.slice(0,10):''}"></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Garantia até</label><input class="form-control" id="a-warranty" type="date" value="${a?.warranty_expiration ? a.warranty_expiration.slice(0,10):''}"></div>
       </div>
       <div class="row">
-        <div class="col-md-4 mb-2"><label class="form-label small">Data de compra</label><input class="form-control" id="a-purchase" type="date" value="${a?.purchase_date ? a.purchase_date.slice(0,10):''}"></div>
-        <div class="col-md-8 mb-2"><label class="form-label small">Descrição</label><input class="form-control inv-upper" id="a-desc" value="${esc(up(a?.description).toUpperCase())}"></div>
+        <div class="col-12 mb-2"><label class="form-label small">Descrição</label><input class="form-control inv-upper" id="a-desc" value="${esc(up(a?.description).toUpperCase())}"></div>
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">IP</label><input class="form-control inv-upper" id="a-ip" value="${esc(up(a?.ip_address).toUpperCase())}"></div>
@@ -100,7 +127,7 @@ async function openAssetModal(asset, cb) {
           </div>
         </div>
       </div>
-      <div class="mb-2"><label class="form-label small">Observações</label><textarea class="form-control inv-upper" id="a-notes" rows="2">${esc(up(a?.notes).toUpperCase())}</textarea></div>
+      <div class="mb-2"><label class="form-label small">Observações</label><textarea class="form-control" id="a-notes" rows="2">${esc(up(a?.notes))}</textarea></div>
     </div>
     <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="a-save">Salvar</button></div>
   </div></div>`;
@@ -115,6 +142,57 @@ async function openAssetModal(asset, cb) {
   });
   const modal = new bootstrap.Modal(m);
   if (user.role==='client') { m.querySelector('#a-entity').value = String(user.entity_id); m.querySelector('#a-entity').disabled = true; }
+  // locais (postos) da empresa escolhida
+  const selLoc = m.querySelector('#a-loc');
+  const carregarLocais = async () => {
+    const ent = m.querySelector('#a-entity').value;
+    let locs = [];
+    try { locs = ent ? await API.get(`/locations?entity_id=${ent}&active=true`) : []; } catch {}
+    const atual = selLoc.value || (a && String(a.entity_id) === String(ent) ? String(a.location_id || '') : '');
+    selLoc.innerHTML = '<option value="">— sem local —</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}${l.city ? ` (${esc(l.city)})` : ''}</option>`).join('');
+    selLoc.value = locs.some((l) => String(l.id) === atual) ? atual : '';
+  };
+  // Onde fica: num local (posto) OU com uma pessoa (usuário cadastrado ou só o nome) — um ou outro
+  const comPessoa = !!(a && !a.location_id && (a.responsible_user_id || a.dono_nome));
+  let onde = comPessoa ? 'pessoa' : 'local';
+  const selDono = m.querySelector('#a-dono');
+  const inDonoNome = m.querySelector('#a-dono-nome');
+  const OUTRA = '__nome';
+  const pintarOnde = () => {
+    m.querySelectorAll('[data-onde]').forEach((b) => b.classList.toggle('active', b.dataset.onde === onde));
+    m.querySelectorAll('[data-onde-box]').forEach((b) => b.classList.toggle('d-none', b.dataset.ondeBox !== onde));
+    inDonoNome.classList.toggle('d-none', selDono.value !== OUTRA);
+  };
+  m.querySelectorAll('[data-onde]').forEach((b) => b.addEventListener('click', () => { onde = b.dataset.onde; pintarOnde(); }));
+  selDono.addEventListener('change', () => { pintarOnde(); if (selDono.value === OUTRA) inDonoNome.focus(); });
+  const carregarPessoas = async () => {
+    const ent = m.querySelector('#a-entity').value;
+    let pessoas = [];
+    try { pessoas = ent ? await API.get(`/inventory/pessoas?entity_id=${ent}`) : []; } catch {}
+    const atual = selDono.value || (a?.dono_nome ? OUTRA : String(a?.responsible_user_id || ''));
+    // quem já estava com o item continua na lista, mesmo que seja de outra empresa
+    if (a?.responsible_user_id && !pessoas.some((p) => String(p.id) === String(a.responsible_user_id))) pessoas.unshift({ id: a.responsible_user_id, name: a.responsible_name || `Usuário ${a.responsible_user_id}` });
+    selDono.innerHTML = '<option value="">— escolha a pessoa —</option>'
+      + (pessoas.length ? `<optgroup label="Cadastrados">${pessoas.map((p) => `<option value="${p.id}">${esc(p.name)}${p.location_name ? ` (${esc(p.location_name)})` : ''}</option>`).join('')}</optgroup>` : '')
+      + `<option value="${OUTRA}">✎ Outra pessoa (escrever o nome)</option>`;
+    selDono.value = [...selDono.options].some((o) => o.value === atual) ? atual : '';
+    pintarOnde();
+  };
+  m.querySelector('#a-entity').addEventListener('change', () => { selLoc.value = ''; if (selDono.value !== OUTRA) selDono.value = ''; carregarLocais(); carregarPessoas(); });
+  carregarLocais();
+  carregarPessoas();
+  pintarOnde();
+  // AnyDesk e acesso mestre: só para computador e notebook
+  m.querySelector('#a-type').addEventListener('change', (e) => {
+    m.querySelector('#a-acesso').classList.toggle('d-none', !INV_COM_ACESSO.includes(e.target.value));
+    // periférico novo, sem etiqueta: sugere contar por quantidade
+    if (!isEdit && e.target.value === 'PERIPHERAL' && !m.querySelector('#a-tag').value.trim()) { m.querySelector('#a-controle').value = 'quantidade'; m.querySelector('#a-controle').dispatchEvent(new Event('change')); }
+  });
+  m.querySelector('#a-controle').addEventListener('change', (e) => {
+    const q = e.target.value === 'quantidade';
+    m.querySelector('#a-qtd-box').classList.toggle('d-none', !q);
+    const pu = m.querySelector('#a-price-un'); if (pu) pu.textContent = q ? 'por unidade' : '';
+  });
   m.querySelector('#a-save').onclick = async ()=>{
     const val = (sel) => m.querySelector(sel).value.trim().toUpperCase() || null;
     const body = {
@@ -126,13 +204,13 @@ async function openAssetModal(asset, cb) {
       model: val('#a-model'),
       serial_number: val('#a-serial'),
       entity_id: parseInt(m.querySelector('#a-entity').value,10)||null,
-      location: val('#a-location'),
+      location_id: onde === 'local' ? (selLoc.value || null) : null,
+      anydesk_id: INV_COM_ACESSO.includes(m.querySelector('#a-type').value) ? (m.querySelector('#a-anydesk').value.trim() || null) : (a?.anydesk_id ? null : undefined),
       department: val('#a-dept'),
-      responsible_user_id: parseInt(m.querySelector('#a-resp').value,10)||null,
       warranty_expiration: m.querySelector('#a-warranty').value||null,
       purchase_date: m.querySelector('#a-purchase').value||null,
       description: val('#a-desc'),
-      notes: val('#a-notes'),
+      notes: m.querySelector('#a-notes').value.trim() || null,
       ip_address: val('#a-ip'),
       mac_address: val('#a-mac'),
       memory_info: val('#a-mem'),
@@ -145,7 +223,36 @@ async function openAssetModal(asset, cb) {
       webcam: (() => { const el = m.querySelector('input[name="a-webcam"]:checked'); return el ? el.value === '1' : null; })(),
       eth_port: (() => { const el = m.querySelector('input[name="a-eth"]:checked'); return el ? el.value === '1' : null; })(),
     };
-    if (!body.name || !body.entity_id) { toast('Nome e entidade são obrigatórios','warning'); return; }
+    body.controle = m.querySelector('#a-controle').value;
+    if (body.controle === 'quantidade') {
+      body.quantity = parseInt(m.querySelector('#a-qtd').value, 10);
+      if (!(body.quantity >= 0)) { toast('Informe a quantidade.', 'warning'); return; }
+    }
+    if (!body.name || !body.entity_id) { toast('Nome e empresa são obrigatórios','warning'); return; }
+    if (onde === 'pessoa') {
+      // com uma pessoa: usuário cadastrado ou só o nome (o item sai do local)
+      if (selDono.value === OUTRA) {
+        body.dono_nome = inDonoNome.value.trim();
+        body.responsible_user_id = null;
+        if (!body.dono_nome) { toast('Escreva o nome de quem fica com o item.', 'warning'); inDonoNome.focus(); return; }
+      } else if (selDono.value) {
+        body.responsible_user_id = Number(selDono.value); body.dono_nome = null;
+      } else { toast('Escolha com quem o item fica (ou escreva o nome).', 'warning'); return; }
+    } else if (comPessoa) {
+      // estava com uma pessoa e agora vai para um local: deixa de ter dono
+      body.responsible_user_id = null; body.dono_nome = null;
+    }
+    if (invVeSegredos()) {
+      const pr = m.querySelector('#a-price');
+      if (pr) body.price = pr.value === '' ? null : Number(pr.value);
+      const apagar = m.querySelector('#a-apagar-senhas')?.checked;
+      const pw = (sel) => { const el = m.querySelector(sel); return el && el.value !== '' ? el.value : undefined; };
+      if (apagar) { body.anydesk_password = ''; body.master_user = ''; body.master_password = ''; }
+      if (pw('#a-anydesk-pw') !== undefined) body.anydesk_password = pw('#a-anydesk-pw');
+      if (pw('#a-master-user') !== undefined) body.master_user = pw('#a-master-user');
+      if (pw('#a-master-pw') !== undefined) body.master_password = pw('#a-master-pw');
+    }
+    if (body.anydesk_id === undefined) delete body.anydesk_id;
     try {
       if (isEdit) await API.patch('/inventory/assets/' + a.id, body);
       else await API.post('/inventory/assets', body);
@@ -156,136 +263,249 @@ async function openAssetModal(asset, cb) {
   modal.show();
 }
 
+
 Views.inventory = async function inventory(el) {
   const user = API.user || {};
+  let prefs = { abertos: {} };
+  try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('inv_prefs') || '{}') }; } catch { /* padrão */ }
+  const salvar = () => { try { localStorage.setItem('inv_prefs', JSON.stringify(prefs)); } catch { /* sem armazenamento */ } };
   el.innerHTML = `
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h4 class="mb-0"><i class="bi bi-hdd-stack me-2"></i> Orcim Inventário</h4>
-      <div class="d-flex gap-2">
-        <button class="btn btn-outline-secondary btn-sm" id="btn-agents"><i class="bi bi-cpu"></i> Agentes</button>
-        <button class="btn btn-primary btn-sm" id="btn-new-asset"><i class="bi bi-plus-lg"></i> Novo ativo</button>
-      </div>
-    </div>
+    ${Roles.presoAoLocal(user) ? `<div class="es-meu-local mb-2"><i class="bi bi-geo-alt-fill"></i><span>${user.location_name ? `Inventário de <b>${esc(user.location_name)}</b>. Você vê só os itens do seu local; para pedir conserto de um item, abra a ficha dele e clique em <b>Pedir manutenção</b>.` : 'Seu usuário não está ligado a um local. Peça ao gestor para escolher o local no seu cadastro.'}</span></div>` : ''}
     <div class="card panel-card mb-3">
-      <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center">
-        <input class="form-control form-control-sm" id="inv-q" style="max-width:220px" placeholder="Buscar ID ORCIM, nome, serial...">
-        <select class="form-select form-select-sm" id="inv-type" style="max-width:160px">
-          <option value="">Todos os tipos</option>
-          ${Object.entries(INV_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+      <div class="card-body py-2 iv-filtros">
+        <div class="iv-busca"><i class="bi bi-search"></i><input class="form-control form-control-sm" id="inv-q" placeholder="Buscar etiqueta, nome, serial, AnyDesk..."></div>
+        <select class="form-select form-select-sm ${Roles.presoAoLocal(user) ? 'd-none' : ''}" id="inv-entity"><option value="">Todas as empresas</option></select>
+        <select class="form-select form-select-sm ${Roles.presoAoLocal(user) ? 'd-none' : ''}" id="inv-loc"><option value="">Todos os locais</option></select>
+        <select class="form-select form-select-sm" id="inv-type">
+          <option value="">Todas as categorias</option>
+          ${Object.entries(INV_TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
-        <select class="form-select form-select-sm" id="inv-status" style="max-width:150px">
-          <option value="">Todos status</option>
-          ${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+        <select class="form-select form-select-sm" id="inv-status">
+          <option value="">Todos os estados</option>
+          ${Object.entries(INV_STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
-        <select class="form-select form-select-sm" id="inv-entity" style="max-width:200px"><option value="">Todas entidades</option></select>
-        <button class="btn btn-sm btn-outline-secondary" id="btn-inv-filter"><i class="bi bi-search"></i></button>
+        ${invVeSegredos() ? `<select class="form-select form-select-sm" id="inv-ordem" title="Ordem dos locais"><option value="nome">Locais por nome</option><option value="valor">Locais por valor (maior primeiro)</option></select>` : ''}
+        ${Roles.can(user, 'inventory.manage') ? `<span class="ms-auto d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-agents"><i class="bi bi-cpu"></i> Agentes</button>
+          <button class="btn btn-primary btn-sm" id="btn-new-asset"><i class="bi bi-plus-lg"></i> Novo equipamento</button>
+        </span>` : ''}
       </div>
     </div>
-    <div class="card panel-card">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Foto</th>
-              <th>Status</th>
-              <th>Entidade</th>
-              <th>Localização</th>
-              <th>Nome</th>
-              <th>Tipo</th>
-              <th>Marca</th>
-              <th>N° Série</th>
-              <th>CPU</th>
-              <th>Memória</th>
-              <th>HD</th>
-            </tr>
-          </thead>
-          <tbody id="inv-grid">${spinner()}</tbody>
-        </table>
-      </div>
-    </div>`;
+    <div class="iv-resumo small text-muted mb-2" id="inv-resumo"></div>
+    <div id="inv-grid">${spinner()}</div>`;
 
-  const loadEntities = async () => {
-    try {
-      const ents = await API.get('/entities');
-      const sel = document.getElementById('inv-entity');
-      sel.innerHTML = `<option value="">Todas entidades</option>` + ents.filter(e=>e.active).map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
-      if (user.role==='client') { sel.value = String(user.entity_id||''); sel.disabled = true; }
-    } catch {}
+  const selEnt = document.getElementById('inv-entity'); const selLoc = document.getElementById('inv-loc');
+  try {
+    const ents = await API.get('/entities');
+    selEnt.innerHTML = '<option value="">Todas as empresas</option>' + ents.filter((e) => e.active).map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+    if (user.role === 'client') { selEnt.value = String(user.entity_id || ''); selEnt.disabled = true; }
+  } catch { /* sem filtro */ }
+  const carregarLocais = async () => {
+    let locs = [];
+    try { locs = await API.get(`/locations?active=true${selEnt.value ? `&entity_id=${selEnt.value}` : ''}`); } catch { /* sem lista */ }
+    selLoc.innerHTML = '<option value="">Todos os locais</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
   };
-  await loadEntities();
+  // #/inventory?local=ID (link do selo de local): já abre filtrado naquele posto
+  const localPedido = (location.hash.match(/[?&]local=(\d+)/) || [])[1];
+  if (localPedido) {
+    try {
+      const todos = await API.get('/locations');
+      const L = todos.find((l) => String(l.id) === localPedido);
+      if (L && !selEnt.disabled) selEnt.value = String(L.entity_id || '');
+      if (L) prefs.abertos[`${L.entity_id}:${L.id}`] = true;
+    } catch { /* sem o filtro */ }
+  }
+  await carregarLocais();
+  if (localPedido && [...selLoc.options].some((o) => o.value === localPedido)) selLoc.value = localPedido;
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  const linha = (a) => {
+    const manutVencida = a.next_maintenance_date && String(a.next_maintenance_date).slice(0, 10) <= hoje && !['DISPOSED', 'LOST'].includes(a.status);
+    const detalhe = [[a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_number ? `S/N ${a.serial_number}` : '', a.responsible_name ? `com ${a.responsible_name}` : '']
+      .filter(Boolean).join(' · ');
+    // o local já é o grupo da lista: aqui vão estado, etiqueta e etapa do pedido
+    return `<a class="iv-item est-borda-${esc(a.status)}" href="#/inventory/${a.id}">
+      <span class="iv-tx">${Item.titulo(a, { link: false, local: false, semEtiqueta: true,
+        depois: `<small>${esc(detalhe || INV_TYPES[a.type] || '')}</small>` })}</span>
+      <span class="iv-marcas">
+        ${a.display_photo_id || a.photos_count ? '<i class="bi bi-camera" title="Tem foto"></i>' : ''}
+        ${a.anydesk_id ? '<i class="bi bi-pc-display-horizontal" title="Tem AnyDesk"></i>' : ''}
+        ${manutVencida ? '<i class="bi bi-tools text-danger" title="Manutenção vencida"></i>' : ''}
+        ${a.agent_status === 'ONLINE' ? '<i class="bi bi-wifi text-success" title="Agente online"></i>' : ''}
+      </span>
+      ${invVeSegredos() ? `<span class="iv-preco">${a.price !== null && a.price !== undefined ? (a.controle === 'quantidade' ? `${invMoeda(Number(a.price) * Number(a.quantity || 0))}<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : invMoeda(a.price)) : ''}</span>` : ''}
+    </a>`;
+  };
 
   const load = async () => {
     const p = new URLSearchParams();
     const q = document.getElementById('inv-q').value.trim();
     const t = document.getElementById('inv-type').value;
     const s = document.getElementById('inv-status').value;
-    const e = document.getElementById('inv-entity').value;
     if (q) p.set('q', q);
     if (t) p.set('type', t);
     if (s) p.set('status', s);
-    if (e) p.set('entity_id', e);
-    try {
-      const assets = await API.get('/inventory/assets?' + p);
-      const grid = document.getElementById('inv-grid');
-      if (!assets.length) {
-        grid.innerHTML = emptyState('Nenhum ativo', 'Cadastre o primeiro equipamento.', 'bi-hdd');
-        return;
-      }
-      grid.innerHTML = assets.map(a=>`
-        <tr class="asset-row" data-id="${a.id}" style="cursor:pointer">
-          <td style="width:40px" class="text-center">
-            ${a.display_photo_id || a.photos_count
-              ? `<i class="bi bi-camera text-muted" title="Possui fotos"></i>`
-              : ''}
-          </td>
-          <td><span class="badge text-bg-${INV_STATUS_TONE[a.status]||'secondary'}">${INV_STATUS[a.status]||a.status}</span>${a.next_maintenance_date && String(a.next_maintenance_date).slice(0,10) <= new Date().toISOString().slice(0,10) && a.status !== 'DISPOSED' && a.status !== 'LOST' ? ` <i class="bi bi-tools text-danger" title="Manutenção vencida"></i>` : ''}</td>
-          <td class="small">${esc(a.entity_name||'')}</td>
-          <td class="small">${esc(a.location||'—')}</td>
-          <td>
-            <div class="fw-semibold">${esc(a.name)}</div>
-            <div class="small text-muted">${esc(a.asset_tag||'')}</div>
-          </td>
-          <td><span class="badge text-bg-light border">${INV_TYPES[a.type]||a.type}</span></td>
-          <td class="small">${esc(a.manufacturer||'')} ${esc(a.model||'')}</td>
-          <td class="small text-muted">${esc(a.serial_number||'—')}</td>
-          <td class="small">${esc(a.cpu_info||'—')}</td>
-          <td class="small">${esc(a.memory_info||'—')}</td>
-          <td class="small">${esc(a.hd_info||'—')}</td>
-        </tr>`).join('');
-      grid.querySelectorAll('.asset-row').forEach(c=> c.addEventListener('click', ()=> location.hash=`#/inventory/${c.dataset.id}`));
-    } catch(e){ showError(e); }
+    if (selEnt.value) p.set('entity_id', selEnt.value);
+    if (selLoc.value) p.set('location_id', selLoc.value);
+    p.set('limit', '500');
+    const grid = document.getElementById('inv-grid');
+    let assets;
+    try { assets = await API.get('/inventory/assets?' + p); } catch (e) { showError(e); return; }
+    const porEstado = {};
+    assets.forEach((a) => { porEstado[a.status] = (porEstado[a.status] || 0) + 1; });
+    document.getElementById('inv-resumo').innerHTML = assets.length
+      ? `${assets.length} equipamento(s) · ${Object.entries(porEstado).map(([k, n]) => `${invEstado(k)} ${n}`).join(' ')}` : '';
+    if (!assets.length) { grid.innerHTML = emptyState('Nenhum equipamento', 'Cadastre o primeiro equipamento ou mude os filtros.', 'bi-hdd'); return; }
+    // local -> categoria -> itens
+    const locais = new Map();
+    assets.forEach((a) => {
+      // item que fica com uma pessoa (sem local): grupo "Com pessoas"
+      const comPessoa = !a.location_id && !!a.responsible_name;
+      const k = `${a.entity_id}:${a.location_id || (comPessoa ? 'pessoas' : '')}`;
+      if (!locais.has(k)) locais.set(k, { nome: a.location_name || (comPessoa ? 'Com pessoas' : 'Sem local definido'), pessoas: comPessoa, empresa: a.entity_name, tipos: new Map(), n: 0, valor: 0 });
+      const L = locais.get(k);
+      if (!L.tipos.has(a.type)) L.tipos.set(a.type, []);
+      L.tipos.get(a.type).push(a); L.n += a.controle === 'quantidade' ? Number(a.quantity || 0) : 1;
+      if (!['DISPOSED', 'LOST', 'BROKEN'].includes(a.status)) L.valor += Number(a.price || 0) * (a.controle === 'quantidade' ? Number(a.quantity || 0) : 1);
+    });
+    const ordem = [...locais.entries()].sort((x, y) => (prefs.ordem === 'valor' && invVeSegredos() ? y[1].valor - x[1].valor : 0)
+      || (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || !!x[1].pessoas - !!y[1].pessoas || x[1].nome.localeCompare(y[1].nome));
+    // empresa -> locais (subcategoria) -> categorias. A empresa principal (Grupo Beija-flor) vem primeiro.
+    const empresas = new Map();
+    ordem.forEach(([k, L]) => {
+      const eid = k.split(':')[0];
+      if (!empresas.has(eid)) empresas.set(eid, { id: eid, nome: L.empresa || 'Sem empresa', locais: [], n: 0, valor: 0 });
+      const E = empresas.get(eid); E.locais.push([k, L]); E.n += L.n; E.valor += L.valor;
+    });
+    const principal = (E) => (/beija/i.test(E.nome) ? 0 : 1);
+    const ordemEmp = [...empresas.values()].sort((x, y) => principal(x) - principal(y)
+      || (prefs.ordem === 'valor' && invVeSegredos() ? y.valor - x.valor : 0) || x.nome.localeCompare(y.nome));
+    const blocoLocal = ([k, L]) => {
+      const aberto = prefs.abertos[k] !== false;
+      return `<details class="card panel-card iv-local mb-2" data-k="${esc(k)}" ${aberto ? 'open' : ''}>
+        <summary class="iv-local-cab">
+          <i class="bi bi-chevron-right iv-seta"></i><i class="bi ${L.pessoas ? 'bi-people-fill' : 'bi-geo-alt-fill'} iv-pin"></i>
+          <b>${esc(L.nome)}</b>
+          <span class="iv-chips">${[...L.tipos.entries()].map(([tp, it]) => `<span class="iv-chip" title="${esc(INV_TYPES[tp] || tp)}"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${it.length}</span>`).join('')}</span>
+          <span class="iv-local-n">${L.n} item(ns)${invVeSegredos() && L.valor ? ` · ${invMoeda(L.valor)}` : ''}</span>
+        </summary>
+        ${[...L.tipos.entries()].sort((x, y) => (INV_TYPES[x[0]] || '').localeCompare(INV_TYPES[y[0]] || '')).map(([tp, itens]) => `
+          <div class="iv-tipo">
+            <div class="iv-tipo-cab"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${esc(INV_TYPES[tp] || tp)} <span>${itens.length}</span></div>
+            ${itens.sort((x, y) => String(x.name).localeCompare(String(y.name))).map(linha).join('')}
+          </div>`).join('')}
+      </details>`;
+    };
+    grid.innerHTML = ordemEmp.map((E) => {
+      const aberta = prefs.abertos[`emp:${E.id}`] !== false;
+      return `<details class="iv-emp ${principal(E) === 0 ? 'principal' : ''}" data-k="emp:${esc(E.id)}" ${aberta ? 'open' : ''}>
+        <summary class="iv-emp-cab">
+          <i class="bi bi-chevron-right iv-seta"></i><span class="iv-emp-ico"><i class="bi bi-building"></i></span>
+          <b>${esc(E.nome)}</b>
+          <span class="iv-emp-n">${E.locais.length} local(is) · ${E.n} item(ns)${invVeSegredos() && E.valor ? ` · <b>${invMoeda(E.valor)}</b>` : ''}</span>
+        </summary>
+        <div class="iv-emp-corpo">${E.locais.map(blocoLocal).join('')}</div>
+      </details>`;
+    }).join('');
+    grid.querySelectorAll('.iv-emp').forEach((d) => d.addEventListener('toggle', (ev) => { if (ev.target !== d) return; prefs.abertos[d.dataset.k] = d.open; salvar(); }));
+    grid.querySelectorAll('.iv-local').forEach((d) => d.addEventListener('toggle', () => { prefs.abertos[d.dataset.k] = d.open; salvar(); }));
   };
 
-  document.getElementById('btn-inv-filter').onclick = load;
-  document.getElementById('inv-q').addEventListener('keydown', e=>{ if(e.key==='Enter') load(); });
-  document.getElementById('btn-new-asset').onclick = ()=> openAssetModal(null, load);
-  document.getElementById('btn-agents').onclick = ()=> location.hash='#/inventory/agents';
+  let espera = null;
+  document.getElementById('inv-q').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(load, 300); });
+  ['inv-type', 'inv-status', 'inv-loc'].forEach((id) => document.getElementById(id).addEventListener('change', load));
+  const selOrdem = document.getElementById('inv-ordem');
+  if (selOrdem) { selOrdem.value = prefs.ordem === 'valor' ? 'valor' : 'nome'; selOrdem.addEventListener('change', () => { prefs.ordem = selOrdem.value; salvar(); load(); }); }
+  selEnt.addEventListener('change', async () => { await carregarLocais(); load(); });
+  const btNovo = document.getElementById('btn-new-asset'); if (btNovo) btNovo.onclick = () => openAssetModal(null, load);
+  const btAg = document.getElementById('btn-agents'); if (btAg) btAg.onclick = () => { location.hash = '#/inventory/agents'; };
   await load();
 };
 Views.inventory.openAssetModal = openAssetModal;
+
+// Histórico do equipamento em português: alterações, senhas vistas, baixas, devoluções e transferências
+const INV_CAMPOS = {
+  name: 'Nome', asset_tag: 'Etiqueta Orcim', type: 'Categoria', status: 'Estado', manufacturer: 'Fabricante', model: 'Modelo',
+  serial_number: 'Nº de série', description: 'Descrição', location: 'Local (anotação)', location_id: 'Local (posto)', department: 'Setor',
+  responsible_user_id: 'Responsável', dono: 'Fica com', purchase_date: 'Data de compra', warranty_expiration: 'Garantia', notes: 'Observações',
+  price: 'Preço', anydesk_id: 'AnyDesk', anydesk_password: 'Senha do AnyDesk', master_user: 'Usuário do acesso mestre',
+  master_password: 'Senha do acesso mestre', entity_id: 'Empresa', next_maintenance_date: 'Próxima manutenção',
+  next_maintenance_notes: 'Plano de manutenção', ip_address: 'IP', mac_address: 'MAC', memory_info: 'Memória', hd_info: 'HD',
+  cpu_info: 'CPU', os_info: 'Sistema', license_info: 'Licença', toner: 'Toner', cilindro: 'Cilindro', webcam: 'Webcam', eth_port: 'Porta Ethernet',
+};
+function invValor(campo, v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (campo === 'status') return INV_STATUS[v] || v;
+  if (campo === 'type') return INV_TYPES[v] || v;
+  if (campo === 'price' && v !== '•••') return invMoeda(v);
+  return v;
+}
+function invLogHtml(a) {
+  const eventos = [];
+  (a.history || []).forEach((h) => {
+    if (['StockWithdraw', 'StockReturn', 'StockTransfer', 'OrcimTransfer'].includes(h.action)) return; // vêm das movimentações, mais completas
+    let titulo; let detalhe = '';
+    if (h.action === 'AssetCreated') titulo = 'Cadastrado no inventário';
+    else if (h.action === 'SecretViewed') titulo = `Viu ${h.field === 'mestre' ? 'o acesso mestre' : h.field === 'anydesk' ? 'a senha do AnyDesk' : 'as senhas'}`;
+    else if (h.action === 'SecretChanged') titulo = `${INV_CAMPOS[h.field] || h.field} ${h.new_value || 'alterada'}`;
+    else if (h.action === 'AssetTransferred') titulo = 'Mudou de empresa';
+    else if (h.action === 'StockReplaced') { titulo = 'Foi substituído por outro item'; detalhe = esc(h.new_value || ''); }
+    else if (h.field === 'quantity') { titulo = 'Quantidade'; detalhe = h.old_value ? `${esc(h.old_value)} → ${esc(h.new_value)}` : esc(h.new_value || ''); }
+    else { titulo = `Alterou ${INV_CAMPOS[h.field] || h.field || 'dados'}`; detalhe = `${esc(invValor(h.field, h.old_value))} → ${esc(invValor(h.field, h.new_value))}`; }
+    eventos.push({ quando: h.created_at, icone: h.action.startsWith('Secret') ? 'bi-key' : h.action === 'StockReplaced' ? 'bi-arrow-repeat' : 'bi-pencil', titulo, detalhe, quem: h.user_name || 'Agente' });
+  });
+  (a.movements || []).forEach((m) => {
+    const daOrcim = m.kind === 'transfer' && !m.from_entity_id && m.to_entity_id;
+    const de = daOrcim ? 'Estoque da ORCIM' : (m.from_location_name || m.from_entity_name); const para = m.to_location_name || m.to_entity_name;
+    const tipo = { withdraw: ['bi-box-arrow-up', 'Baixa no estoque (pegou o item)'], return: ['bi-box-arrow-in-down', 'Devolvido ao estoque'],
+      transfer: daOrcim ? ['bi-boxes', 'Veio do Estoque da ORCIM'] : ['bi-arrow-left-right', 'Transferido de unidade'], entry: ['bi-box-seam', m.to_entity_id ? 'Entrou no estoque' : 'Entrou no Estoque da ORCIM'] }[m.kind] || ['bi-dot', m.kind];
+    const partes = [];
+    if (m.quantity > 1) partes.push(`<b>${m.quantity} un</b>`);
+    if (m.reason_name) partes.push(`<b>Motivo:</b> ${esc(m.reason_name)}`);
+    if (m.replaced_asset_id) partes.push(`<b>Substitui:</b> <a href="#/inventory/${m.replaced_asset_id}">${esc([m.replaced_tag, m.replaced_name].filter(Boolean).join(' · ') || 'item')}</a>`);
+    if (m.kind === 'transfer' || (m.kind === 'withdraw' && de !== para)) partes.push(`${esc(de || '—')} → ${esc(para || '—')}`);
+    else if (para) partes.push(`<b>Onde:</b> ${esc(para)}`);
+    if (m.note) partes.push(`<i>${esc(m.note)}</i>`);
+    if (m.price !== undefined && m.price !== null && invVeSegredos()) partes.push(invMoeda(m.price));
+    eventos.push({ quando: m.created_at, icone: tipo[0], titulo: tipo[1], detalhe: partes.join(' · '), quem: m.user_name || '—', mov: m.kind });
+  });
+  eventos.sort((x, y) => String(y.quando).localeCompare(String(x.quando)));
+  return eventos.map((e) => `<div class="list-group-item small inv-log ${e.mov ? `mov-${e.mov}` : ''}">
+    <div class="fw-semibold"><i class="bi ${e.icone} me-1"></i>${esc(e.titulo)}</div>
+    ${e.detalhe ? `<div>${e.detalhe}</div>` : ''}
+    <div class="text-muted">${fmt.dateTime(e.quando)} · ${esc(e.quem)}</div></div>`).join('');
+}
 
 Views.assetDetail = async function assetDetail(id, el) {
   const user = API.user || {};
   const a = await API.get('/inventory/assets/' + id).catch(e=>{ el.innerHTML=emptyState('Erro', e.message,'bi-exclamation'); return null; });
   if (!a) return;
+  if (window.migalhaDetalhe) window.migalhaDetalhe(`${a.name}${a.asset_tag ? ` (${a.asset_tag})` : ''}`.slice(0, 70));
   el.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h4 class="mb-0"><i class="bi bi-hdd me-2"></i>${esc(a.name)} <small class="text-muted">${esc(a.asset_tag||'')}</small></h4>
+      <h4 class="mb-0">${Item.titulo(a, { link: false, semEtiqueta: true }).replace('class="it-tit"', 'class="it-tit it-grande"')}</h4>
       <div class="d-flex gap-2">
+        ${a.entity_id !== null && !a.manut_status && Roles.can(user, 'ticket.create') && !['DISPOSED', 'LOST', 'ORDERED'].includes(a.status) ? `<a class="btn btn-sm btn-warning" href="#/new?entity_id=${a.entity_id}&asset_id=${a.id}&manutencao=1" title="Abre um chamado para a TI buscar e consertar este item"><i class="bi bi-tools"></i> Pedir manutenção</a>` : ''}
+        ${a.manut_status ? `<a class="btn btn-sm btn-outline-warning" href="#/manutencao"><i class="bi bi-tools"></i> Ver a manutenção</a>` : ''}
+        ${a.entity_id === null ? '<a class="btn btn-sm btn-outline-primary" href="#/orcim"><i class="bi bi-boxes"></i> Abrir no Estoque da ORCIM</a>' : !Roles.can(user, 'inventory.manage') ? '' : `
+        ${Roles.can(user, 'inventory.manage') && a.status !== 'STOCK' ? '<button class="btn btn-sm btn-outline-success" id="btn-devolver"><i class="bi bi-box-arrow-in-down"></i> Devolver ao estoque</button>' : ''}
+        ${Roles.can(user, 'inventory.manage') ? '<button class="btn btn-sm btn-outline-secondary" id="btn-transferir"><i class="bi bi-arrow-left-right"></i> Transferir</button>' : ''}
         <button class="btn btn-sm btn-outline-secondary" id="btn-edit-asset"><i class="bi bi-pencil"></i> Editar</button>
         <button class="btn btn-sm btn-outline-primary" id="btn-provision"><i class="bi bi-cpu"></i> Gerar token Agent</button>
-        <button class="btn btn-sm btn-outline-danger" id="btn-del-asset"><i class="bi bi-trash"></i></button>
+        <button class="btn btn-sm btn-outline-danger" id="btn-del-asset"><i class="bi bi-trash"></i></button>`}
       </div>
     </div>
     <div class="row g-3">
       <div class="col-lg-8">
         <div class="card panel-card mb-3"><div class="card-header">Identificação</div><div class="card-body small">
-          <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>ID ORCIM:</b> ${esc(a.asset_tag||'—')}</div></div>
-          <div class="row"><div class="col-6"><b>Tipo:</b> ${INV_TYPES[a.type]||a.type}</div><div class="col-6"><b>Status:</b> <span class="badge text-bg-${INV_STATUS_TONE[a.status]}">${INV_STATUS[a.status]}</span></div></div>
+          <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>Etiqueta da ORCIM:</b> ${a.asset_tag ? Item.tags(a, { estado: false, local: false, etapa: false }) : '—'}</div></div>
+          <div class="row"><div class="col-6"><b>Categoria:</b> ${INV_TYPES[a.type]||a.type}</div><div class="col-6"><b>Estado:</b> ${invEstado(a.status)}</div></div>
+          <div class="row"><div class="col-6"><b>Onde fica:</b> ${Item.tags(a, { estado: false, etiqueta: false, etapa: false, manut: false }) || '—'}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
+          ${a.controle === 'quantidade' ? `<div class="row"><div class="col-6"><b>Quantidade:</b> ${a.quantity} un <small class="text-muted">(sem etiqueta, contado por quantidade)</small></div></div>` : ''}
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
           <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
-          <div class="row"><div class="col-6"><b>Local:</b> ${esc(a.location||'—')}</div><div class="col-6"><b>Setor:</b> ${esc(a.department||'—')}</div></div>
-          <div class="row"><div class="col-6"><b>Usuário / Posse:</b> ${esc(a.responsible_name||a.responsible_user_id||'—')}</div><div class="col-6"><b>Data de compra:</b> ${a.purchase_date ? String(a.purchase_date).slice(0,10) : '—'}</div></div>
+          <div class="row">${a.location ? `<div class="col-6"><b>Local (anotação antiga):</b> ${esc(a.location)}</div>` : ''}<div class="col-6"><b>Setor:</b> ${esc(a.department||'—')}</div></div>
+          <div class="row"><div class="col-6"><b>${a.location_id ? 'Com quem está:' : 'Fica com:'}</b> ${a.responsible_name ? `<i class="bi bi-person-fill text-muted"></i> ${esc(a.responsible_name)}${a.dono_nome && !a.responsible_user_id ? ' <small class="text-muted">(sem cadastro)</small>' : ''}` : '—'}</div><div class="col-6"><b>Data de compra:</b> ${a.purchase_date ? String(a.purchase_date).slice(0,10) : '—'}</div></div>
           <div class="row"><div class="col-6"><b>Garantia até:</b> ${a.warranty_expiration ? String(a.warranty_expiration).slice(0,10) : '—'}</div><div class="col-6"><b>IP:</b> ${esc(a.ip_address||'—')}</div></div>
           <div class="row"><div class="col-6"><b>MAC:</b> ${esc(a.mac_address||'—')}</div><div class="col-6"><b>Memória:</b> ${esc(a.memory_info||'—')}</div></div>
           <div class="row"><div class="col-6"><b>HD:</b> ${esc(a.hd_info||'—')}</div><div class="col-6"><b>CPU:</b> ${esc(a.cpu_info||'—')}</div></div>
@@ -296,6 +516,14 @@ Views.assetDetail = async function assetDetail(id, el) {
           <div class="mt-2"><b>Observações:</b> ${esc(a.notes||'—')}</div>
           <div class="mt-2"><b>Agente:</b> ${a.agent ? `<span class="badge text-bg-${a.agent.status==='ONLINE'?'success':'secondary'}">${a.agent.status}</span> ${a.agent.version||''} último: ${a.agent.last_seen_at ? fmt.timeAgo(a.agent.last_seen_at):'nunca'}` : 'sem agente'}</div>
         </div></div>
+
+        ${INV_COM_ACESSO.includes(a.type) || a.anydesk_id || a.tem_acesso_mestre ? `<div class="card panel-card mb-3"><div class="card-header"><i class="bi bi-pc-display me-1"></i> Acesso remoto</div><div class="card-body small inv-acessos">
+          <div class="inv-ac"><span>AnyDesk</span><b>${esc(a.anydesk_id || '—')}</b>${a.anydesk_id ? `<button class="btn btn-sm btn-link p-0 inv-copiar" data-copiar="${esc(a.anydesk_id)}" title="Copiar"><i class="bi bi-clipboard"></i></button>` : ''}</div>
+          ${invVeSegredos() ? `
+          <div class="inv-ac"><span>Senha do AnyDesk</span><b id="sec-anydesk">${a.tem_senha_anydesk ? '••••••••' : '—'}</b>${a.tem_senha_anydesk ? '<button class="btn btn-sm btn-outline-secondary inv-mostrar" data-quais="anydesk"><i class="bi bi-eye"></i> Mostrar</button>' : ''}</div>
+          <div class="inv-ac"><span>Acesso mestre Orcim</span><b id="sec-mestre">${a.tem_acesso_mestre ? '•••••••• / ••••••••' : '—'}</b>${a.tem_acesso_mestre ? '<button class="btn btn-sm btn-outline-secondary inv-mostrar" data-quais="mestre"><i class="bi bi-eye"></i> Mostrar</button>' : ''}</div>
+          <div class="text-muted mt-1"><i class="bi bi-shield-lock"></i> Ver uma senha fica registrado no histórico.</div>` : ''}
+        </div></div>` : ''}
 
         <div class="card panel-card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-images me-1"></i> Fotos</span><button class="btn btn-sm btn-primary" id="btn-add-photo"><i class="bi bi-camera"></i> Adicionar</button></div>
           <div class="card-body">
@@ -411,26 +639,46 @@ Views.assetDetail = async function assetDetail(id, el) {
         </div></div>
       </div>
       <div class="col-lg-4">
-        <div class="card panel-card mb-3"><div class="card-header">Ordens de Serviço</div><div class="list-group list-group-flush" id="asset-tickets">${(a.tickets||[]).map(t=>`<a href="#/tickets/${t.id}" class="list-group-item list-group-item-action small"><b>${esc(t.number)}</b> ${esc(t.title)}<br><span class="badge text-bg-secondary">${t.status}</span></a>`).join('') || '<div class="p-3 text-muted small">Nenhuma OS vinculada</div>'}</div>
+        <div class="card panel-card mb-3"><div class="card-header">Chamados deste equipamento</div><div class="list-group list-group-flush" id="asset-tickets">${(a.tickets||[]).map(t=>`<a href="#/tickets/${t.id}" class="list-group-item list-group-item-action small"><b>${esc(t.number)}</b> ${esc(t.title)}<br><span class="badge text-bg-secondary">${t.status}</span></a>`).join('') || '<div class="p-3 text-muted small">Nenhuma OS vinculada</div>'}</div>
           <div class="card-body"><button class="btn btn-sm btn-outline-primary w-100" id="btn-new-os-asset"><i class="bi bi-plus"></i> Nova OS para este ativo</button></div>
         </div>
-        <div class="card panel-card"><div class="card-header">Histórico</div><div class="list-group list-group-flush" style="max-height:400px;overflow:auto">${(a.history||[]).map(h=>`<div class="list-group-item small"><div class="fw-bold">${esc(h.action)} ${h.field?`· ${esc(h.field)}`:''}</div><div>${esc(h.old_value||'')}${h.new_value?` → ${esc(h.new_value)}`:''}</div><div class="text-muted">${fmt.dateTime(h.created_at)} · ${esc(h.user_name||'Agent')}</div></div>`).join('') || '<div class="p-3 text-muted small">Sem histórico</div>'}</div></div>
+        <div class="card panel-card"><div class="card-header"><i class="bi bi-clock-history me-1"></i> Histórico (log)</div><div class="list-group list-group-flush" style="max-height:520px;overflow:auto">${invLogHtml(a) || '<div class="p-3 text-muted small">Sem histórico</div>'}</div></div>
       </div>
     </div>
     <div id="provision-area" class="mt-2"></div>`;
 
-  document.getElementById('btn-edit-asset').onclick = ()=> Views.inventory.openAssetModal(a.id, ()=> location.reload());
-  document.getElementById('btn-del-asset').onclick = async ()=>{
+  // item do Estoque da ORCIM: editar, transferir e excluir ficam na tela da ORCIM
+  const noBotao = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+  noBotao('btn-edit-asset', ()=> Views.inventory.openAssetModal(a.id, ()=> Views.assetDetail(a.id, el)));
+  // senhas: busca na hora (fica no histórico) e some depois de 30 s
+  el.querySelectorAll('.inv-mostrar').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      const s = await API.get(`/inventory/assets/${a.id}/secrets?quais=${b.dataset.quais}`);
+      const alvo = el.querySelector(b.dataset.quais === 'anydesk' ? '#sec-anydesk' : '#sec-mestre');
+      const txt = b.dataset.quais === 'anydesk' ? (s.anydesk_password || '(vazia)') : `${s.master_user || '(sem usuário)'} / ${s.master_password || '(sem senha)'}`;
+      alvo.innerHTML = `<code>${esc(txt)}</code> <button class="btn btn-sm btn-link p-0 inv-copiar" title="Copiar senha"><i class="bi bi-clipboard"></i></button>`;
+      alvo.querySelector('.inv-copiar').onclick = () => { navigator.clipboard.writeText(b.dataset.quais === 'anydesk' ? (s.anydesk_password || '') : (s.master_password || '')); toast('Copiado', 'success'); };
+      b.disabled = true;
+      setTimeout(() => { alvo.textContent = b.dataset.quais === 'anydesk' ? '••••••••' : '•••••••• / ••••••••'; b.disabled = false; }, 30000);
+    } catch (e) { showError(e); }
+  }));
+  el.querySelectorAll('.inv-copiar[data-copiar]').forEach((b) => b.addEventListener('click', () => { navigator.clipboard.writeText(b.dataset.copiar); toast('Copiado', 'success'); }));
+  const btnDev = document.getElementById('btn-devolver');
+  if (btnDev) btnDev.onclick = () => Estoque.devolver(a, () => Views.assetDetail(a.id, el));
+  const btnTr = document.getElementById('btn-transferir');
+  if (btnTr) btnTr.onclick = () => Estoque.transferir(a, () => Views.assetDetail(a.id, el));
+  noBotao('btn-del-asset', async ()=>{
     if (!await confirmDialog({title:'Excluir ativo', body:'Excluir permanentemente este ativo? Fotos e histórico serão removidos.', confirmText:'Excluir', danger:true})) return;
     try{ await API.del('/inventory/assets/' + a.id); toast('Ativo excluído','warning'); location.hash='#/inventory'; }catch(e){ showError(e); }
-  };
-  document.getElementById('btn-provision').onclick = async ()=>{
+  });
+  noBotao('btn-provision', async ()=>{
     try{
       const r = await API.post('/inventory/agents/provision', { entity_id: a.entity_id });
-      document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h · Entidade: ${esc(a.entity_name)}</small></div>`;
+      document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h<span class=""> · Entidade: ${esc(a.entity_name)}</span></small></div>`;
     }catch(e){ showError(e); }
-  };
-  document.getElementById('btn-new-os-asset').onclick = ()=> { location.hash = `#/new?entity_id=${a.entity_id}&asset_id=${a.id}`; };
+  });
+  if (a.entity_id === null) document.getElementById('btn-new-os-asset')?.remove();
+  else noBotao('btn-new-os-asset', ()=> { location.hash = `#/new?entity_id=${a.entity_id}&asset_id=${a.id}`; });
 
   // manutencoes
   const maintForm = document.getElementById('maint-form');
@@ -537,17 +785,22 @@ Views.assetDetail = async function assetDetail(id, el) {
   el.querySelectorAll('.btn-photo-primary').forEach(b=> b.addEventListener('click', async()=>{ try{ await API.post(`/inventory/assets/${a.id}/photos/${b.dataset.id}/primary`); toast('Foto principal definida','success'); Views.assetDetail(a.id, el); }catch(e){ showError(e); }}));
   el.querySelectorAll('.btn-photo-del').forEach(b=> b.addEventListener('click', async()=>{ if(!await confirmDialog({title:'Excluir foto', confirmText:'Excluir', danger:true})) return; try{ await API.del(`/inventory/assets/${a.id}/photos/${b.dataset.id}`); toast('Foto excluída','warning'); Views.assetDetail(a.id, el); }catch(e){ showError(e); }}));
   el.querySelectorAll('.photo-item').forEach(img=> img.addEventListener('click', ()=> window.open(img.src, '_blank')));
+  // quem só vê o inventário (ex.: perfil Usuário): sem os botões de cadastrar foto e manutenção
+  if (!Roles.can(user, 'inventory.manage')) {
+    ['btn-add-photo', 'btn-add-maint', 'btn-edit-plan'].forEach((id) => document.getElementById(id)?.remove());
+    el.querySelectorAll('.btn-photo-primary, .btn-photo-del, .btn-edit-maint').forEach((b) => b.remove());
+  }
 };
 
 Views.agents = async function agents(el){
-  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th>Entidade</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
+  el.innerHTML = `<h4 class="mb-3"><i class="bi bi-cpu me-2"></i> Agentes Orcim</h4><div class="card panel-card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>Agent ID</th><th>Ativo</th><th class="">Empresa</th><th>Versão</th><th>Status</th><th>Último contato</th></tr></thead><tbody id="agents-body">${spinner()}</tbody></table></div></div>`;
   try{
     const agents = await API.get('/inventory/agents');
     document.getElementById('agents-body').innerHTML = agents.length ? agents.map(a=>`
       <tr>
         <td><code class="small">${esc(a.agent_id.slice(0,16))}…</code></td>
         <td>${a.asset_name ? `<a href="#/inventory/${a.asset_id}">${esc(a.asset_name)}</a>` : '—'}</td>
-        <td>${esc(a.entity_name||'')}</td>
+        <td class="">${esc(a.entity_name||'')}</td>
         <td>${esc(a.version||'—')}</td>
         <td><span class="badge text-bg-${a.status==='ONLINE'?'success':a.status==='OFFLINE'?'warning':'secondary'}">${a.status}</span></td>
         <td class="small text-muted">${a.last_seen_at ? fmt.timeAgo(a.last_seen_at) : 'nunca'}</td>

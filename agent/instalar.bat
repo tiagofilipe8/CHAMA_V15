@@ -35,12 +35,12 @@ echo [OK] Node: %NODE%
 set "DEST=%ProgramFiles%\Orcim\Agent"
 set "DATA=%ProgramData%\Orcim"
 set "SVC=OrcimInventoryAgent"
-set "SRV=http://localhost:3000"
+set "SRV=http://localhost:7070"
 set "TOK="
 
 set /p SRV=URL da Central [%SRV%]:
 set /p TOK=Token provisionamento (1-XXXXXX-XXXXXX):
-if "%SRV%"=="" set "SRV=http://localhost:3000"
+if "%SRV%"=="" set "SRV=http://localhost:7070"
 
 echo.
 echo [1/5] Copiando arquivos...

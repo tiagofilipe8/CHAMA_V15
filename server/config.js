@@ -6,7 +6,7 @@ const dotenv = require('dotenv');
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const config = {
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: parseInt(process.env.PORT || '7070', 10),
   env: process.env.NODE_ENV || 'production',
   db: {
     host: process.env.DB_HOST || 'localhost',
@@ -19,7 +19,7 @@ const config = {
     secret: process.env.JWT_SECRET || 'dev_secret_change_me',
     expiresIn: process.env.JWT_EXPIRES_IN || '8h',
   },
-  publicUrl: (process.env.PUBLIC_URL || 'http://localhost:3000').replace(/\/$/, ''),
+  publicUrl: (process.env.PUBLIC_URL || 'http://localhost:7070').replace(/\/$/, ''),
   mail: {
     host: process.env.SMTP_HOST || '',
     port: parseInt(process.env.SMTP_PORT || '587', 10),

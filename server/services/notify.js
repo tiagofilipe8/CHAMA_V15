@@ -1,11 +1,13 @@
 const { query } = require('../db');
 const settingsStore = require('./settingsStore');
 const mailer = require('./mailer');
+const config = require('../config');
 const whatsapp = require('./whatsapp');
 const realtime = require('./realtime');
+const { isPreview } = require('../db');
 
 const STATUS_LABELS = {
-  1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Pendente',
+  1: 'Novo', 2: 'Atribuído', 3: 'Em andamento', 4: 'Em pausa',
   5: 'Resolvido', 6: 'Fechado', 7: 'Cancelado',
 };
 const PRIORITY_LABELS = { 1: 'Baixa', 2: 'Média', 3: 'Alta', 4: 'Urgente' };
@@ -32,7 +34,7 @@ const DEFAULT_TEMPLATES = {
   'status.changed.1': { title: 'Chamado {{number}} — Novo', subject: '[Novo] {{number}} - {{title}}', message: 'O chamado {{number}} foi reaberto como *Novo*. Título: "{{title}}"\nAguardando atribuição.' },
   'status.changed.2': { title: 'Chamado {{number}} — Atribuído', subject: '[Atribuído] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi atribuído ao técnico {{assigned_name}}.\nEm breve o atendimento será iniciado.' },
   'status.changed.3': { title: 'Chamado {{number}} — Em andamento', subject: '[Em andamento] {{number}} - {{title}}', message: 'Boa notícia! O chamado {{number}} - "{{title}}" está *em andamento*.\nTécnico responsável: {{assigned_name}}\nAcompanhe as atualizações por aqui.' },
-  'status.changed.4': { title: 'Chamado {{number}} — Pendente', subject: '[Pendente] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" está *pendente*.\nMotivo: aguardando informações ou ação externa. Retornaremos em breve.' },
+  'status.changed.4': { title: 'Chamado {{number}} — Em pausa', subject: '[Em pausa] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" está *em pausa*.\nAguardando peça, fornecedor, uma resposta sua ou a visita agendada. Ele volta para a fila na data combinada.' },
   'status.changed.5': { title: 'Chamado {{number}} — Resolvido', subject: '[Resolvido] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi *resolvido*.\n{{approval_comment}}\nAcesse o sistema para avaliar a solução.' },
   'status.changed.6': { title: 'Chamado {{number}} — Fechado', subject: '[Fechado] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi *fechado*. Obrigado pelo contato!' },
   'status.changed.7': { title: 'Chamado {{number}} — Cancelado', subject: '[Cancelado] {{number}} - {{title}}', message: 'O chamado {{number}} - "{{title}}" foi *cancelado*.' },
@@ -99,7 +101,7 @@ function buildVars(s, extra = {}) {
 async function summary(ticket) {
   return {
     id: ticket.id,
-    number: ticket.number,
+    number: `#${ticket.id}`,
     title: ticket.title,
     status: ticket.status,
     status_label: STATUS_LABELS[ticket.status],
@@ -116,10 +118,10 @@ async function summary(ticket) {
   };
 }
 
-async function createInApp(userId, title, message, ticketId = null) {
+async function createInApp(userId, title, message, ticketId = null, link = null) {
   const { rows } = await query(
-    `INSERT INTO inapp_notifications (user_id, ticket_id, title, message)
-     VALUES ($1, $2, $3, $4) RETURNING *`, [userId, ticketId, title, message]);
+    `INSERT INTO inapp_notifications (user_id, ticket_id, title, message, link)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`, [userId, ticketId, title, message, link]);
   realtime.emitToUsers([userId], 'notification:new', rows[0]);
   return rows[0];
 }
@@ -135,22 +137,27 @@ async function logNotification({ ticketId, channel, event, recipient, subject, s
 // tecnico atribuido e administradores)
 async function getParticipants(ticketId, entityId, excludeUserId = null) {
   const { rows } = await query(
-    `SELECT DISTINCT u.id, u.name, u.email, u.phone, u.role
+    `SELECT DISTINCT u.id, u.name, u.email, u.phone, u.role, u.client_level
      FROM users u
      WHERE u.active = TRUE AND (
        u.id IN (SELECT requester_id FROM tickets WHERE id = $1)
        OR u.id IN (SELECT assigned_user_id FROM tickets WHERE id = $1)
+       OR u.id IN (SELECT assigned_moderator_id FROM tickets WHERE id = $1)
        OR (u.entity_id = $2 AND u.role = 'client' AND u.client_level >= 2)
+       OR (u.role = 'client' AND u.client_level >= 2
+           AND u.id IN (SELECT user_id FROM user_entities WHERE entity_id = $2))
+       OR (u.entity_id = $2 AND u.role = 'admin_local')
        OR u.role = 'admin'
      )`,
     [ticketId, entityId]);
-  return rows.filter((r) => r.id !== excludeUserId);
+  const fora = String(excludeUserId ?? '');
+  return rows.filter((r) => !fora || String(r.id) !== fora);
 }
 
 async function getAdminsAndTechs() {
   const { rows } = await query(
     `SELECT id, name, email, phone FROM users
-     WHERE active = TRUE AND role IN ('admin','technician')`);
+     WHERE active = TRUE AND role IN ('admin','moderator','technician')`);
   return rows;
 }
 
@@ -168,8 +175,8 @@ async function deliver({ ticket, event, recipients, title, subject, message, tic
   for (const r of recipients) {
     const shouldNotify =
       (r.role === 'admin') ||
-      (r.role === 'technician' && techNewOn) ||
-      (r.role === 'client' && clientNotify);
+      ((r.role === 'technician' || r.role === 'moderator') && techNewOn) ||
+      ((r.role === 'client' || r.role === 'admin_local') && clientNotify);
 
     if (!shouldNotify) continue;
 
@@ -179,7 +186,7 @@ async function deliver({ ticket, event, recipients, title, subject, message, tic
 
     await createInApp(r.id, ttl, msgText, ticket.id).catch(() => {});
 
-    if (emailOn && r.email) {
+    if (emailOn && !isPreview() && r.email) {
       const html = `<div style="font-family:Arial,sans-serif;line-height:1.6">
         <h3>${ttl}</h3>
         <p>${msgText.replace(/\n/g, '<br>')}</p>
@@ -194,7 +201,7 @@ async function deliver({ ticket, event, recipients, title, subject, message, tic
       }
     }
 
-    if (waOn && r.phone) {
+    if (waOn && !isPreview() && r.phone) {
       try {
         await whatsapp.sendTextMessage(r.phone, `${ttl}\n${msgText}`);
         await logNotification({ ticketId: ticket.id, channel: 'whatsapp', event, recipient: r.phone, status: 'sent' });
@@ -202,6 +209,46 @@ async function deliver({ ticket, event, recipients, title, subject, message, tic
         await logNotification({ ticketId: ticket.id, channel: 'whatsapp', event, recipient: r.phone, status: 'error', error: err.message });
       }
     }
+  }
+}
+
+// Chamados abertos pelo WhatsApp recebem a solucao de volta no mesmo numero.
+// Best effort: se o WhatsApp estiver offline, registra o erro e nao derruba a
+// mudanca de status. Nao depende do aviso generico de "status alterado".
+async function solutionToWhatsApp(ticket, solution) {
+  if (!ticket || !ticket.via_whatsapp || !solution || isPreview()) return;
+  let phone = null;
+  try {
+    const found = await query(
+      `SELECT wc.phone
+         FROM whatsapp_contacts wc
+        WHERE wc.user_id = $1
+          AND wc.phone ~ '^[0-9]+$'
+        ORDER BY wc.last_seen_at DESC NULLS LAST
+        LIMIT 1`, [ticket.requester_id]);
+    phone = found.rows.length ? found.rows[0].phone : null;
+  } catch (e) {
+    console.log('[notify] solucao whatsapp: falha ao buscar contato:', e.message);
+  }
+  if (!phone) return;
+
+  const texto = `Seu chamado ${ticket.number} foi resolvido!\n\n` +
+    `Assunto: ${ticket.title}\n\n` +
+    `Solução:\n${String(solution).slice(0, 3000)}\n\n` +
+    (config.publicUrl ? `Acesse o sistema para avaliar: ${config.publicUrl}` : 'Obrigado pelo contato!');
+
+  try {
+    await whatsapp.sendTextMessage(phone, texto);
+    await logNotification({
+      ticketId: ticket.id, channel: 'whatsapp', event: 'resolution.whatsapp',
+      recipient: phone, status: 'sent',
+    });
+  } catch (err) {
+    await logNotification({
+      ticketId: ticket.id, channel: 'whatsapp', event: 'resolution.whatsapp',
+      recipient: phone, status: 'error', error: err.message,
+    }).catch(() => {});
+    console.log('[notify] solucao whatsapp nao enviada:', err.message);
   }
 }
 
@@ -224,7 +271,7 @@ async function resolveTemplate(eventKey, vars, statusOverride) {
 async function ticketCreated(ticket, socketTicket) {
   const s = socketTicket || await summary(ticket);
   const templates = await loadTemplates();
-  const support = await getAdminsAndTechs();
+  const support = (await getAdminsAndTechs()).filter((u) => String(u.id) !== String(ticket.requester_id));
   const vars = buildVars(s);
   const t = templates['ticket.created'] || DEFAULT_TEMPLATES['ticket.created'];
   await deliver({
@@ -246,7 +293,7 @@ async function ticketCreated(ticket, socketTicket) {
       ticketMsg: s,
     });
   }
-  realtime.emitBroadcastRoles(['admin', 'technician'], 'ticket:new', s);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:new', s);
   realtime.emitToUsers([ticket.requester_id], 'ticket:new', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:new', s);
 }
@@ -257,19 +304,19 @@ async function statusChanged(ticket, actor, newStatus) {
   const vars = buildVars({ ...s, status: newStatus, status_label: STATUS_LABELS[newStatus] });
   const { title, subject, message } = await resolveTemplate('status.changed', vars, newStatus);
   await deliver({ ticket, event: 'status.changed', recipients, title: () => title, subject: () => subject, message: () => message, ticketMsg: s });
-  realtime.emitBroadcastRoles(['admin', 'technician'], 'ticket:update', s);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);
   realtime.emitToUsers([ticket.requester_id], 'ticket:update', s);
   if (ticket.assigned_user_id) realtime.emitToUsers([ticket.assigned_user_id], 'ticket:update', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
 
-async function ticketAssigned(ticket) {
+async function ticketAssigned(ticket, actor = null) {
   const s = await summary(ticket);
-  const recipients = await getParticipants(ticket.id, ticket.entity_id);
+  const recipients = await getParticipants(ticket.id, ticket.entity_id, actor && actor.id);
   const vars = buildVars(s);
   const t = (await loadTemplates())['ticket.assigned'] || DEFAULT_TEMPLATES['ticket.assigned'];
   await deliver({ ticket, event: 'ticket.assigned', recipients, title: () => renderTemplate(t.title, vars), subject: () => renderTemplate(t.subject, vars), message: () => renderTemplate(t.message, vars), ticketMsg: s });
-  realtime.emitBroadcastRoles(['admin', 'technician'], 'ticket:update', s);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);
   realtime.emitToUsers([ticket.requester_id], 'ticket:update', s);
   if (ticket.assigned_user_id) realtime.emitToUsers([ticket.assigned_user_id], 'ticket:update', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
@@ -283,19 +330,19 @@ async function commentAdded(ticket, message) {
   const vars = buildVars(s, { body, body_short: body.slice(0,200) + (body.length>200?'...':''), author_name: author.name });
   const t = (await loadTemplates())['comment.added'] || DEFAULT_TEMPLATES['comment.added'];
   await deliver({ ticket, event: 'comment.added', recipients, title: () => renderTemplate(t.title, vars), subject: () => renderTemplate(t.subject, vars), message: () => renderTemplate(t.message, vars), ticketMsg: s });
-  realtime.emitBroadcastRoles(['admin', 'technician'], 'ticket:update', s);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);
   realtime.emitToUsers([ticket.requester_id], 'ticket:update', s);
   if (ticket.assigned_user_id) realtime.emitToUsers([ticket.assigned_user_id], 'ticket:update', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
 
-async function approvalRequested(ticket) {
+async function approvalRequested(ticket, actor = null) {
   const s = await summary(ticket);
-  const recipients = await getParticipants(ticket.id, ticket.entity_id);
+  const recipients = await getParticipants(ticket.id, ticket.entity_id, actor && actor.id);
   const vars = buildVars(s);
   const t = (await loadTemplates())['approval.requested'] || DEFAULT_TEMPLATES['approval.requested'];
   await deliver({ ticket, event: 'approval.requested', recipients: recipients.filter((r) => r.role === 'client' || r.role === 'admin'), title: () => renderTemplate(t.title, vars), subject: () => renderTemplate(t.subject, vars), message: () => renderTemplate(t.message, vars), ticketMsg: s });
-  realtime.emitBroadcastRoles(['admin', 'technician'], 'ticket:update', s);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);
   realtime.emitToUsers([ticket.requester_id], 'ticket:update', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
@@ -307,13 +354,46 @@ async function approvalResponded(ticket, decision, responderName) {
   const vars = buildVars(s, { responder_name: responderName, decision });
   const t = (await loadTemplates())[key] || DEFAULT_TEMPLATES[key];
   await deliver({ ticket, event: 'approval.responded', recipients, title: () => renderTemplate(t.title, vars), subject: () => renderTemplate(t.subject, vars), message: () => renderTemplate(t.message, vars), ticketMsg: s });
-  realtime.emitBroadcastRoles(['admin', 'technician'], 'ticket:update', s);
+  realtime.emitBroadcastRoles(['admin', 'moderator', 'technician'], 'ticket:update', s);
   realtime.emitToUsers([ticket.requester_id], 'ticket:update', s);
   if (ticket.assigned_user_id) realtime.emitToUsers([ticket.assigned_user_id], 'ticket:update', s);
   if (ticket.entity_id) realtime.emitToEntities([ticket.entity_id], 'ticket:update', s);
 }
 
+
+// Previsao de atendimento definida/alterada
+async function estimateChanged(ticket, actor) {
+  const s = await summary(ticket);
+  const recipients = await getParticipants(ticket.id, ticket.entity_id, actor.id);
+  const when = ticket.estimated_at
+    ? new Date(ticket.estimated_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : 'sem previsão';
+  await deliver({
+    ticket, event: 'estimate.changed', recipients,
+    title: () => `Previsão de atendimento em ${s.number}`,
+    subject: () => `[Previsão] ${s.number}`,
+    message: () => `${actor.name} definiu a previsão de atendimento: ${when}.`,
+    ticketMsg: s,
+  });
+}
+
+// Observador adicionado ao chamado
+async function watcherAdded(ticket, watcher, actor) {
+  const s = await summary(ticket);
+  const { rows } = await query('SELECT id, name, email, phone, role FROM users WHERE id = $1', [watcher.id]);
+  if (!rows.length) return;
+  await deliver({
+    ticket, event: 'watcher.added', recipients: rows,
+    title: () => `Você está acompanhando ${s.number}`,
+    subject: () => `[Observador] ${s.number}`,
+    message: () => `${actor.name} adicionou você como observador(a) do chamado "${s.title}".`,
+    ticketMsg: s,
+  });
+}
+
 module.exports = {
+  estimateChanged,
+  watcherAdded,
   STATUS_LABELS,
   PRIORITY_LABELS,
   APPROVAL_LABELS,
@@ -325,6 +405,7 @@ module.exports = {
   getParticipants,
   getAdminsAndTechs,
   createInApp,
+  solutionToWhatsApp,
   ticketCreated,
   statusChanged,
   ticketAssigned,
@@ -332,4 +413,4 @@ module.exports = {
   approvalRequested,
   approvalResponded,
   deliver,
-};
+};

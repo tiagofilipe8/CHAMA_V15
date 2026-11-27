@@ -9,7 +9,7 @@ echo   SEM Node.js
 echo ============================================
 echo.
 echo  1^) Gere o token na UI:
-echo     http://localhost:3000  ^>  Inventario ^> Agentes
+echo     http://localhost:7070  ^>  Inventario ^> Agentes
 echo     botao Provisionar  ^>  copie o token (1-XXXXXX-XXXXXX)
 echo.
 echo  2^) Cole o token abaixo quando pedir.
@@ -26,11 +26,11 @@ if errorlevel 1 (
   set "ADMIN=1"
 )
 
-set "SRV=http://localhost:3000"
+set "SRV=http://localhost:7070"
 set "TOK="
 set /p SRV=URL da Central [%SRV%]:
 set /p TOK=Token provisionamento ^(1-XXXXXX-XXXXXX^):
-if "%SRV%"=="" set "SRV=http://localhost:3000"
+if "%SRV%"=="" set "SRV=http://localhost:7070"
 
 echo.
 if "%ADMIN%"=="1" (

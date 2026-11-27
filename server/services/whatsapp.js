@@ -89,6 +89,14 @@ async function start() {
 
     client.on('message', (msg) => {
       console.log(`[whatsapp] msg de ${msg.from}: ${(msg.body || '').slice(0, 80)}`);
+      // Recepcao de chamados: processa fora do handler para nao travar o
+      // cliente. require() em tempo de execucao evita o ciclo com o inbound.
+      try {
+        const inbound = require('../whatsapp-inbound');
+        inbound.handle(msg).catch((e) => console.error('[whatsapp-inbound]', e && e.message));
+      } catch (e) {
+        console.error('[whatsapp-inbound] modulo indisponivel:', e && e.message);
+      }
     });
 
     console.log('[whatsapp] chamando client.initialize()');
@@ -113,6 +121,22 @@ async function readyTimeout(ms = 20000) {
     await new Promise((r) => setTimeout(r, 500));
   }
   return isReady();
+}
+
+// Converte um ID vinculado (@lid) no numero de telefone (@c.us).
+// O WhatsApp passou a enviar mensagens de alguns contatos apenas com o lid;
+// sem esta traducao nao da para saber quem e. Retorna null quando o numero
+// nao esta disponivel (privacidade do contato).
+async function getPhoneFromLid(lid) {
+  if (!client || state !== 'ready') return null;
+  try {
+    const rows = await client.getContactLidAndPhone([lid]);
+    const pn = rows && rows[0] && rows[0].pn;
+    return pn || null;
+  } catch (err) {
+    console.log('[whatsapp] falha ao traduzir lid:', err && err.message);
+    return null;
+  }
 }
 
 function getStatus() {
@@ -187,7 +211,10 @@ async function sendTextMessage(toPhone, body) {
       targetId = contact.id._serialized;
     }
   } catch (e) { console.log(`[whatsapp] getContactById ${targetId} falhou: ${e.message && e.message.slice(0,60)}`); }
-  try { await client.openChat(targetId); } catch (e) { console.log(`[whatsapp] openChat ${targetId} falhou: ${e.message && e.message.slice(0,60)}`); }
+  // openChat so existe em versoes mais novas da biblioteca; nao e obrigatorio
+  if (typeof client.openChat === 'function') {
+    try { await client.openChat(targetId); } catch (e) { console.log(`[whatsapp] openChat ${targetId} falhou: ${e.message && e.message.slice(0,60)}`); }
+  }
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -210,7 +237,8 @@ function isConfigured() {
   return true;
 }
 
-start();
+// WHATSAPP_DISABLED=1 desliga o cliente (ex.: servidor sem navegador). Sem a variável, nada muda.
+if (process.env.WHATSAPP_DISABLED !== '1') start();
 
 module.exports = {
   start,
@@ -219,6 +247,7 @@ module.exports = {
   disconnect,
   sendTextMessage,
   normalizePhone,
+  getPhoneFromLid,
   isReady,
   isConfigured,
 };

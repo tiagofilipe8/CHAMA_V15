@@ -6,7 +6,7 @@
 param(
   [switch]$Uninstall,
   [switch]$FilesOnly,
-  [string]$ServerUrl = "http://localhost:3000",
+  [string]$ServerUrl = "http://localhost:7070",
   [string]$ProvisionToken = "",
   [string]$NodeExe = ""
 )

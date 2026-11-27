@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { query } = require('../db');
-const { signToken, publicUser, requireAuth } = require('../middleware/auth');
+const { signToken, publicUser, requireAuth, USER_SELECT } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -12,9 +12,7 @@ router.post('/login', async (req, res) => {
   }
   try {
     const { rows } = await query(
-      `SELECT u.*, e.name AS entity_name, e.logo AS entity_logo FROM users u
-       LEFT JOIN entities e ON e.id = u.entity_id
-       WHERE u.username = $1`, [String(username).trim()]);
+      `${USER_SELECT} WHERE u.username = $1`, [String(username).trim()]);
     const user = rows[0];
     if (!user || !(await bcrypt.compare(String(password), user.password_hash))) {
       return res.status(401).json({ error: 'Usuário ou senha inválidos.' });

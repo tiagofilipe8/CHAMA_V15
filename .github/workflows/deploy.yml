@@ -1,0 +1,105 @@
+name: Deploy (LAN)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-lan
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 45
+
+    steps:
+      # A aplicacao e o PostgreSQL sao iniciados pela tarefa agendada
+      # "Central de Atendimento OS" (Agendador do Windows). Assim os processos
+      # ficam fora da arvore do job e NAO sao encerrados na limpeza do runner.
+      - name: Garantir infraestrutura (PostgreSQL + aplicacao)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          schtasks /Run /TN 'Central de Atendimento OS'
+          $bin = 'C:\ORCIM\runtime\pgsql\bin'
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 1
+            & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
+            if ($LASTEXITCODE -eq 0) { break }
+          }
+          & "$bin\pg_isready.exe" -h 127.0.0.1 -p 5432
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL nao subiu' }
+          Write-Host 'PostgreSQL aceitando conexoes.'
+
+      - name: Atualizar codigo da aplicacao
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dst = 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          $env:Path = "C:\Program Files\Git\cmd;$env:Path"
+          $env:GIT_TERMINAL_PROMPT = '0'
+          git config --global --add safe.directory $dst
+
+          # Autentica no git com o token temporario do job (sem expor credencial).
+          if (-not $env:GITHUB_TOKEN) { throw 'GITHUB_TOKEN nao disponivel' }
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+          $auth  = "AUTHORIZATION: basic $basic"
+
+          Set-Location $dst
+          git -c credential.helper= -c "http.https://github.com/.extraheader=$auth" fetch origin --prune
+          if ($LASTEXITCODE -ne 0) { throw "git fetch falhou ($LASTEXITCODE)" }
+          git reset --hard origin/main
+          if ($LASTEXITCODE -ne 0) { throw "git reset falhou ($LASTEXITCODE)" }
+          Write-Host "Commit publicado: $(git rev-parse --short HEAD)"
+          git status -sb
+
+      - name: Instalar dependencias
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "C:\ORCIM\runtime\node;$env:Path"
+          Set-Location 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          npm install --no-audit --no-fund
+
+      - name: Banco de dados (schema + seed + inventario)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:Path = "C:\ORCIM\runtime\node;C:\ORCIM\runtime\pgsql\bin;$env:Path"
+          Set-Location 'C:\ORCIM\IA\PROJETO\CHAMA_V15-main'
+          npm run init
+          node _migrate_inventory.js
+
+      - name: Reiniciar aplicacao
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($port in 3000,7070) {
+            Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+              ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+          }
+          Start-Sleep -Seconds 2
+
+          foreach ($i in 1..5) {
+            schtasks /Run /TN 'Central de Atendimento OS'
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 3
+          }
+          Write-Host 'Aplicacao reiniciada via Agendador de Tarefas.'
+
+      - name: Healthcheck
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($i in 1..12) {
+            Start-Sleep -Seconds 5
+            try {
+              $r = Invoke-WebRequest -Uri 'http://127.0.0.1:7070/healthz' -UseBasicParsing -TimeoutSec 15
+              if ($r.StatusCode -eq 200) { Write-Host "OK: $($r.Content)"; exit 0 }
+            } catch { Write-Host "tentativa $i falhou..." }
+          }
+          throw 'Healthcheck falhou apos 60s'

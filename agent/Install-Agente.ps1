@@ -12,7 +12,7 @@
 param(
   [switch]$Uninstall,
   [switch]$FilesOnly,
-  [string]$ServerUrl = 'http://localhost:3000',
+  [string]$ServerUrl = 'http://localhost:7070',
   [string]$ProvisionToken = '',
   [string]$ServiceName = 'OrcimInventoryAgent'
 )
@@ -129,7 +129,7 @@ if ([string]::IsNullOrWhiteSpace($ProvisionToken)) {
   }
 }
 
-if ([string]::IsNullOrWhiteSpace($ServerUrl)) { $ServerUrl = 'http://localhost:3000' }
+if ([string]::IsNullOrWhiteSpace($ServerUrl)) { $ServerUrl = 'http://localhost:7070' }
 
 $InstallRoot = Get-InstallRoot
 $AgentScript = Join-Path $InstallRoot 'Agente.ps1'

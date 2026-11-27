@@ -19,7 +19,7 @@ cp .env.example .env          # Windows: copy .env.example .env
 
 | Variável | Descrição |
 | --- | --- |
-| `PORT` | Porta HTTP (padrão 3000) |
+| `PORT` | Porta HTTP (padrão 7070) |
 | `DB_*` | Conexão PostgreSQL (banco `os_service`, usuário `os_app`) |
 | `JWT_SECRET` | Segredo do JWT (**troque em produção**) |
 | `PUBLIC_URL` | URL pública (usada nos links de e-mail/WhatsApp) |
@@ -44,7 +44,7 @@ start.bat         # Windows
 ./start.sh        # Linux/macOS
 ```
 
-Acesse `http://localhost:3000`.
+Acesse `http://localhost:7070`.
 
 ## Contas demo (criadas pelo seed)
 
