@@ -31,7 +31,7 @@ Views.manutencao = async function manutencao(el) {
     marcar(); carregar();
   }));
   marcar();
-  el.querySelector('#mt-pedir').addEventListener('click', escolherItem);
+  el.querySelector('#mt-pedir').addEventListener('click', manutEscolherItem);
 
   // linha do tempo: as etapas que já aconteceram, com o dia
   const linhaTempo = (m) => {
@@ -121,37 +121,39 @@ Views.manutencao = async function manutencao(el) {
     });
   }
 
-  // Pedir manutenção: escolhe o item (do inventário que a pessoa vê) e vai para Abrir chamado já com ele
-  async function escolherItem() {
-    let itens = [];
-    try { itens = await API.get('/inventory/assets?limit=500'); } catch (e) { showError(e); return; }
-    itens = itens.filter((a) => a.entity_id !== null && !['DISPOSED', 'LOST', 'ORDERED'].includes(a.status));
-    const m = document.createElement('div');
-    m.className = 'modal fade';
-    m.innerHTML = `<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
-      <div class="modal-header"><h6 class="mb-0"><i class="bi bi-tools me-1"></i> Qual item precisa de manutenção?</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body">
-        <input class="form-control form-control-sm mb-2" id="mt-busca" placeholder="Buscar pelo nome, etiqueta ou local">
-        <div class="mt-escolha" id="mt-lista"></div>
-      </div></div></div>`;
-    document.body.appendChild(m);
-    const bm = new bootstrap.Modal(m);
-    m.addEventListener('hidden.bs.modal', () => m.remove());
-    const pintar = () => {
-      const q = m.querySelector('#mt-busca').value.trim().toLowerCase();
-      const lista = itens.filter((a) => !q || `${a.name} ${a.asset_tag || ''} ${a.location_name || ''}`.toLowerCase().includes(q)).slice(0, 200);
-      m.querySelector('#mt-lista').innerHTML = lista.length ? lista.map((a) => `<button type="button" class="mt-escolha-it" data-id="${a.id}" data-ent="${a.entity_id}" ${a.manut_status ? 'disabled' : ''}>
-          ${Item.titulo(a, { link: false })}${a.manut_status ? '<small class="text-muted">já está em manutenção</small>' : '<i class="bi bi-chevron-right"></i>'}</button>`).join('')
-        : '<div class="dp-vazio">Nenhum item encontrado.</div>';
-      m.querySelectorAll('.mt-escolha-it:not([disabled])').forEach((b) => b.addEventListener('click', () => {
-        bm.hide();
-        location.hash = `#/new?entity_id=${b.dataset.ent}&asset_id=${b.dataset.id}&manutencao=1`;
-      }));
-    };
-    m.querySelector('#mt-busca').addEventListener('input', pintar);
-    pintar();
-    bm.show();
-  }
-
   carregar();
 };
+
+// Pedir manutenção: escolhe o item (do inventário que a pessoa vê) e vai para Abrir chamado já com ele
+//   (usada também pela Manutenção do modo jogo)
+async function manutEscolherItem() {
+  let itens = [];
+  try { itens = await API.get('/inventory/assets?limit=500'); } catch (e) { showError(e); return; }
+  itens = itens.filter((a) => a.entity_id !== null && !['DISPOSED', 'LOST', 'ORDERED'].includes(a.status));
+  const m = document.createElement('div');
+  m.className = 'modal fade';
+  m.innerHTML = `<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h6 class="mb-0"><i class="bi bi-tools me-1"></i> Qual item precisa de manutenção?</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input class="form-control form-control-sm mb-2" id="mt-busca" placeholder="Buscar pelo nome, etiqueta ou local">
+      <div class="mt-escolha" id="mt-lista"></div>
+    </div></div></div>`;
+  document.body.appendChild(m);
+  const bm = new bootstrap.Modal(m);
+  m.addEventListener('hidden.bs.modal', () => m.remove());
+  const pintar = () => {
+    const q = m.querySelector('#mt-busca').value.trim().toLowerCase();
+    const lista = itens.filter((a) => !q || `${a.name} ${a.asset_tag || ''} ${a.location_name || ''}`.toLowerCase().includes(q)).slice(0, 200);
+    m.querySelector('#mt-lista').innerHTML = lista.length ? lista.map((a) => `<button type="button" class="mt-escolha-it" data-id="${a.id}" data-ent="${a.entity_id}" ${a.manut_status ? 'disabled' : ''}>
+        ${Item.titulo(a, { link: false })}${a.manut_status ? '<small class="text-muted">já está em manutenção</small>' : '<i class="bi bi-chevron-right"></i>'}</button>`).join('')
+      : '<div class="dp-vazio">Nenhum item encontrado.</div>';
+    m.querySelectorAll('.mt-escolha-it:not([disabled])').forEach((b) => b.addEventListener('click', () => {
+      bm.hide();
+      location.hash = `#/new?entity_id=${b.dataset.ent}&asset_id=${b.dataset.id}&manutencao=1`;
+    }));
+  };
+  m.querySelector('#mt-busca').addEventListener('input', pintar);
+  pintar();
+  bm.show();
+}
+window.manutEscolherItem = manutEscolherItem;

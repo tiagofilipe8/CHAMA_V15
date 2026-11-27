@@ -235,7 +235,7 @@ const PedidoUI = (() => {
       }
     });
   }
-  return { linhaItem, ligar };
+  return { linhaItem, ligar, atender, perguntarDestino };
 })();
 window.PedidoUI = PedidoUI;
 

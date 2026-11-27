@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
     conds.push(`(t.title ILIKE $${params.length} OR EXISTS (SELECT 1 FROM ticket_materials tm WHERE tm.ticket_id = t.id AND tm.name ILIKE $${params.length}))`);
   }
   const { rows } = await query(
-    `SELECT t.id, t.title, t.status, t.created_at, t.needed_by, t.entity_id, t.location_id, t.requester_id,
+    `SELECT t.id, t.title, t.status, t.priority, t.created_at, t.needed_by, t.entity_id, t.location_id, t.requester_id,
             e.name AS entity_name, l.name AS location_name, u.name AS requester_name, a.name AS assigned_name,
             (SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
                      'status', m.status, 'status_at', m.status_at, 'destino', m.destino, 'asset_id', m.asset_id,

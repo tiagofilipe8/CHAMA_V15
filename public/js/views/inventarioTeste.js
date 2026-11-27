@@ -33,6 +33,7 @@ Views.inventarioTeste = async function inventarioTeste(el) {
   const salvar = () => { try { localStorage.setItem('invgame_prefs', JSON.stringify(prefs)); } catch { /* sem armazenamento */ } };
 
   el.innerHTML = `<div class="ig" style="--slot:${TAM[prefs.tam] || 56}px">
+    ${Jogo.abas('inventario')}
     <section class="ig-painel ig-filtros">
       <div class="ig-tit"><i class="bi bi-sliders"></i> Filtros</div>
       <div class="ig-filtros-corpo">
