@@ -2472,3 +2472,26 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .pd-editavel .pd-nome { min-width: 170px; }
 .pd-nome .pd-inv { margin-left: 0; }
 .es-card .it-tit { margin-bottom: 2px; }
+
+/* =====================================================================
+   Precisa de atenção: amarelo bem fraco no card; a parte que pede ação pisca de leve
+   .atencao        fundo amarelinho (fica enquanto precisa de atenção)
+   .pisca-atencao  pulso lento sem parar (ex.: técnico não atribuído e eu posso assumir)
+   .pisca-3        pisca 3 vezes e fica amarelinho (o que mudou desde o último aviso)
+   .pisca-anel     anel pulsando em volta de um selo (ex.: "Não atribuído" no card)
+   ===================================================================== */
+:root { --atencao: #fffbeb; --atencao-forte: #fef3c7; --atencao-borda: #fcd34d; --atencao-anel: rgba(245,158,11,.28); }
+[data-bs-theme="dark"] { --atencao: rgba(245,158,11,.07); --atencao-forte: rgba(245,158,11,.18); --atencao-borda: rgba(245,158,11,.45); --atencao-anel: rgba(245,158,11,.35); }
+.kcard.atencao { background: var(--atencao); border-color: var(--atencao-borda); }
+.ticket-table tr.ticket-row.atencao > td { background-color: var(--atencao); }
+.atencao { background-color: var(--atencao); }
+.resp-item.resp-alerta.pisca-atencao, .pisca-atencao { animation: pisca-atencao 2.6s ease-in-out infinite; }
+.pisca-3 { animation: pisca-atencao 1.4s ease-in-out 3; }
+@keyframes pisca-atencao { 0%, 100% { background-color: var(--atencao); } 50% { background-color: var(--atencao-forte); } }
+.pisca-anel { animation: pisca-anel 2.2s ease-out infinite; }
+@keyframes pisca-anel { 0% { box-shadow: 0 0 0 0 var(--atencao-anel); } 70%, 100% { box-shadow: 0 0 0 6px rgba(245,158,11,0); } }
+.tl-body.atencao { border-radius: 8px; padding: 6px 8px; margin-left: -8px; }
+.tl-novo { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: .66rem; font-weight: 700; color: #b45309;
+  background: var(--atencao-forte); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
+[data-bs-theme="dark"] .tl-novo { color: #fcd34d; }
+@media (prefers-reduced-motion: reduce) { .pisca-atencao, .pisca-3, .pisca-anel, .resp-item.resp-alerta.pisca-atencao { animation: none !important; } }

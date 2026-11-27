@@ -285,8 +285,9 @@ Views.tickets = async function tickets(el, opts = {}) {
     const initials = (n) => String(n || '').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
     const shortNum = t.number || String(t.id);
     const cat = t.display_category ? String(t.display_category).split(' > ').pop() : '';
+    const semTec = window.semTecnicoParaMim && window.semTecnicoParaMim(t);
     return `
-      <article class="kcard ${tone}" data-id="${t.id}" tabindex="0" aria-label="Chamado ${esc(t.number)}: ${esc(t.title)}">
+      <article class="kcard ${tone} ${(window.temNovidade && window.temNovidade(t.id)) || semTec ? 'atencao' : ''}" data-sem-tecnico="${semTec ? 1 : 0}" data-id="${t.id}" tabindex="0" aria-label="Chamado ${esc(t.number)}: ${esc(t.title)}">
         <header>
           <span class="kurg"><i></i>${esc(t.impact_name || LABELS.priority[t.priority] || '')}</span>
           <span class="knum" title="Chamado ${esc(t.number)} · aberto em ${fmt.dateTime(t.created_at)}">${esc(shortNum)} · ${fmt.timeAgo(t.created_at)}</span>
@@ -308,7 +309,7 @@ Views.tickets = async function tickets(el, opts = {}) {
           ${canDrag(t) ? `<button type="button" class="kmove" data-move="${t.id}" title="Mover para outra coluna" aria-label="Mover chamado ${esc(t.number)} para outra coluna"><i class="bi bi-arrow-left-right"></i></button>` : ''}
           ${t.assigned_name
             ? `<span class="kavatar" title="Técnico: ${esc(t.assigned_name)}">${esc(initials(t.assigned_name))}</span>`
-            : `<span class="ksem" title="Ninguém pegou este chamado ainda"><i class="bi bi-person-plus"></i>Não atribuído</span>`}
+            : `<span class="ksem ${semTec ? 'pisca-anel' : ''}" title="Ninguém pegou este chamado ainda"><i class="bi bi-person-plus"></i>Não atribuído</span>`}
         </footer>
       </article>`;
   }
@@ -496,7 +497,7 @@ Views.tickets = async function tickets(el, opts = {}) {
           </tr></thead>
           <tbody>
             ${list.map((t) => `
-              <tr class="ticket-row ${URGENCY_TONE[t.priority] || ''}" data-id="${t.id}">
+              <tr class="ticket-row ${URGENCY_TONE[t.priority] || ''} ${(window.temNovidade && window.temNovidade(t.id)) || (window.semTecnicoParaMim && window.semTecnicoParaMim(t)) ? 'atencao' : ''}" data-sem-tecnico="${window.semTecnicoParaMim && window.semTecnicoParaMim(t) ? 1 : 0}" data-id="${t.id}">
                 <td class="tk-col"><div class="tk-linha"><span class="tk-num">${esc(t.number)}</span>
                   <span class="knovo ${window.temNovidade && window.temNovidade(t.id) ? '' : 'd-none'}" data-tk-novidade="${t.id}" title="Teve novidade desde a última vez que você abriu"><i class="bi bi-bell-fill"></i></span>
                   <span class="tk-tit" title="${esc(t.title)}">${esc(t.title)}</span></div>
@@ -504,7 +505,7 @@ Views.tickets = async function tickets(el, opts = {}) {
                 <td>${badgeStatus(t.status)}</td>
                 <td>${badgeImpact(t)}</td>
                 <td>${esc(t.location_name || '—')}<br><small class="text-muted multi-empresa">${esc(t.entity_name || '')}</small></td>
-                <td>${t.assigned_name ? esc(t.assigned_name) : '<span class="text-muted">—</span>'}</td>
+                <td>${t.assigned_name ? esc(t.assigned_name) : window.semTecnicoParaMim && window.semTecnicoParaMim(t) ? '<span class="ksem pisca-anel"><i class="bi bi-person-plus"></i>Não atribuído</span>' : '<span class="text-muted">—</span>'}</td>
                 <td>${esc(t.requester_name || '—')}</td>
                 <td class="text-muted small" title="${fmt.dateTime(t.created_at)}">${fmt.timeAgo(t.created_at)}</td>
               </tr>`).join('')}

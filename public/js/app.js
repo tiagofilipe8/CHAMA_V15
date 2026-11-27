@@ -406,7 +406,13 @@ async function router() {
   document.querySelector('.menu-mover')?.remove();
   // abriu um chamado: as notificacoes dele contam como lidas (some o sininho dele)
   const aberto = hash.match(/^#\/tickets\/(\d+)/);
-  if (aberto && novidades.includes(Number(aberto[1]))) {
+  // guarda desde quando ele tinha novidade (a tela do chamado faz piscar o que mudou depois disso)
+  if (aberto) {
+    const desde = novidadeDesde[aberto[1]];
+    if (desde) window.novidadeAberta = { id: aberto[1], desde };
+    else if (!window.novidadeAberta || window.novidadeAberta.id !== aberto[1]) window.novidadeAberta = null;
+  } else window.novidadeAberta = null;
+  if (aberto && (novidades.includes(Number(aberto[1])) || novidadeDesde[aberto[1]])) {
     API.post('/notifications/read', { ticket_id: Number(aberto[1]) }).then(loadBell).catch(() => {});
   }
   for (const r of routes) {
@@ -621,6 +627,7 @@ Views.atendimento = async function atendimento(el) {
 
 // Chamados meus (abertos por mim ou comigo) com notificacao nao lida
 let novidades = [];
+let novidadeDesde = {}; // { id do chamado: aviso mais antigo não lido }
 function pintarNovidades() {
   const n = novidades.length;
   const b = document.querySelector('#nav-mine .nav-bell');
@@ -630,10 +637,17 @@ function pintarNovidades() {
     b.title = n === 1 ? '1 chamado seu teve novidade' : `${n} chamados seus tiveram novidade`;
   }
   document.querySelectorAll('[data-tk-novidade]').forEach((el) => {
-    el.classList.toggle('d-none', !novidades.includes(Number(el.dataset.tkNovidade)));
+    const tem = novidades.includes(Number(el.dataset.tkNovidade));
+    el.classList.toggle('d-none', !tem);
+    // o card (ou a linha) fica amarelinho enquanto precisa de atenção
+    const caixa = el.closest('.kcard, .ticket-row');
+    if (caixa) caixa.classList.toggle('atencao', tem || caixa.dataset.semTecnico === '1');
   });
 }
 window.temNovidade = (id) => novidades.includes(Number(id));
+// precisa de atenção: teve novidade, ou está aberto sem técnico e a pessoa pode assumir ou escolher
+window.semTecnicoParaMim = (t) => !t.assigned_user_id && !t.assigned_name && [1, 2, 3, 4].includes(Number(t.status))
+  && (Roles.can(API.user || {}, 'ticket.take') || Roles.can(API.user || {}, 'ticket.assign'));
 // pedidos com novidade (sininho de "Meus pedidos")
 let novidadesPedidos = [];
 window.pedidoTemNovidade = (id) => novidadesPedidos.includes(Number(id));
@@ -663,6 +677,7 @@ async function loadBell() {
   try {
     const data = await API.get('/notifications');
     novidades = (Array.isArray(data.mine_tickets) ? data.mine_tickets : []).map(Number);
+    novidadeDesde = data.novidade_desde || {};
     pintarNovidades();
     avisarNovidades();
     const antesPd = novidadesPedidos.slice().sort().join(',');

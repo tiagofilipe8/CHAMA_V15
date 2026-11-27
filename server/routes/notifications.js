@@ -24,7 +24,13 @@ router.get('/', requireAuth, async (req, res) => {
   const pedidos = await query(
     `SELECT DISTINCT n.ticket_id FROM inapp_notifications n
      WHERE n.user_id = $1 AND n.is_read = FALSE AND n.link = '#/meus-pedidos' AND n.ticket_id IS NOT NULL`, [req.user.id]);
-  res.json({ list: rows, unread: unread.rows[0].c, mine_tickets: mine.rows.map((r) => Number(r.ticket_id)), mine_orders: pedidos.rows.map((r) => Number(r.ticket_id)) });
+  // desde quando cada chamado tem novidade (o aviso mais antigo não lido): ao abrir o chamado,
+  //   o que mudou depois disso (mensagens, etapa do pedido, técnico) pisca de leve
+  const desde = await query(
+    `SELECT n.ticket_id, min(n.created_at) AS desde FROM inapp_notifications n
+     WHERE n.user_id = $1 AND n.is_read = FALSE AND n.ticket_id IS NOT NULL GROUP BY n.ticket_id`, [req.user.id]);
+  res.json({ list: rows, unread: unread.rows[0].c, mine_tickets: mine.rows.map((r) => Number(r.ticket_id)), mine_orders: pedidos.rows.map((r) => Number(r.ticket_id)),
+    novidade_desde: Object.fromEntries(desde.rows.map((r) => [String(r.ticket_id), r.desde])) });
 });
 
 // Marca como lidas: todas, ou so as de um chamado (body.ticket_id: ao abrir o chamado)

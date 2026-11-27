@@ -93,7 +93,7 @@ Views.dashboard = async function dashboard(el, opts = {}) {
         <span class="tg ${num(team.unassigned) ? 'tg-amber' : 'tg-gray'}">${num(team.unassigned)}</span></div>
       ${novos.length ? `<div class="dp-novos">${novos.map((t) => `
         <a class="dp-novo ${TOM[t.priority] || 'u-req'}" href="#/tickets/${t.id}">
-          <div class="dp-novo-l1"><b>${esc(t.title)}</b><span class="tg tg-amber">Não atribuído</span></div>
+          <div class="dp-novo-l1"><b>${esc(t.title)}</b><span class="tg tg-amber ${window.semTecnicoParaMim && window.semTecnicoParaMim(t) ? 'pisca-anel' : ''}">Não atribuído</span></div>
           <div class="dp-novo-l2">#${t.id} · ${esc(t.impact_name || URG[t.priority] || '')}${t.category_name ? ` · ${esc(t.category_name)}` : ''}</div>
           <div class="dp-novo-l2">${t.location_name ? `<i class="bi bi-geo-alt"></i>${esc(t.location_name)} · ` : ''}${esc(t.requester_name || '')} · aberto ${fmt.timeAgo(t.created_at)}</div>
         </a>`).join('')}</div>` : '<div class="dp-vazio"><i class="bi bi-check2-circle text-success"></i> Todos os chamados têm técnico.</div>'}

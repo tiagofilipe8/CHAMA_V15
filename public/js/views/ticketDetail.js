@@ -76,6 +76,14 @@ Views.ticketDetail = function ticketDetail(id) {
     }
     if (can.take) tecAcoes.push(`<button class="btn btn-sm btn-success" id="act-take" title="Fica com você"><i class="bi bi-person-check"></i> Assumir</button>`);
     if (can.assign) tecAcoes.push(`<button class="btn btn-sm btn-outline-secondary" id="act-assign"><i class="bi bi-person-gear"></i> ${t.assigned_user_id ? 'Trocar' : 'Escolher'}</button>`);
+    // Novidade: o que mudou depois do aviso mais antigo não lido pisca de leve (3 vezes) e fica amarelinho
+    //   (o aviso é criado logo depois da mudança: 1 minuto de folga)
+    const nov = window.novidadeAberta && String(window.novidadeAberta.id) === String(t.id) ? new Date(window.novidadeAberta.desde).getTime() - 60000 : null;
+    const depoisDoAviso = (d) => !!(nov && d && new Date(d).getTime() >= nov);
+    const tecnicoNovo = depoisDoAviso(t.assigned_at);
+    const pedidoNovo = (t.materials || []).some((m) => depoisDoAviso(m.status_at));
+    // sem técnico e eu posso assumir ou escolher: a linha do técnico fica piscando até alguém pegar
+    const tecPiscando = !t.assigned_name && [1, 2, 3, 4].includes(Number(t.status)) && (can.take || can.assign);
     const respItem = (icone, rotulo, valor, acoes = '', extra = '') => `
       <div class="resp-item ${extra}">
         <i class="bi ${icone} resp-ico"></i>
@@ -92,7 +100,7 @@ Views.ticketDetail = function ticketDetail(id) {
             empresaWaPadrao ? 'resp-alerta' : 'multi-empresa')}
           ${respItem('bi-person-badge', 'Técnico',
             t.assigned_name ? `${esc(t.assigned_name)}${comigo ? ' <span class="tg tg-teal">você</span>' : ''}${t.assigned_at ? `<small>desde ${esc(fmt.timeAgo(t.assigned_at))}</small>` : ''}` : '<span class="tg tg-amber">Não atribuído</span>',
-            tecAcoes.join(''), t.assigned_name ? '' : 'resp-alerta')}
+            tecAcoes.join(''), t.assigned_name ? (tecnicoNovo ? 'atencao pisca-3' : '') : `resp-alerta ${tecPiscando ? 'pisca-atencao' : ''}`)}
           ${respItem('bi-flag', 'Situação', badgeStatus(t.status),
             can.status ? '<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modal-status"><i class="bi bi-arrow-repeat"></i> Alterar</button>' : '')}
           ${respItem('bi-shield-check', 'Moderador', t.moderator_name ? esc(t.moderator_name) : '<span class="text-muted">—</span>')}
@@ -148,9 +156,10 @@ Views.ticketDetail = function ticketDetail(id) {
     // ---------------- Timeline ----------------
     const timeline = (t.messages || []).map((m) => {
       if (m.kind === 'system') {
-        return `<li class="timeline-item system">
+        const nova = depoisDoAviso(m.created_at) && String(m.user_id) !== String(user.id);
+        return `<li class="timeline-item system ${nova ? 'tl-nova' : ''}">
           <div class="tl-badge"><i class="bi bi-gear"></i></div>
-          <div class="tl-body">
+          <div class="tl-body ${nova ? 'atencao pisca-3' : ''}">
             <div class="tl-content text-muted">${Mencoes.formatar(esc(m.content))}</div>
             <small class="text-muted">${m.author_name} · ${fmt.dateTime(m.created_at)}</small>
           </div>
@@ -162,12 +171,13 @@ Views.ticketDetail = function ticketDetail(id) {
         : m.kind === 'internal' ? 'tl-secondary' : 'tl-info';
       const badgeCls = { 'tl-warning': 'text-bg-warning', 'tl-primary': 'text-bg-primary', 'tl-info': 'text-bg-info' }[tone] || 'text-bg-secondary';
       const kindLabel = { note: 'Instrução', approval: 'Aprovação', internal: 'Nota interna (só equipe)' }[m.kind] || 'Mensagem';
-      return `<li class="timeline-item ${m.kind === 'internal' ? 'tl-internal' : ''}">
+      const nova = depoisDoAviso(m.created_at) && String(m.user_id) !== String(user.id);
+      return `<li class="timeline-item ${m.kind === 'internal' ? 'tl-internal' : ''} ${nova ? 'tl-nova' : ''}">
         <div class="tl-badge ${tone}"><i class="bi ${icon}"></i></div>
-        <div class="tl-body">
+        <div class="tl-body ${nova ? 'atencao pisca-3' : ''}">
           <div class="tl-head">
             <strong>${esc(m.author_name)}</strong>
-            <span class="badge ${badgeCls} ms-1">${kindLabel}</span>
+            <span class="badge ${badgeCls} ms-1">${kindLabel}</span>${nova ? '<span class="tl-novo"><i class="bi bi-bell-fill"></i> nova</span>' : ''}
             <span class="text-muted small ms-auto">${fmt.dateTime(m.created_at)}</span>
           </div>
           <div class="tl-content">${Mencoes.formatar(esc(m.content)).replace(/\n/g, '<br>')}</div>
@@ -206,8 +216,8 @@ Views.ticketDetail = function ticketDetail(id) {
             </div>
           </div>
           ${(t.materials || []).length ? `
-          <div class="card panel-card mb-3">
-            <div class="card-header"><i class="bi bi-box-seam me-1"></i> Materiais pedidos</div>
+          <div class="card panel-card mb-3 ${pedidoNovo ? 'atencao pisca-3' : ''}">
+            <div class="card-header"><i class="bi bi-box-seam me-1"></i> Materiais pedidos${pedidoNovo ? ' <span class="tl-novo"><i class="bi bi-bell-fill"></i> mudou</span>' : ''}</div>
             <div class="pd-itens" id="td-pedido">${t.materials.map((m) => PedidoUI.linhaItem(t, m, { podeMudar: !!(can.resolve || Roles.can(user, 'inventory.manage')), vePreco: Roles.can(user, 'inventory.secrets'), locais: [] })).join('')}</div>
           </div>` : ''}
 
