@@ -1037,6 +1037,8 @@ ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS etapas JSONB NOT NULL DEFA
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS previsao DATE;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS origem_orcim BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS confirmado_por BIGINT REFERENCES users(id) ON DELETE SET NULL;
+-- o item do pedido saiu do Estoque de T.I. do próprio local (a ORCIM viu que já tinha lá)
+ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS origem_local BOOLEAN NOT NULL DEFAULT FALSE;
 -- achar o pedido de um item do inventário (selo da etapa ao lado do nome do item)
 CREATE INDEX IF NOT EXISTS idx_ticket_materials_asset_ids ON ticket_materials USING gin (asset_ids);
 CREATE INDEX IF NOT EXISTS idx_ticket_materials_asset_id ON ticket_materials (asset_id);

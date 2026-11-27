@@ -286,7 +286,7 @@ router.get('/', async (req, res) => {
       FROM assets a WHERE ${DATA_A} < $1::date AND a.status NOT IN ('DISPOSED','LOST','BROKEN') AND $2::date IS NOT NULL ${fI}`, pI);
   }
   if (veInv && querSecao('estoque')) {
-    // Estoque de T.I. = Em estoque, Pronto para entregar e Comprado (aguardando chegar)
+    // Estoque de T.I. = Em estoque, Na ORCIM (aguardando entrega) e Comprado (a caminho da ORCIM)
     q('estoque', `
       SELECT a.status, a.type, COALESCE(sum(${UN}), 0)::int AS n, ${valorA} AS valor
       FROM assets a WHERE a.status IN ('STOCK','READY','ORDERED') ${fA} GROUP BY 1, 2 ORDER BY 4 DESC NULLS LAST, 3 DESC`, pA);

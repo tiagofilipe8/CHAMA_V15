@@ -288,7 +288,7 @@ router.get('/report', async (req, res) => {
   const ents = entityIdsOf(req.user);
   if (ents !== null) { pM.push(ents); fM += ` AND m.to_entity_id::text = ANY($${pM.length}::text[])`; }
   if (/^\d+$/.test(String(req.query.entity_id || ''))) { pM.push(req.query.entity_id); fM += ` AND m.to_entity_id = $${pM.length}`; }
-  // ?escopo=estoque: só os itens do Estoque de T.I. (Em estoque, Pronto para entregar, Comprado)
+  // ?escopo=estoque: só os itens do Estoque de T.I. (Em estoque, Na ORCIM aguardando entrega, Comprado)
   const soEstoque = req.query.escopo === 'estoque';
   if (soEstoque) fA += ` AND a.status IN ('STOCK','READY','ORDERED')`;
   // o ranking de valor por posto compara todos os postos (não usa o filtro de posto)

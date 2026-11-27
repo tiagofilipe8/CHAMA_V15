@@ -664,7 +664,7 @@ router.get('/:id', async (req, res) => {
            WHERE w.ticket_id = $1 ORDER BY w.created_at`, [id]),
     query(`SELECT m.id, m.name, m.unit, m.quantity, m.status, m.status_at, m.destino, m.asset_id, m.asset_ids, m.asset_type,
                   m.price, m.location_id, l.name AS location_name, u.name AS status_by_name,
-                  m.etapas, m.previsao, m.origem_orcim, m.confirmado_por
+                  m.etapas, m.previsao, m.origem_orcim, m.origem_local, m.confirmado_por
            FROM ticket_materials m LEFT JOIN users u ON u.id = m.status_by LEFT JOIN locations l ON l.id = m.location_id
            WHERE m.ticket_id = $1 ORDER BY m.id`, [id]),
   ]);
@@ -1319,7 +1319,7 @@ router.get('/:id/mencionaveis', async (req, res) => {
 //   cada item pedido tem: preço unitário, posto de destino e situação
 //   pedido    -> nada no inventário ainda
 //   comprado  -> cada unidade entra no inventário como "Comprado - aguardando chegar", com preço e posto
-//   chegou    -> "Pronto para entregar"
+//   chegou    -> "Na ORCIM" (READY: já está na ORCIM, pronto para sair para o local)
 //   entregue  -> "Em estoque" (Estoque de T.I. do posto) ou "Operando" (inventário do posto),
 //                ou sai do inventário se for "só marcar entregue" (consumível)
 //   cancelado -> sai do inventário (o que ainda não tinha sido entregue)
@@ -1670,6 +1670,72 @@ async function confirmarEntrega(req, res) {
 router.post('/:id/materials/:mid/entregar', (req, res) => {
   if (!['estoque', 'inventario', 'nenhum'].includes(String(req.body?.destino || ''))) return res.status(422).json({ error: 'Escolha para onde vai o item.' });
   return confirmarEntrega(req, res);
+});
+
+// Tem no Estoque de T.I. do local do pedido: usa de lá. Dá baixa no estoque (motivo "Pedido de material #N"),
+//   o pedido fica Entregue e quem pediu é avisado para pegar o item no estoque do local.
+//   { asset_ids: [...] } itens do Estoque de T.I. do posto de destino do pedido (o gestor pode pedir para qualquer posto)
+router.post('/:id/materials/:mid/do-local', async (req, res) => {
+  const user = req.user;
+  const ticket = await loadTicket(req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+  if (!podeEntregarPedido(user, ticket)) return res.status(403).json({ error: 'Seu perfil não mexe no estoque dos pedidos.' });
+  const m = (await query('SELECT * FROM ticket_materials WHERE id = $1 AND ticket_id = $2', [req.params.mid, ticket.id])).rows[0];
+  if (!m) return res.status(404).json({ error: 'Material não encontrado.' });
+  if (m.status !== 'solicitado') return res.status(422).json({ error: 'Só dá para usar o estoque do local em itens que ainda não foram comprados nem separados.' });
+  const locId = m.location_id || ticket.location_id;
+  if (!locId) return res.status(422).json({ error: 'O pedido não tem posto de destino. Escolha o posto no pedido.' });
+  const ids = [...new Set((Array.isArray(req.body?.asset_ids) ? req.body.asset_ids : []).map(String).filter((x) => /^\d+$/.test(x)))];
+  if (!ids.length) return res.status(422).json({ error: 'Escolha o item do estoque do local.' });
+  const itens = (await query(`SELECT id, name, asset_tag, status, entity_id, location_id, controle, quantity, price FROM assets WHERE id = ANY($1::bigint[])`, [ids])).rows;
+  if (itens.length !== ids.length || itens.some((a) => String(a.entity_id) !== String(ticket.entity_id) || String(a.location_id) !== String(locId) || a.status !== 'STOCK')) {
+    return res.status(422).json({ error: 'Escolha itens que estão no Estoque de T.I. do posto do pedido.' });
+  }
+  const presos = (await query(`SELECT 1 FROM ticket_materials tm WHERE tm.status IN ('comprado','chegou','rota') AND (tm.asset_id = ANY($1::bigint[]) OR tm.asset_ids && $1::bigint[])
+                               UNION ALL SELECT 1 FROM manutencoes mt WHERE mt.asset_id = ANY($1::bigint[]) AND mt.status NOT IN ('devolvida','sem_conserto','cancelada')`, [ids])).rows.length;
+  if (presos) return res.status(422).json({ error: 'Algum desses itens está reservado para outro pedido ou em manutenção.' });
+  // quanto sai de cada um: primeiro os itens com etiqueta (1 cada), depois os contados por quantidade
+  const precisa = Math.max(Number(m.quantity) || 1, 1);
+  const ordem = [...itens.filter((a) => a.controle !== 'quantidade'), ...itens.filter((a) => a.controle === 'quantidade')];
+  const tem = ordem.reduce((s, a) => s + (a.controle === 'quantidade' ? Number(a.quantity) : 1), 0);
+  if (tem < precisa) return res.status(422).json({ error: `O estoque do local tem ${tem} — o pedido é de ${precisa}.` });
+  let falta = precisa; const usados = [];
+  for (const a of ordem) { if (falta <= 0) break; const n = a.controle === 'quantidade' ? Math.min(falta, Number(a.quantity)) : 1; usados.push({ a, n }); falta -= n; }
+  const posto = (await query('SELECT name FROM locations WHERE id = $1', [locId])).rows[0]?.name || 'o local';
+  const motivo = `Pedido de material #${ticket.id}`;
+  try {
+    await withTransaction(async (q) => {
+      const agora = (await q('SELECT status FROM ticket_materials WHERE id = $1 FOR UPDATE', [m.id])).rows[0];
+      if (!agora || agora.status !== 'solicitado') throw Object.assign(new Error('Esse pedido mudou agora há pouco. Recarregue a página.'), { status: 409 });
+      for (const { a, n } of usados) {
+        const upd = a.controle === 'quantidade'
+          ? await q('UPDATE assets SET quantity = quantity - $2, updated_at = now() WHERE id = $1 AND quantity >= $2 RETURNING id', [a.id, n])
+          : await q(`UPDATE assets SET status = 'OPERATING', responsible_user_id = $2, updated_at = now() WHERE id = $1 AND status = 'STOCK' RETURNING id`, [a.id, ticket.requester_id]);
+        if (!upd.rows.length) throw Object.assign(new Error('Outra pessoa acabou de pegar esse item do estoque.'), { status: 409 });
+        await q(`INSERT INTO stock_movements (asset_id, kind, user_id, reason_name, from_entity_id, to_entity_id, from_location_id, to_location_id, price, note, quantity)
+                 VALUES ($1,'withdraw',$2,$3,$4,$4,$5,$5,$6,$7,$8)`,
+          [a.id, user.id, motivo, a.entity_id, locId, a.price == null ? null : Number(a.price) * n, `Usado para o pedido #${ticket.id} (${m.name})`, n]);
+        await q(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'StockWithdraw','status',$3,$4)`,
+          [a.id, user.id, a.status, `${a.controle === 'quantidade' ? `${n} un · ` : ''}Motivo: ${motivo}`]);
+      }
+      const unidades = usados.filter((u) => u.a.controle !== 'quantidade').map((u) => u.a.id);
+      const comPreco = usados.filter((u) => u.a.price != null);
+      const precoMedio = comPreco.length ? Math.round((comPreco.reduce((s, u) => s + Number(u.a.price) * u.n, 0) / comPreco.reduce((s, u) => s + u.n, 0)) * 100) / 100 : null;
+      await q(`UPDATE ticket_materials SET status = 'entregue', destino = 'inventario', origem_local = TRUE, asset_ids = $2::bigint[], asset_id = $3,
+                 price = COALESCE(price, $4), location_id = $5, status_at = now(), status_by = $6, confirmado_por = $6,
+                 etapas = etapas || jsonb_build_object('entregue', now()) WHERE id = $1`,
+      [m.id, unidades, unidades[0] || null, precoMedio, locId, user.id]);
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: tinha no Estoque de T.I. de ${posto}. Já separamos de lá: é só pegar no estoque do local.`;
+  await query("INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)", [ticket.id, user.id, `Pedido de material — ${texto}`]);
+  if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
+    await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: tem no estoque do local`, texto, ticket.id, '#/meus-pedidos').catch(() => {});
+  }
+  res.json({ ok: true });
 });
 
 router.post('/:id/messages', async (req, res) => {

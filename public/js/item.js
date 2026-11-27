@@ -13,17 +13,17 @@ const INV_TYPES = {
 };
 // Estados do equipamento (cada um com a sua cor: classe .est-<ESTADO> no CSS)
 const INV_STATUS = {
-  OPERATING: 'Operando', REPAIR: 'Em conserto', BROKEN: 'Estragado', ORDERED: 'Comprado - aguardando chegar',
-  READY: 'Pronto para entregar', STOCK: 'Em estoque', DISPOSED: 'Descartado', LOST: 'Extraviado',
+  OPERATING: 'Operando', REPAIR: 'Em conserto', BROKEN: 'Estragado', ORDERED: 'Comprado (a caminho da ORCIM)',
+  READY: 'Na ORCIM (aguardando entrega)', STOCK: 'Em estoque', DISPOSED: 'Descartado', LOST: 'Extraviado',
 };
 // Nome curto do estado, para o selo ao lado do título
 const INV_STATUS_CURTO = {
-  OPERATING: 'Operando', REPAIR: 'Em conserto', BROKEN: 'Estragado', ORDERED: 'Aguardando chegar',
-  READY: 'Pronto p/ entregar', STOCK: 'Em estoque', DISPOSED: 'Descartado', LOST: 'Extraviado',
+  OPERATING: 'Operando', REPAIR: 'Em conserto', BROKEN: 'Estragado', ORDERED: 'A caminho da ORCIM',
+  READY: 'Na ORCIM', STOCK: 'Em estoque', DISPOSED: 'Descartado', LOST: 'Extraviado',
 };
 const INV_ESTADO_ICONE = {
   OPERATING: 'bi-check-circle', REPAIR: 'bi-tools', BROKEN: 'bi-x-octagon', ORDERED: 'bi-truck',
-  READY: 'bi-box-arrow-right', STOCK: 'bi-box-seam', DISPOSED: 'bi-trash3', LOST: 'bi-question-octagon',
+  READY: 'bi-building-check', STOCK: 'bi-box-seam', DISPOSED: 'bi-trash3', LOST: 'bi-question-octagon',
 };
 // Ícone de cada categoria de equipamento
 const INV_ICONES = {
@@ -76,7 +76,9 @@ const Item = {
     const o = { estado: true, local: true, etiqueta: true, etapa: true, semEtiqueta: false, ...op };
     const st = Item.campo(a, 'status', 'asset_status');
     const partes = [];
-    if (o.estado && st) {
+    // item de pedido que ainda não chegou ao local: o selo da etapa do pedido já diz onde ele está (sem repetir o estado)
+    const temEtapa = o.etapa && PEDIDO_STATUS[Item.campo(a, 'pedido_status')] && ['ORDERED', 'READY'].includes(st);
+    if (o.estado && st && !temEtapa) {
       partes.push(`<span class="est est-${esc(st)} it-est" title="Estado: ${esc(INV_STATUS[st] || st)}"><i class="bi ${INV_ESTADO_ICONE[st] || 'bi-dot'}"></i>${esc(INV_STATUS_CURTO[st] || st)}</span>`);
     }
     if (o.local) {

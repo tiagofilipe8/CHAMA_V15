@@ -5,7 +5,7 @@
 //   - Movimentações: o log de tudo; Relatório: motivos e custos (gestores e admin mestre)
 // ---------------------------------------------------------------
 const Estoque = (() => {
-  const NO_ESTOQUE = { STOCK: 'Em estoque', READY: 'Pronto para entregar', ORDERED: 'Comprado - aguardando chegar' };
+  const NO_ESTOQUE = { STOCK: 'Em estoque', READY: 'Na ORCIM (aguardando entrega)', ORDERED: 'Comprado - aguardando chegar' };
   const PODE_PEGAR = ['STOCK', 'READY'];
   const TIPO_MOV = {
     withdraw: ['Baixa (retirada)', 'mv-saida', 'bi-box-arrow-up'],

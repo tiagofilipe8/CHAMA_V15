@@ -244,7 +244,7 @@ const RelDoc = (() => {
   const ETAPA = { solicitado: 'Pedido', comprado: 'Comprado', chegou: 'Na ORCIM', rota: 'A caminho do local', entregue: 'Entregue', cancelado: 'Cancelado' };
   // INV_TYPES vem de inventory.js, que carrega depois deste arquivo: procurar só na hora de usar
   const tipoNome = (t) => (typeof INV_TYPES !== 'undefined' && INV_TYPES[t]) || t;
-  const EST = { STOCK: 'Em estoque', READY: 'Pronto para entregar', ORDERED: 'Comprado (aguardando chegar)' };
+  const EST = { STOCK: 'Em estoque', READY: 'Na ORCIM (aguardando entrega)', ORDERED: 'Comprado (aguardando chegar)' };
 
   // ---- baldes do período (semana começa na segunda, como o date_trunc do Postgres) ----
   function baldes(per) {

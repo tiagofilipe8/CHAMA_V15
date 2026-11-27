@@ -152,7 +152,7 @@ function pageDescFromPath() {
     '/orcim': 'Itens da ORCIM que ainda não foram para nenhuma empresa. Registre e transfira para a empresa e o posto.',
     '/chat': 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.',
     '/estoque': 'Itens guardados no estoque de cada posto. Quem pega um item dá baixa aqui, dizendo o motivo.',
-    '/pedidos': 'Chamados com pedido de material e a situação de cada item: pedido, comprado, chegou, entregue.',
+    '/pedidos': 'Chamados com pedido de material e clique no item para dizer de onde ele sai (estoque do local, ORCIM ou compra).',
     '/manutencao': 'Itens que precisam de conserto: peça a manutenção de um item e acompanhe até ele voltar para o local.',
     '/inventario/relatorio': 'Quanto vale o inventário, por que os itens saem do estoque e quanto custam as retiradas. Filtre por estoque de T.I. ou por localidade.',
     '/inventory/agents': 'Programas instalados nos computadores que enviam o inventário sozinhos.',
