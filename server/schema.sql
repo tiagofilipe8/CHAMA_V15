@@ -916,6 +916,14 @@ CREATE TABLE IF NOT EXISTS route_plan_stops (
 );
 CREATE INDEX IF NOT EXISTS idx_route_plan_stops_plan ON route_plan_stops(plan_id);
 CREATE INDEX IF NOT EXISTS idx_route_plan_stops_loc ON route_plan_stops(location_id);
+-- situação da rota (2026-11-27): agendada -> em andamento (Começar rota) -> concluída (Concluir rota)
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'agendada';
+ALTER TABLE route_plans DROP CONSTRAINT IF EXISTS route_plans_status_check;
+ALTER TABLE route_plans ADD CONSTRAINT route_plans_status_check CHECK (status IN ('agendada','em_andamento','concluida'));
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS started_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS concluded_at TIMESTAMPTZ;
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS concluded_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
 
 -- Pedido ligado ao inventário: preço unitário, posto de destino, categoria e os equipamentos criados (2026-11-26)
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS price NUMERIC(12,2);

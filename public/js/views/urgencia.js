@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------
-// Score de urgência e Sugerir rotas
+// Score de urgência (e as peças da tela de Rotas: score, chamados, ordem de visita, "O que levar")
 //   score do chamado = peso da urgência × fator de atraso × fator de prazo (ver o servidor:
 //   server/services/scoreUrgencia.js); score do local = soma dos chamados abertos dele.
 //   Rotas: escolhe quantos locais atender, o sistema sugere os de maior score e monta a ordem
@@ -140,12 +140,13 @@ const Urgencia = (() => {
     </details>`;
   };
 
-  const linhaChamado = (c) => `
+  // semConta: sem a conta do score embaixo do número (nas telas de rota, para quem vai para a rua)
+  const linhaChamado = (c, { semConta = false } = {}) => `
     <a class="ur-ch ${TOM[c.priority] || 'u-req'}" href="#/tickets/${c.id}">
       <span class="ur-ch-num">${esc(c.number)}</span>
       <span class="ur-ch-tx"><b>${esc(c.title)}</b><small><span class="ur-tag-urg ${TOM[c.priority] || 'u-req'}"><i class="ur-dot ${TOM[c.priority] || 'u-req'}"></i>${esc(c.impact_name || URG[c.priority] || '')}</span>${c.category_name ? ` · ${esc(c.category_name)}` : ''} · ${c.assigned_name ? esc(c.assigned_name) : 'sem técnico'}</small></span>
       <span class="ur-ch-prazo">${situacaoPrazo(c)}</span>
-      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO, '', 0.9, Number(c.priority) === 4)}<small>${conta(c)}</small></span>
+      <span class="ur-ch-score" title="1 ponto × urgência × atraso × prazo">${numScore(c.score, ALVO_CHAMADO, '', 0.9, Number(c.priority) === 4)}${semConta ? '' : `<small>${conta(c)}</small>`}</span>
     </a>`;
 
   // ---------------- Score de urgência ----------------
@@ -159,7 +160,7 @@ const Urgencia = (() => {
       ${d.pausados ? `<div class="small text-muted mt-2"><i class="bi bi-pause-circle"></i> ${d.pausados} chamado(s) em pausa não entram no score (aguardando peça, fornecedor, usuário ou visita agendada).</div>` : ''}
       <div class="card panel-card mt-3">
         <div class="dp-bloco-cab"><span><i class="bi bi-sort-down"></i> Locais por urgência</span>
-          <a class="btn btn-sm btn-primary" href="#/rotas"><i class="bi bi-signpost-split"></i> Sugerir rota</a></div>
+          <a class="btn btn-sm btn-primary" href="#/rotas/nova"><i class="bi bi-signpost-split"></i> Montar rota</a></div>
         ${d.locais.length ? d.locais.map((l, i) => `
           <details class="ur-loc" style="--cor:${cor(l.score, ALVO_LOCAL)}">
             <summary>
@@ -226,7 +227,8 @@ const Urgencia = (() => {
   //   Marque os itens que serão entregues, escolha para onde cada um vai e entregue tudo de uma vez.
   //   Se o item existe no Estoque da ORCIM, a etiqueta mostra "Em estoque na ORCIM" e ele sai de lá.
   const DESTINOS = { inventario: 'Inventário da Empresa (em uso)', estoque: 'Estoque de T.I. do local' };
-  async function abrirLevar(ordem, depois) {
+  //   op.comecar: abre no modo "Começar rota" (os itens marcados saem para entrega e a rota começa)
+  async function abrirLevar(ordem, depois, op = {}) {
     const u = API.user || {};
     const podeEntregar = Roles.can(u, 'inventory.manage') || Roles.isMaster(u);
     const veOrcim = podeEntregar && (Roles.isMaster(u) || Roles.can(u, 'ticket.view_all'));
@@ -275,13 +277,14 @@ const Urgencia = (() => {
       <div class="modal-header"><h6 class="mb-0 d-flex align-items-center gap-2">${caixaPixel(26)} O que levar nesta rota</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         ${total.size ? `<div class="lv-total"><b>Para separar:</b> ${[...total.values()].map((x) => `<span class="tg tg-teal">${x.quantity} ${esc(x.unit || 'un')} · ${esc(x.name)}</span>`).join(' ')}</div>` : ''}
-        ${podeEntregar && pendentes.length ? `<div class="lv-instr"><i class="bi bi-check2-square"></i><span><b>Marque os itens que serão entregues</b> e escolha para onde cada um vai: <b>Inventário da Empresa</b> (já em uso no local) ou <b>Estoque de T.I.</b> do local. <b>Levar na rota</b> avisa quem pediu que o item está a caminho (entrega prevista para hoje); a entrega é <b>confirmada</b> por você no local ou por quem pediu.${Object.keys(naOrcim).length ? ' Os itens com <span class="pd-tag lv-orcim"><i class="bi bi-boxes"></i>Em estoque na ORCIM</span> saem do Estoque da ORCIM.' : ''}</span>
+        ${podeEntregar && pendentes.length ? `<div class="lv-instr"><i class="bi bi-check2-square"></i><span><b>Marque os itens que serão entregues</b> e escolha para onde cada um vai: <b>Inventário da Empresa</b> (já em uso no local) ou <b>Estoque de T.I.</b> do local. ${op.comecar ? '<b>Começar rota</b> põe os itens marcados como a caminho do local e avisa quem pediu' : '<b>Saiu para entrega</b> avisa quem pediu que o item está a caminho (entrega prevista para hoje)'}; a entrega é <b>confirmada</b> por você no local ou por quem pediu.${Object.keys(naOrcim).length ? ' Os itens com <span class="pd-tag lv-orcim"><i class="bi bi-boxes"></i>Em estoque na ORCIM</span> saem do Estoque da ORCIM.' : ''}</span>
           <button type="button" class="btn btn-sm btn-link lv-todos">Marcar todos</button></div>` : ''}
         ${blocos || '<div class="dp-vazio">Nenhum material pedido nos chamados dessas paradas.</div>'}
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-        ${podeEntregar && pendentes.length ? '<button class="btn btn-outline-primary btn-sm" id="lv-rota" disabled><i class="bi bi-signpost-split"></i> <span>Levar na rota</span></button><button class="btn btn-success btn-sm" id="lv-entregar" disabled><i class="bi bi-check2-circle"></i> <span>Confirmar entrega</span></button>' : ''}
+        ${podeEntregar && pendentes.length ? `${op.comecar ? '' : '<button class="btn btn-outline-primary btn-sm" id="lv-rota" disabled><i class="bi bi-truck"></i> <span>Saiu para entrega</span></button>'}<button class="btn ${op.comecar ? 'btn-outline-success' : 'btn-success'} btn-sm" id="lv-entregar" disabled><i class="bi bi-check2-circle"></i> <span>Confirmar entrega</span></button>` : ''}
+        ${op.comecar ? '<button class="btn btn-primary btn-sm" id="lv-comecar"><i class="bi bi-play-fill"></i> <span>Começar rota</span></button>' : ''}
       </div></div></div>`;
     document.body.appendChild(m);
     const bm = new bootstrap.Modal(m);
@@ -289,16 +292,20 @@ const Urgencia = (() => {
     m.addEventListener('hidden.bs.modal', () => { m.remove(); if (mudou && depois) depois(); });
     const btn = m.querySelector('#lv-entregar');
     const btnRota = m.querySelector('#lv-rota');
+    const btnComecar = m.querySelector('#lv-comecar');
     const marcados = () => [...m.querySelectorAll('.lv-item:not(.feito) .lv-marca:checked')].map((c) => c.closest('.lv-item'));
     const contar = () => {
       m.querySelectorAll('.lv-item:not(.feito)').forEach((it) => it.classList.toggle('marcado', it.querySelector('.lv-marca').checked));
-      if (!btn) return;
       const n = marcados().length;
       const naRota = marcados().filter((it) => !it.dataset.rota).length;
+      if (btnComecar) btnComecar.querySelector('span').textContent = naRota ? `Começar rota levando ${naRota} item${naRota === 1 ? '' : 's'}` : 'Começar rota';
+      if (!btn) return;
       btn.disabled = !n;
       btn.querySelector('span').textContent = n ? `Confirmar entrega (${n})` : 'Confirmar entrega';
-      btnRota.disabled = !naRota;
-      btnRota.querySelector('span').textContent = naRota ? `Levar na rota (${naRota})` : 'Levar na rota';
+      if (btnRota) {
+        btnRota.disabled = !naRota;
+        btnRota.querySelector('span').textContent = naRota ? `Saiu para entrega (${naRota})` : 'Saiu para entrega';
+      }
     };
     m.querySelectorAll('.lv-marca').forEach((c) => c.addEventListener('change', contar));
     m.querySelector('.lv-todos')?.addEventListener('click', (e) => {
@@ -347,263 +354,31 @@ const Urgencia = (() => {
       if (ok) toast(`${ok} item${ok === 1 ? '' : 's'} a caminho do local. Quem pediu já pode acompanhar e confirmar quando receber.`, 'success');
       contar();
     });
+    // começar a rota: os itens marcados ficam "a caminho do local" (quem pediu é avisado) e a rota começa
+    btnComecar?.addEventListener('click', async () => {
+      btnComecar.disabled = true;
+      let ok = 0;
+      for (const it of marcados().filter((x) => !x.dataset.rota)) {
+        const destino = it.querySelector('.lv-dest').value;
+        const orcim = !!it.querySelector('.lv-usa-orcim:checked');
+        try {
+          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/rota`, { destino, orcim });
+          ok += 1; mudou = true; it.dataset.rota = '1';
+        } catch (e) { showError(e); }
+      }
+      try {
+        await op.comecar();
+        mudou = true;
+        toast(`Rota começada${ok ? `: ${ok} item${ok === 1 ? '' : 's'} a caminho do local` : ''}.`, 'success');
+        bm.hide();
+      } catch (e) { showError(e); btnComecar.disabled = false; }
+    });
     contar();
     bm.show();
   }
 
-  // ---------------- Agendar a rota montada ----------------
-  async function agendarRota(ordem, depois) {
-    let tecnicos = [];
-    try { tecnicos = await API.get('/rotas/tecnicos'); } catch (e) { showError(e); return; }
-    const u = API.user || {};
-    const amanha = new Date(Date.now() + 86400000).toLocaleDateString('sv-SE');
-    const m = document.createElement('div');
-    m.className = 'modal fade';
-    m.innerHTML = `<div class="modal-dialog"><div class="modal-content">
-      <div class="modal-header"><h6 class="mb-0"><i class="bi bi-calendar-plus me-1"></i> Agendar esta rota</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body">
-        <div class="lv-total mb-3">${ordem.map((p, i) => `<span class="tg tg-blue">${i + 1}. ${esc(p.location_name)}</span>`).join(' ')}</div>
-        <div class="row g-2">
-          <div class="col-6"><label class="form-label small fw-semibold mb-1">Dia *</label><input type="date" class="form-control form-control-sm" id="ag-dia" min="${new Date().toLocaleDateString('sv-SE')}" value="${amanha}"></div>
-          <div class="col-6"><label class="form-label small fw-semibold mb-1">Técnico</label><select class="form-select form-select-sm" id="ag-tec">
-            <option value="">— a definir —</option>${tecnicos.map((t) => `<option value="${t.id}" ${String(t.id) === String(u.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
-        </div>
-        <label class="form-label small fw-semibold mt-3 mb-1">Observação</label>
-        <input class="form-control form-control-sm" id="ag-nota" maxlength="500" placeholder="Ex.: saída 8h da base, levar toner">
-        <div class="form-text">Quem é desses locais vê "Rota da TI agendada para o seu local" e recebe um aviso.</div>
-      </div>
-      <div class="modal-footer"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-        <button class="btn btn-primary btn-sm" id="ag-ok"><i class="bi bi-calendar-check"></i> Agendar</button></div></div></div>`;
-    document.body.appendChild(m);
-    const bm = new bootstrap.Modal(m);
-    m.addEventListener('hidden.bs.modal', () => m.remove());
-    m.querySelector('#ag-ok').addEventListener('click', async () => {
-      try {
-        await API.post('/rotas', { data: m.querySelector('#ag-dia').value, technician_id: m.querySelector('#ag-tec').value || null,
-          nota: m.querySelector('#ag-nota').value.trim(), locais: ordem.map((p) => p.location_id) });
-        bm.hide(); toast('Rota agendada. Os locais foram avisados.', 'success'); if (depois) depois();
-      } catch (e) { showError(e); }
-    });
-    bm.show();
-  }
-
-  // ---------------- Agenda de rotas (calendário do mês + lista) ----------------
-  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-  const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-  async function agenda(el, { modoPosto = false } = {}) {
-    const u = API.user || {};
-    const hoje = new Date();
-    let ano = hoje.getFullYear(); let mes = hoje.getMonth();
-    let diaSel = null;
-    el.innerHTML = `
-      <div class="card panel-card mb-3"><div class="ag-cab">
-        <button class="btn btn-sm btn-outline-secondary" id="ag-ant" title="Mês anterior"><i class="bi bi-chevron-left"></i></button>
-        <b id="ag-mes"></b>
-        <button class="btn btn-sm btn-outline-secondary" id="ag-prox" title="Próximo mês"><i class="bi bi-chevron-right"></i></button>
-        <button class="btn btn-sm btn-link" id="ag-hoje">Hoje</button>
-        <span class="small text-muted ms-auto">${modoPosto ? 'As visitas da TI planejadas para o seu local' : 'Rotas planejadas pelos técnicos. Para agendar, monte a rota em "Sugerir agora".'}</span>
-      </div>
-      <div class="ag-grade" id="ag-grade"></div></div>
-      <div id="ag-lista"></div>`;
-    const doMes = () => {
-      const de = `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
-      const fim = new Date(ano, mes + 1, 0).getDate();
-      return [de, `${ano}-${String(mes + 1).padStart(2, '0')}-${String(fim).padStart(2, '0')}`];
-    };
-    async function carregar() {
-      el.querySelector('#ag-mes').textContent = `${MESES[mes]} de ${ano}`;
-      const [de, ate] = doMes();
-      let d;
-      try { d = await API.get(`/rotas?de=${de}&ate=${ate}`); } catch (e) { el.querySelector('#ag-lista').innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
-      const meuLocal = String(d.meu_local || u.location_id || '');
-      const passaNoMeu = (r) => meuLocal && (r.paradas || []).some((p) => String(p.location_id) === meuLocal);
-      const porDia = {};
-      d.rotas.forEach((r) => { (porDia[r.data] = porDia[r.data] || []).push(r); });
-      // calendário
-      const primeiro = new Date(ano, mes, 1).getDay();
-      const fim = new Date(ano, mes + 1, 0).getDate();
-      const hojeIso = new Date().toLocaleDateString('sv-SE');
-      let cel = SEMANA.map((s) => `<div class="ag-sem">${s}</div>`).join('');
-      for (let i = 0; i < primeiro; i += 1) cel += '<div class="ag-dia vazio"></div>';
-      for (let dd = 1; dd <= fim; dd += 1) {
-        const iso = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-        const rs = porDia[iso] || [];
-        cel += `<button type="button" class="ag-dia ${iso === hojeIso ? 'hoje' : ''} ${iso === diaSel ? 'sel' : ''} ${rs.length ? 'tem' : ''} ${rs.some(passaNoMeu) ? 'meu' : ''}" data-dia="${iso}">
-          <span class="ag-n">${dd}</span>
-          ${rs.length ? `<span class="ag-chip" title="${rs.map((r) => (r.paradas || []).map((p) => p.location_name).join(' → ')).join(' | ')}"><i class="bi bi-truck"></i>${rs.reduce((s, r) => s + (r.paradas || []).length, 0)}</span>` : ''}
-        </button>`;
-      }
-      el.querySelector('#ag-grade').innerHTML = cel;
-      el.querySelectorAll('.ag-dia[data-dia]').forEach((b) => b.addEventListener('click', () => { diaSel = diaSel === b.dataset.dia ? null : b.dataset.dia; carregar(); }));
-      // lista
-      const lista = d.rotas.filter((r) => !diaSel || r.data === diaSel);
-      el.querySelector('#ag-lista').innerHTML = lista.length ? lista.map((r) => {
-        const dt = new Date(`${r.data}T12:00:00`);
-        const podeCancelar = d.pode_agendar && (Roles.isMaster(u) || [r.created_by, r.technician_id].map(String).includes(String(u.id)));
-        return `<div class="card panel-card mb-2 ag-rota ${passaNoMeu(r) ? 'meu' : ''}">
-          <div class="ag-rota-data"><b>${dt.getDate()}</b><small>${MESES[dt.getMonth()].slice(0, 3)}</small><small>${SEMANA[dt.getDay()]}</small></div>
-          <div class="ag-rota-tx">
-            ${passaNoMeu(r) ? '<span class="tg tg-teal mb-1"><i class="bi bi-geo-alt-fill"></i> Rota da TI agendada para o seu local</span>' : ''}
-            <div class="ag-paradas">${(r.paradas || []).map((p, i) => `<span class="ag-parada ${String(p.location_id) === meuLocal ? 'meu' : ''}"><span class="ur-num">${i + 1}</span>${esc(p.location_name)}</span>`).join('<i class="bi bi-arrow-right ag-seta"></i>')}</div>
-            <small class="text-muted"><i class="bi bi-person-badge"></i> ${esc(r.technician_name || 'técnico a definir')}${r.nota ? ` · ${esc(r.nota)}` : ''}</small>
-          </div>
-          ${podeCancelar ? `<button class="btn btn-sm btn-outline-danger ag-cancelar" data-id="${r.id}" title="Cancelar esta rota"><i class="bi bi-x-lg"></i></button>` : ''}
-        </div>`;
-      }).join('') : emptyState(diaSel ? 'Nenhuma rota neste dia' : 'Nenhuma rota planejada neste mês', modoPosto ? 'Quando a TI agendar uma visita ao seu local, ela aparece aqui.' : 'Monte uma rota em "Sugerir agora" e clique em "Agendar esta rota".', 'bi-calendar3');
-      el.querySelectorAll('.ag-cancelar').forEach((b) => b.addEventListener('click', async () => {
-        if (!await confirmDialog({ title: 'Cancelar rota', body: 'A rota sai da agenda.', confirmText: 'Cancelar rota', danger: true })) return;
-        try { await API.del(`/rotas/${b.dataset.id}`); toast('Rota cancelada.', 'warning'); carregar(); } catch (e) { showError(e); }
-      }));
-    }
-    el.querySelector('#ag-ant').addEventListener('click', () => { mes -= 1; if (mes < 0) { mes = 11; ano -= 1; } diaSel = null; carregar(); });
-    el.querySelector('#ag-prox').addEventListener('click', () => { mes += 1; if (mes > 11) { mes = 0; ano += 1; } diaSel = null; carregar(); });
-    el.querySelector('#ag-hoje').addEventListener('click', () => { ano = hoje.getFullYear(); mes = hoje.getMonth(); diaSel = null; carregar(); });
-    carregar();
-  }
-
-  async function rotas(raiz) {
-    // abas: sugerir agora (tempo real) | agenda de rotas (planejadas)
-    const aba = /aba=agenda/.test(location.hash) ? 'agenda' : 'agora';
-    raiz.innerHTML = `<ul class="nav nav-tabs mb-3 rt-abas">
-      <li class="nav-item"><a class="nav-link ${aba === 'agora' ? 'active' : ''}" href="#/rotas"><i class="bi bi-magic"></i> Sugerir agora</a></li>
-      <li class="nav-item"><a class="nav-link ${aba === 'agenda' ? 'active' : ''}" href="#/rotas?aba=agenda"><i class="bi bi-calendar3"></i> Agenda de rotas</a></li>
-    </ul><div id="rt-conteudo"></div>`;
-    const el = raiz.querySelector('#rt-conteudo');
-    if (aba === 'agenda') { agenda(el); return; }
-    el.innerHTML = spinner();
-    let d;
-    try { d = await API.get('/dashboard/urgencia'); } catch (e) { el.innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
-    const comCoord = d.locais.filter((l) => l.latitude !== null && l.longitude !== null && l.location_id)
-      .map((l) => ({ ...l, lat: l.latitude, lng: l.longitude }));
-    const semCoord = d.locais.filter((l) => !(l.latitude !== null && l.longitude !== null && l.location_id));
-    let todosLocais = [];
-    try { todosLocais = (await API.get('/locations?active=true')).filter((l) => l.latitude != null && l.longitude != null); } catch { /* sem lista */ }
-    let prefs = { n: 2, inicio: '' };
-    try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('rotas_prefs') || '{}') }; } catch { /* padrão */ }
-    let escolhidos = new Set(comCoord.slice(0, prefs.n).map((l) => String(l.location_id)));
-    let meuGps = null;
-
-    el.innerHTML = `
-      <div class="card panel-card mb-3"><div class="card-body ur-form">
-        <label>Quantos locais quer atender?
-          <input type="number" class="form-control form-control-sm" id="rt-n" min="1" max="10" value="${prefs.n}"></label>
-        <label>Saindo de
-          <select class="form-select form-select-sm" id="rt-inicio">
-            <option value="">— começar pelo mais urgente —</option>
-            <option value="gps">📍 Minha localização agora</option>
-            ${todosLocais.map((l) => `<option value="${l.id}">${esc(l.name)}${l.city ? ` (${esc(l.city)})` : ''}</option>`).join('')}
-          </select></label>
-        <button class="btn btn-sm btn-outline-secondary" id="rt-sugerir"><i class="bi bi-magic"></i> Sugerir de novo</button>
-        <span class="small text-muted ms-auto">${comCoord.length} local(is) com chamados e coordenadas</span>
-      </div></div>
-      <div class="ur-rota-grade">
-        <div class="card panel-card">
-          <div class="dp-bloco-cab"><span><i class="bi bi-list-ol"></i> Locais (por score)</span><small class="text-muted">marque os que vai atender</small></div>
-          <div id="rt-cands" class="ur-cands"></div>
-          ${semCoord.length ? `<div class="ur-sem">Sem coordenadas (fora da rota): ${semCoord.map((l) => `${esc(l.location_name)} <b>${n1(l.score)}</b>`).join(' · ')}.
-            Cadastre a latitude e longitude em <a href="#/admin/locations">Localizações</a>.</div>` : ''}
-        </div>
-        <div class="rt-direita"><div class="card panel-card ur-rota" id="rt-rota"></div><div id="rt-levar"></div></div>
-      </div>
-      ${regrasHtml(d.regras)}`;
-    el.querySelector('#rt-inicio').value = prefs.inicio;
-
-    const salvar = () => { try { localStorage.setItem('rotas_prefs', JSON.stringify(prefs)); } catch { /* sem armazenamento */ } };
-    const pontoInicio = () => {
-      if (prefs.inicio === 'gps') return meuGps;
-      const l = todosLocais.find((x) => String(x.id) === String(prefs.inicio));
-      return l ? { lat: Number(l.latitude), lng: Number(l.longitude), location_name: l.name } : null;
-    };
-
-    function pintarCands() {
-      el.querySelector('#rt-cands').innerHTML = comCoord.length ? comCoord.map((l, i) => `
-        <label class="ur-cand ${escolhidos.has(String(l.location_id)) ? 'sel' : ''}">
-          <input type="checkbox" data-loc="${l.location_id}" ${escolhidos.has(String(l.location_id)) ? 'checked' : ''}>
-          <span class="ur-pos">${i + 1}º</span>
-          <span class="ur-loc-tx"><b>${esc(l.location_name)}</b><small>${l.chamados.length} chamado(s)${l.atrasados ? ` · ${l.atrasados} atrasado(s)` : ''}${l.city ? ` · ${esc(l.city)}` : ''}</small></span>
-          <span class="ur-loc-score">${numScore(l.score, ALVO_LOCAL, '', 1.05, temParada(l.chamados))}</span>
-        </label>`).join('') : '<div class="dp-vazio">Nenhum local com chamados em aberto e coordenadas.</div>';
-      el.querySelectorAll('#rt-cands [data-loc]').forEach((c) => c.addEventListener('change', () => {
-        if (c.checked) escolhidos.add(c.dataset.loc); else escolhidos.delete(c.dataset.loc);
-        pintarCands(); pintarRota();
-      }));
-    }
-
-    function pintarRota() {
-      const box = el.querySelector('#rt-rota');
-      const paradas = comCoord.filter((l) => escolhidos.has(String(l.location_id)));
-      if (!paradas.length) { box.innerHTML = '<div class="dp-vazio">Marque ao menos um local para montar a rota.</div>'; el.querySelector('#rt-levar').innerHTML = ''; return; }
-      const inicio = pontoInicio();
-      const ordem = ordenar(paradas, inicio);
-      let total = 0; let anterior = inicio;
-      const trechos = ordem.map((p) => { const dd = anterior ? km(anterior, p) * FATOR_ESTRADA : 0; total += dd; anterior = p; return dd; });
-      const horas = total / VELOCIDADE;
-      // Google Maps: rota pronta (abre no navegador/celular, sem chave de API)
-      const pt = (p) => `${p.lat},${p.lng}`;
-      const destino = ordem[ordem.length - 1];
-      const meio = ordem.slice(0, -1);
-      const url = `https://www.google.com/maps/dir/?api=1${inicio ? `&origin=${encodeURIComponent(pt(inicio))}` : ''}&destination=${encodeURIComponent(pt(destino))}${meio.length ? `&waypoints=${encodeURIComponent(meio.map(pt).join('|'))}` : ''}&travelmode=driving`;
-      // o que levar: materiais pedidos (ainda não entregues) nos chamados das paradas
-      const pendentes = ordem.flatMap((p) => p.chamados.flatMap((c) => (c.materiais || []).filter((m) => !['entregue', 'cancelado'].includes(m.status))));
-      const pedidosN = ordem.reduce((s, p) => s + p.chamados.filter((c) => (c.materiais || []).some((m) => !['entregue', 'cancelado'].includes(m.status))).length, 0);
-      const u = API.user || {};
-      const podeAgendarRota = Roles.isMaster(u) || (Roles.can(u, 'dashboard.view') && (Roles.can(u, 'ticket.work') || Roles.can(u, 'ticket.assign')));
-      box.innerHTML = `
-        <div class="dp-bloco-cab"><span><i class="bi bi-signpost-split"></i> Rota sugerida</span>
-          <span class="d-flex gap-1">
-            <a class="btn btn-sm btn-primary" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Abrir no Google Maps</a>
-            ${podeAgendarRota ? '<button class="btn btn-sm btn-outline-primary" id="rt-agendar"><i class="bi bi-calendar-plus"></i> Agendar esta rota</button>' : ''}
-            <button class="btn btn-sm btn-outline-secondary" id="rt-imprimir"><i class="bi bi-printer"></i> Relatório</button>
-          </span></div>
-        <div class="ur-resumo">${ordem.length} parada(s) · ~${n1(Math.round(total))} km · ~${horas < 1 ? `${Math.round(horas * 60)} min` : `${n1(Math.round(horas * 10) / 10)} h`} de estrada
-          <small>estimativa pela distância em linha reta × ${n1(FATOR_ESTRADA)} a ${VELOCIDADE} km/h; o Google Maps calcula o trânsito real</small></div>
-        <ol class="ur-paradas">
-          ${inicio ? `<li class="ur-inicio"><i class="bi bi-geo-fill"></i> Saída: ${esc(inicio.location_name || 'sua localização')}</li>` : ''}
-          ${ordem.map((p, i) => `
-            <li class="ur-parada">
-              <div class="ur-parada-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b>
-                <span class="ur-loc-score">${numScore(p.score, ALVO_LOCAL, '', 1.05, temParada(p.chamados))}<small>score</small></span></div>
-              <div class="ur-parada-sub">${esc([p.address, p.city].filter(Boolean).join(' · '))}${trechos[i] ? ` · ~${n1(Math.round(trechos[i]))} km do ponto anterior` : ''}</div>
-              <div class="ur-chs">${p.chamados.map(linhaChamado).join('')}</div>
-            </li>`).join('')}
-        </ol>`;
-      box.querySelector('#rt-imprimir').addEventListener('click', () => { document.body.classList.add('imprimindo-rota'); window.print(); setTimeout(() => document.body.classList.remove('imprimindo-rota'), 500); });
-      box.querySelector('#rt-agendar')?.addEventListener('click', () => agendarRota(ordem, () => { location.hash = '#/rotas?aba=agenda'; }));
-      // card separado: "O que levar" (abre a janela com o checklist dos pedidos)
-      const lv = el.querySelector('#rt-levar');
-      lv.innerHTML = `<button type="button" class="card panel-card lv-card ${pendentes.length ? '' : 'vazio'}" id="rt-abrir-levar">
-        ${caixaPixel(40)}
-        <span class="lv-card-tx"><b>O que levar</b>
-          <small>${pendentes.length ? `${pendentes.length} item(ns) para separar · ${pedidosN} pedido(s) de material` : 'Nenhum material pedido nas paradas desta rota'}</small></span>
-        <span class="btn btn-sm btn-outline-primary">Abrir lista <i class="bi bi-box-arrow-up-right"></i></span>
-      </button>`;
-      lv.querySelector('#rt-abrir-levar').addEventListener('click', () => abrirLevar(ordem, () => rotas(raiz)));
-    }
-
-    const sugerir = () => {
-      escolhidos = new Set(comCoord.slice(0, prefs.n).map((l) => String(l.location_id)));
-      pintarCands(); pintarRota();
-    };
-    el.querySelector('#rt-n').addEventListener('change', (e) => { prefs.n = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)); e.target.value = prefs.n; salvar(); sugerir(); });
-    el.querySelector('#rt-sugerir').addEventListener('click', sugerir);
-    el.querySelector('#rt-inicio').addEventListener('change', (e) => {
-      prefs.inicio = e.target.value; salvar();
-      if (prefs.inicio === 'gps' && !meuGps) {
-        if (!navigator.geolocation) { toast('Este navegador não informa a localização.', 'warning'); return; }
-        navigator.geolocation.getCurrentPosition((pos) => {
-          meuGps = { lat: pos.coords.latitude, lng: pos.coords.longitude, location_name: 'sua localização' };
-          pintarRota();
-        }, () => toast('Não foi possível pegar a sua localização (permissão negada?).', 'warning'), { enableHighAccuracy: true, timeout: 10000 });
-        return;
-      }
-      pintarRota();
-    });
-    pintarCands(); pintarRota();
-  }
-
-  return { pagina, rotas, agenda };
+  // peças usadas pela tela de Rotas (public/js/views/rotas.js)
+  return { pagina, numScore, linhaChamado, ordenar, km, FATOR_ESTRADA, VELOCIDADE, abrirLevar, caixaPixel, temParada, ALVO_LOCAL, n1 };
 })();
 
 Views.urgencia = (el) => Urgencia.pagina(el);
-Views.rotas = (el) => Urgencia.rotas(el);
-Views.visitas = (el) => Urgencia.agenda(el, { modoPosto: true });

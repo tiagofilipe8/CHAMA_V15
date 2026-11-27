@@ -36,9 +36,8 @@ function buildNav(u) {
   if (can('dashboard.view') && can('ticket.rating')) atendimento.push({ href: '#/causas', icon: 'bi-clipboard-data', label: 'Causas e notas' });
   if (can('dashboard.view')) atendimento.push({ href: '#/relatorios', icon: 'bi-file-earmark-pdf', label: 'Relatórios em PDF' });
   if (can('dashboard.view')) atendimento.push({ href: '#/urgencia', icon: 'bi-fire', label: 'Score de urgência' });
-  if (can('dashboard.view')) atendimento.push({ href: '#/rotas', icon: 'bi-signpost-split', label: 'Sugerir rotas' });
-  // Agenda de rotas: logo abaixo, ligada por um "L" (as rotas já agendadas para outros dias)
-  if (can('dashboard.view')) atendimento.push({ href: '#/rotas?aba=agenda', icon: 'bi-calendar3', label: 'Agenda de rotas', sub: true });
+  // Rotas: agenda (hoje e próximos dias), montar rota e a página de cada rota; o contador mostra as rotas de hoje
+  if (can('dashboard.view')) atendimento.push({ rotas: true, href: '#/rotas', icon: 'bi-signpost-split', label: 'Rotas' });
   // quem não vê o painel (gestor, usuário): as visitas da TI planejadas para o seu local
   if (!can('dashboard.view')) atendimento.push({ href: '#/visitas', icon: 'bi-truck', label: 'Visitas da TI' });
   const ticketsLabel = can('ticket.view_all') ? 'Chamados' : 'Chamados da empresa';
@@ -95,7 +94,8 @@ function pageTitleFromPath() {
     '/causas': 'Causas e notas',
     '/relatorios': 'Relatórios em PDF',
     '/urgencia': 'Score de urgência',
-    '/rotas': /aba=agenda/.test(location.hash) ? 'Agenda de rotas' : 'Sugerir rotas',
+    '/rotas': 'Rotas',
+    '/rotas/nova': /editar=/.test(location.hash) ? 'Editar rota' : 'Montar rota',
     '/visitas': 'Visitas da TI',
     '/chat': 'Chat',
     '/estoque': 'Estoque de T.I.',
@@ -117,6 +117,7 @@ function pageTitleFromPath() {
   if (path.startsWith('/tickets/')) return 'Chamado';
   if (path.startsWith('/chat/')) return 'Chat';
   if (path.startsWith('/inventory/')) return 'Equipamento';
+  if (/^\/rotas\/\d+$/.test(path)) return 'Rota';
   return map[path] || 'Sistema';
 }
 
@@ -135,7 +136,8 @@ function pageDescFromPath() {
     '/causas': 'Por que abrem e por que fecham os chamados, e a nota de cada local e usuário com a TI.',
     '/relatorios': 'Escolha o período e os relatórios, veja a prévia e baixe tudo num PDF formatado.',
     '/urgencia': 'Os locais em ordem de urgência: soma do score dos chamados abertos (urgência, atraso e prazo).',
-    '/rotas': 'Sugira a rota pelos chamados de agora, agende rotas para outros dias e veja o que levar para cada local.',
+    '/rotas': 'As rotas da TI: as de hoje, as que ficaram sem concluir e as dos próximos dias. Monte uma rota nova pelos locais mais urgentes.',
+    '/rotas/nova': 'Escolha os locais, confira a ordem e o que levar, e agende o dia.',
     '/visitas': 'Os dias em que a TI vai passar no seu local (rotas planejadas pelos técnicos).',
     '/tickets': listaTickets,
     '/mine': 'Os chamados que você abriu e os que estão com você. O sininho marca os que tiveram novidade.',
@@ -161,6 +163,7 @@ function pageDescFromPath() {
   if (/^\/tickets\/\d+/.test(path)) return 'Situação, conversa e histórico do chamado.';
   if (/^\/chat\/\d+/.test(path)) return 'Converse com a equipe. Use @ para citar alguém e # para marcar um chamado.';
   if (/^\/inventory\/\d+/.test(path)) return 'Dados do equipamento e os chamados ligados a ele.';
+  if (/^\/rotas\/\d+$/.test(path)) return 'Paradas, chamados e o que levar. No dia, comece a rota e conclua no fim.';
   return map[path] || '';
 }
 
@@ -172,6 +175,20 @@ function pintarAlertaUrgencia() {
   a.classList.toggle('nav-em-chamas', alertaParada > 0);
   a.title = alertaParada ? `${alertaParada} chamado(s) de operação parada em aberto` : '';
 }
+// Rotas: quantas rotas de hoje ainda não foram concluídas ("2 hoje" ao lado do item do menu)
+let rotasHoje = 0;
+function pintarRotasHoje() {
+  const b = document.querySelector('#nav-rotas .nav-rotas-n');
+  if (!b) return;
+  b.classList.toggle('d-none', !rotasHoje);
+  b.textContent = `${rotasHoje} hoje`;
+}
+async function carregarRotasHoje() {
+  if (!Roles.can(currentUser(), 'dashboard.view')) return;
+  try { rotasHoje = (await API.get('/rotas/hoje')).n || 0; } catch { rotasHoje = 0; }
+  pintarRotasHoje();
+}
+window.recarregarRotasHoje = carregarRotasHoje;
 let esperaAlerta = null;
 function carregarAlertaUrgencia() {
   if (!Roles.can(currentUser(), 'dashboard.view')) return;
@@ -207,6 +224,9 @@ function renderNav() {
     } else if (it.pedidos) {
       html += `<a class="nav-item nav-top" id="nav-pedidos" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
         + '<span class="nav-bell d-none" title="Seus pedidos tiveram novidade"><i class="bi bi-bell-fill"></i><b></b></span></a>';
+    } else if (it.rotas) {
+      html += `<a class="nav-item" id="nav-rotas" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
+        + '<span class="nav-rotas-n d-none" title="Rotas de hoje ainda não concluídas"></span></a>';
     } else if (it.chat) {
       html += `<a class="nav-item nav-top" id="nav-chat" href="${it.href}"><i class="bi ${it.icon}"></i><span>${it.label}</span>`
         + '<b class="nav-chat-n d-none" title="Mensagens não lidas"></b></a>';
@@ -222,6 +242,7 @@ function renderNav() {
   Atendimento.carregar();
   Chat.pintarBolinha();
   pintarAlertaUrgencia();
+  pintarRotasHoje();
 
   // identities
   const name = user.name || user.username;
@@ -299,6 +320,8 @@ function migalhasDoCaminho() {
     lista.push({ txt: 'Inventário da Empresa', href: '#/inventory' }, { txt: 'Estoque de T.I.' });
   } else if (/^\/chat\/\d+/.test(path)) {
     lista.push({ txt: migalhaExtra || 'Conversa' });
+  } else if (/^\/rotas\//.test(path)) {
+    lista.push({ txt: 'Rotas', href: '#/rotas' }, { txt: migalhaExtra || pageTitleFromPath() });
   } else {
     const titulo = pageTitleFromPath();
     if (titulo && titulo !== grupo) lista.push({ txt: titulo });
@@ -371,6 +394,8 @@ const routes = [
   { re: /^#\/relatorios$/, view: () => Views.relatorios },
   { re: /^#\/urgencia$/, view: () => Views.urgencia },
   { re: /^#\/rotas(\?.*)?$/, view: () => Views.rotas },
+  { re: /^#\/rotas\/nova(\?.*)?$/, view: () => Views.rotaNova },
+  { re: /^#\/rotas\/(\d+)$/, view: (m) => (el) => Views.rota(m[1], el) },
   { re: /^#\/visitas$/, view: () => Views.visitas },
   { re: /^#\/chat$/, view: () => Views.chat },
   { re: /^#\/chat\/(\d+)$/, view: (m) => Views.chatConversa(m[1]) },
@@ -755,6 +780,7 @@ async function boot() {
   loadBell();
   if (window.CHAT_LIGADO) Chat.carregarBolinha();
   carregarAlertaUrgencia();
+  carregarRotasHoje();
 
   // eventos do shell
   document.getElementById('btn-logout').onclick = logout;
