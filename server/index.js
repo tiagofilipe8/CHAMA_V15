@@ -33,6 +33,7 @@ const stockReasonRoutes = require('./routes/stockReasons');
 const pedidoRoutes = require('./routes/pedidos');
 const orcimRoutes = require('./routes/orcim');
 const rotaRoutes = require('./routes/rotas');
+const relatorioRoutes = require('./routes/relatorios');
 const backupService = require('./services/backup');
 const maintenanceAlerts = require('./services/maintenanceAlerts');
 
@@ -84,6 +85,7 @@ app.use('/api/stock-reasons', stockReasonRoutes);
 app.use('/api/pedidos', pedidoRoutes);
 app.use('/api/orcim', orcimRoutes);
 app.use('/api/rotas', rotaRoutes);
+app.use('/api/relatorios', relatorioRoutes);
 
 // Garante que handlers assincronos lancados virem resposta 500 (nao crash)
 const wrapAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);

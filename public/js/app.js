@@ -34,6 +34,7 @@ function buildNav(u) {
   const atendimento = [];
   if (can('dashboard.view')) atendimento.push({ href: '#/dashboard', icon: 'bi-speedometer2', label: 'Painel' });
   if (can('dashboard.view') && can('ticket.rating')) atendimento.push({ href: '#/causas', icon: 'bi-clipboard-data', label: 'Causas e notas' });
+  if (can('dashboard.view')) atendimento.push({ href: '#/relatorios', icon: 'bi-file-earmark-pdf', label: 'Relatórios em PDF' });
   if (can('dashboard.view')) atendimento.push({ href: '#/urgencia', icon: 'bi-fire', label: 'Score de urgência' });
   if (can('dashboard.view')) atendimento.push({ href: '#/rotas', icon: 'bi-signpost-split', label: 'Sugerir rotas' });
   // Agenda de rotas: logo abaixo, ligada por um "L" (as rotas já agendadas para outros dias)
@@ -92,6 +93,7 @@ function pageTitleFromPath() {
     '/meus-pedidos': 'Meus pedidos',
     '/atendimento': 'Meu atendimento',
     '/causas': 'Causas e notas',
+    '/relatorios': 'Relatórios em PDF',
     '/urgencia': 'Score de urgência',
     '/rotas': /aba=agenda/.test(location.hash) ? 'Agenda de rotas' : 'Sugerir rotas',
     '/visitas': 'Visitas da TI',
@@ -131,6 +133,7 @@ function pageDescFromPath() {
     '/dashboard': 'Resumo do atendimento: chamados abertos, urgências e o que precisa ficar pronto em cada dia.',
     '/atendimento': 'O chamado que você está atendendo agora e a sua fila, do mais urgente para o menos urgente.',
     '/causas': 'Por que abrem e por que fecham os chamados, e a nota de cada local e usuário com a TI.',
+    '/relatorios': 'Escolha o período e os relatórios, veja a prévia e baixe tudo num PDF formatado.',
     '/urgencia': 'Os locais em ordem de urgência: soma do score dos chamados abertos (urgência, atraso e prazo).',
     '/rotas': 'Sugira a rota pelos chamados de agora, agende rotas para outros dias e veja o que levar para cada local.',
     '/visitas': 'Os dias em que a TI vai passar no seu local (rotas planejadas pelos técnicos).',
@@ -365,6 +368,7 @@ const routes = [
   { re: /^#\/mine$/, view: () => (el) => Views.tickets(el, { mine: true }) },
   { re: /^#\/atendimento$/, view: () => Views.atendimento },
   { re: /^#\/causas$/, view: () => Views.causas },
+  { re: /^#\/relatorios$/, view: () => Views.relatorios },
   { re: /^#\/urgencia$/, view: () => Views.urgencia },
   { re: /^#\/rotas(\?.*)?$/, view: () => Views.rotas },
   { re: /^#\/visitas$/, view: () => Views.visitas },

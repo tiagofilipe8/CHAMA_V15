@@ -2320,3 +2320,116 @@ select.pd-sel.pd-cancelado { text-decoration: none; }
 .mp-conta.ms-0 { margin-left: 0 !important; }
 .pd-prev { width: 140px; }
 @media (max-width: 900px) { .mp-item { grid-template-columns: 1fr; } .mp-tempo li small { font-size: .6rem; } }
+
+/* =====================================================================
+   Relatórios em PDF (Views.relatorios)
+   A tela tem os filtros; o documento (.rl-doc) é sempre claro, como papel,
+   e na impressão só ele aparece (body.imprimindo-relatorio > #rl-print).
+   ===================================================================== */
+.rl-filtros { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.rl-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rl-data { width: auto; min-width: 140px; }
+.rl-grupos { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 20px; }
+.rl-grupo { display: flex; flex-direction: column; gap: 4px; }
+.rl-grupo-tit { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 2px; cursor: pointer; }
+.rl-op { display: flex; align-items: center; gap: 6px; padding-left: 22px; font-size: .9rem; cursor: pointer; }
+
+.rl-doc {
+  --rl-tx: #1f2937; --rl-mut: #6b7280; --rl-borda: #e5e7eb; --rl-fundo: #f8fafc;
+  --rl-c1: #0e7c66; --rl-c2: #2563eb; --rl-c3: #f59e0b; --rl-c4: #dc2626; --rl-c5: #eab308;
+  background: #fff; color: var(--rl-tx); max-width: 860px; margin: 0 auto 40px; padding: 36px 40px;
+  border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0,.12); font-size: 12.5px; line-height: 1.4;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.rl-doc h1, .rl-doc h2, .rl-doc h3, .rl-doc h4 { color: var(--rl-tx); }
+.rl-capa { border-bottom: 3px solid var(--rl-c1); padding-bottom: 18px; margin-bottom: 18px; }
+.rl-capa-marca { display: flex; align-items: center; gap: 8px; color: var(--rl-c1); font-weight: 700; font-size: 14px; }
+.rl-capa-marca img { height: 30px; }
+.rl-capa-marca .bi { font-size: 20px; }
+.rl-capa h1 { font-size: 30px; font-weight: 800; margin: 10px 0 4px; letter-spacing: -.5px; }
+.rl-capa-per { font-size: 15px; font-weight: 600; }
+.rl-capa-per span, .rl-capa-onde, .rl-capa-gerado, .rl-mut { color: var(--rl-mut); font-weight: 400; }
+.rl-capa-onde { margin-top: 2px; }
+.rl-capa-indice { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 8px; }
+.rl-capa-indice span { background: var(--rl-fundo); border: 1px solid var(--rl-borda); border-radius: 20px; padding: 3px 10px; font-size: 11.5px; }
+.rl-capa-gerado { font-size: 11px; }
+.rl-parte { margin-top: 10px; }
+.rl-parte + .rl-parte { break-before: page; page-break-before: always; }
+.rl-parte-tit { background: var(--rl-c1); color: #fff; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; padding: 6px 12px; border-radius: 5px; margin-bottom: 12px; }
+.rl-sec { margin-bottom: 26px; }
+.rl-sec h2 { font-size: 18px; font-weight: 700; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; break-after: avoid; }
+.rl-sec h2 .bi { color: var(--rl-c1); }
+.rl-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--rl-fundo); border: 1px solid var(--rl-borda); font-size: 12px; color: var(--rl-mut); }
+.rl-sub { color: var(--rl-mut); margin: 0 0 10px; }
+.rl-sec h3 { font-size: 13px; font-weight: 700; margin: 12px 0 6px; break-after: avoid; }
+.rl-sec h4 { font-size: 11.5px; font-weight: 700; margin: 6px 0 4px; color: var(--rl-mut); text-transform: uppercase; letter-spacing: .3px; }
+.rl-vazio { color: var(--rl-mut); font-style: italic; margin: 6px 0; }
+.rl-nota { color: var(--rl-mut); font-size: 11px; margin-top: 6px; }
+.rl-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 8px 0 12px; break-inside: avoid; }
+.rl-kpi { background: var(--rl-fundo); border: 1px solid var(--rl-borda); border-left: 4px solid var(--rl-c1); border-radius: 6px; padding: 8px 10px; }
+.rl-kpi b { display: block; font-size: 19px; font-weight: 800; line-height: 1.15; }
+.rl-kpi span { color: var(--rl-mut); font-size: 11px; }
+.rl-kpi.rl-ruim { border-left-color: var(--rl-c4); }
+.rl-kpi.rl-ruim b { color: var(--rl-c4); }
+.rl-kpi.rl-medio { border-left-color: var(--rl-c3); }
+.rl-kpi.rl-bom { border-left-color: #16a34a; }
+.rl-kpi.rl-bom b { color: #16a34a; }
+.rl-ruim-t { color: var(--rl-c4); }
+.rl-bom-t { color: #16a34a; }
+.rl-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.rl-barras { display: flex; flex-direction: column; gap: 4px; break-inside: avoid; margin-bottom: 8px; }
+.rl-barra { display: grid; grid-template-columns: minmax(80px, 46%) 1fr auto; align-items: center; gap: 8px; font-size: 11.5px; }
+.rl-barra small { color: var(--rl-mut); font-size: 10px; }
+.rl-barra-rot { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-barra-trilho { background: var(--rl-fundo); border-radius: 3px; height: 12px; overflow: hidden; }
+.rl-barra-trilho i { display: block; height: 100%; border-radius: 3px; }
+.rl-barra b { font-variant-numeric: tabular-nums; text-align: right; }
+.rl-graf { break-inside: avoid; margin: 6px 0 12px; }
+.rl-graf svg { width: 100%; height: auto; display: block; }
+.rl-graf .rl-grade, .rl-mini .rl-grade { stroke: var(--rl-borda); stroke-width: 1; }
+.rl-graf .rl-eixo { font-size: 10px; fill: var(--rl-mut); }
+.rl-graf .rl-val { font-size: 9px; fill: var(--rl-tx); font-weight: 600; }
+.rl-leg { display: flex; gap: 14px; justify-content: center; font-size: 11px; color: var(--rl-mut); }
+.rl-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.rl-leg i.rl-leg-l { height: 3px; width: 14px; vertical-align: 3px; }
+.rl-tab { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0 4px; }
+.rl-tab th { background: var(--rl-fundo); color: var(--rl-mut); font-weight: 600; text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--rl-borda); font-size: 10.5px; text-transform: uppercase; letter-spacing: .2px; }
+.rl-tab td { padding: 4px 6px; border-bottom: 1px solid var(--rl-borda); vertical-align: top; }
+.rl-tab tr { break-inside: avoid; }
+.rl-tab thead { display: table-header-group; }
+.rl-tab .rl-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rl-tab small { font-size: 10px; }
+.rl-tab-grupo td { background: #f1f5f9; font-weight: 700; }
+.rl-ind { padding-left: 20px !important; }
+.rl-urg { font-size: 10.5px; padding: 1px 6px; border-radius: 10px; background: var(--rl-fundo); white-space: nowrap; }
+.rl-urg-4 { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+.rl-urg-3 { background: #ffedd5; color: #c2410c; }
+.rl-est { color: var(--rl-c5); letter-spacing: 1px; }
+.rl-est-v { color: #d1d5db; }
+.rl-mini { display: block; }
+.rl-postos { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
+.rl-posto { border: 1px solid var(--rl-borda); border-radius: 6px; padding: 8px 10px; break-inside: avoid; }
+.rl-posto .rl-2col { gap: 10px; }
+.rl-posto-cab { border-bottom: 1px solid var(--rl-borda); padding-bottom: 4px; margin-bottom: 4px; }
+.rl-fogo-box { display: flex; align-items: center; gap: 16px; background: linear-gradient(90deg, #fff7ed, #fff); border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 16px; margin: 6px 0 10px; break-inside: avoid; }
+.rl-fogo-n { font-size: 28px; font-weight: 800; color: #c2410c; }
+.rl-fogo { image-rendering: pixelated; flex: none; vertical-align: middle; }
+.rl-fogo .rl-fogo-b { opacity: 0; }
+@media screen and (prefers-reduced-motion: no-preference) {
+  .rl-fogo .rl-fogo-a { animation: rl-chama .5s steps(1) infinite; }
+  .rl-fogo .rl-fogo-b { animation: rl-chama .5s steps(1) infinite reverse; }
+}
+@keyframes rl-chama { 0% { opacity: 1; } 50% { opacity: 0; } }
+@media (max-width: 700px) {
+  .rl-doc { padding: 18px 14px; }
+  .rl-2col { grid-template-columns: 1fr; }
+}
+@media print {
+  @page { size: A4; margin: 14mm 12mm 16mm; }
+  body.imprimindo-relatorio > *:not(#rl-print) { display: none !important; }
+  body.imprimindo-relatorio { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  body.imprimindo-relatorio #rl-print .rl-doc { box-shadow: none; max-width: none; margin: 0; padding: 0; border-radius: 0; }
+  body.imprimindo-relatorio #rl-print .rl-2col { grid-template-columns: 1fr 1fr; }
+  body.imprimindo-relatorio .rl-fogo .rl-fogo-a { animation: none; opacity: 1; }
+  body.imprimindo-relatorio .rl-fogo .rl-fogo-b { animation: none; opacity: 0; }
+}
