@@ -2550,7 +2550,26 @@ a.ro-cartao:hover { background: rgba(127,127,127,.05); color: inherit; }
 .ro-q { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px; }
 .ro-q > b { font-size: 1.05rem; color: var(--ink); }
 .ro-q small { color: var(--muted); font-size: .78rem; flex-basis: 100%; }
-.ro-km { margin-left: auto; color: var(--muted); font-size: .84rem; }
+/* resumo da rota em destaque + botão do Google Maps */
+.ro-resumo { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; margin: 4px 0 4px; }
+.ro-stat { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 12px; background: var(--c-blue-bg, #eff6ff); min-width: 120px; }
+.ro-stat > i { font-size: 1.3rem; color: #2563eb; }
+.ro-stat > span { display: flex; flex-direction: column; line-height: 1.1; }
+.ro-stat b { font-size: 1.35rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ro-stat small { font-size: .72rem; color: var(--muted); }
+.btn-maps { display: inline-flex; align-items: center; gap: 8px; align-self: center; margin-left: auto; background: #1a73e8; border-color: #1a73e8; color: #fff; font-weight: 700; font-size: 1rem; padding: 10px 18px; border-radius: 12px; }
+.btn-maps:hover, .btn-maps:focus { background: #1765cc; border-color: #1765cc; color: #fff; }
+.btn-maps i { font-size: 1.15rem; }
+.ro-resumo-nota { font-size: .72rem; color: var(--muted); margin-bottom: 12px; }
+.ro-cab-tx .ro-resumo { margin-top: 6px; }
+.ro-cab-tx .ro-resumo-nota { margin-bottom: 2px; }
+@media (max-width: 575px) {
+  .ro-resumo { gap: 6px; }
+  .ro-stat { flex: 1 1 0; min-width: 0; padding: 8px; gap: 6px; flex-direction: column; align-items: flex-start; }
+  .ro-stat > i { font-size: 1rem; }
+  .ro-stat b { font-size: 1.05rem; }
+  .btn-maps { margin-left: 0; width: 100%; justify-content: center; }
+}
 .ro-contador { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .ro-contador .btn { border: 0; border-radius: 0; padding: 4px 12px; }
 .ro-contador b { min-width: 40px; text-align: center; font-size: 1.05rem; border-left: 1px solid var(--border); border-right: 1px solid var(--border); padding: 3px 0; }

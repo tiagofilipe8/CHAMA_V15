@@ -74,6 +74,18 @@ const Rotas = (() => {
     const destino = pts[pts.length - 1]; const meio = pts.slice(0, -1);
     return `https://www.google.com/maps/dir/?api=1${temPonto(inicio) ? `&origin=${encodeURIComponent(pt(inicio))}` : ''}&destination=${encodeURIComponent(pt(destino))}${meio.length ? `&waypoints=${encodeURIComponent(meio.map(pt).join('|'))}` : ''}&travelmode=driving`;
   };
+  // Resumo em destaque: paradas, km e tempo, com o botão do Google Maps ao lado
+  const resumoBloco = (ordem, inicio, url) => {
+    const r = resumoKm(ordem, inicio);
+    return `<div class="ro-resumo">
+      <div class="ro-stat"><i class="bi bi-geo-alt-fill"></i><span><b>${ordem.length}</b><small>parada${ordem.length === 1 ? '' : 's'}</small></span></div>
+      <div class="ro-stat"><i class="bi bi-signpost-2-fill"></i><span><b>~${U.n1(r.km)} km</b><small>no total</small></span></div>
+      <div class="ro-stat"><i class="bi bi-clock-fill"></i><span><b>~${r.tempo}</b><small>de estrada</small></span></div>
+      ${url ? `<a class="btn btn-maps ro-nao-imprime" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map-fill"></i> Abrir no Google Maps</a>` : ''}
+    </div>
+    <div class="ro-resumo-nota">Estimativa pela distância entre os locais. O Google Maps mostra o caminho e o trânsito de verdade.</div>`;
+  };
+
   // Caminho mais curto saindo de "inicio" (opcional) e terminando em "fim" (opcional).
   //   Até 8 paradas soltas testa todas as ordens; acima disso, vizinho mais próximo + 2-opt.
   function maisCurto(paradas, inicio, fimId) {
@@ -399,7 +411,6 @@ const Rotas = (() => {
       passo = n; pintar(); window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     el.querySelectorAll('[data-ir]').forEach((b) => b.addEventListener('click', () => ir(Number(b.dataset.ir))));
-    const resumoTxt = (ordem) => { const r = resumoKm(ordem, pontoInicio()); return `${ordem.length} parada(s) · ~${U.n1(r.km)} km · ~${r.tempo} de estrada`; };
 
     // ---- tela 1: quantos e quais locais ----
     function tela1() {
@@ -459,8 +470,8 @@ const Rotas = (() => {
       const url = mapsUrl(ordem, inicio);
       tela.innerHTML = `<div class="card panel-card ro-tela">
         <div class="ro-q"><b>Em que ordem?</b>
-          <div class="seg" role="group" aria-label="Como ordenar"><button type="button" data-modo="curto"><i class="bi bi-magic"></i> Caminho mais curto</button><button type="button" data-modo="manual"><i class="bi bi-arrows-move"></i> Eu arrumo</button></div>
-          <span class="ro-km">${resumoTxt(ordem)}</span></div>
+          <div class="seg" role="group" aria-label="Como ordenar"><button type="button" data-modo="curto"><i class="bi bi-magic"></i> Caminho mais curto</button><button type="button" data-modo="manual"><i class="bi bi-arrows-move"></i> Eu arrumo</button></div></div>
+        ${resumoBloco(ordem, inicio, url)}
         <div class="ro-ordem-campos">
           <label>Saindo de<select class="form-select form-select-sm" id="ro-inicio">
             <option value="">— da primeira parada —</option>
@@ -489,7 +500,6 @@ const Rotas = (() => {
           </li>`).join('')}
         </ol>
         <div class="ro-nav"><button type="button" class="btn btn-outline-secondary" data-ir2="1"><i class="bi bi-arrow-left"></i> Locais</button>
-          ${url ? `<a class="btn btn-link" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Ver no Google Maps</a>` : ''}
           <button type="button" class="btn btn-primary" data-ir2="3">Próximo: dia e técnico <i class="bi bi-arrow-right"></i></button></div>
       </div>`;
       tela.querySelectorAll('[data-modo]').forEach((b) => {
@@ -539,8 +549,9 @@ const Rotas = (() => {
         return lista.length ? `<div class="ro-lv-parada"><div class="ro-lv-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b></div>${lista.map((m) => itemLevar(m, op)).join('')}</div>` : '';
       }).join('');
       tela.innerHTML = `<div class="card panel-card ro-tela">
-        <div class="ro-q"><b>Quando e quem?</b><span class="ro-km">${resumoTxt(ordem)}</span></div>
+        <div class="ro-q"><b>Quando e quem?</b></div>
         <div class="ro-trajeto ro-trajeto-resumo">${ordem.map((p) => `<span>${esc(p.location_name)}</span>`).join('<i class="bi bi-arrow-right"></i>')}</div>
+        ${resumoBloco(ordem, pontoInicio(), url)}
         <div class="ro-campos">
           <label>Dia<input type="date" class="form-control form-control-sm" id="ro-dia" min="${plano && plano.data < h ? plano.data : h}" value="${campos.dia}"></label>
           <label>Técnico<select class="form-select form-select-sm" id="ro-tec"><option value="">— a definir —</option>
@@ -554,7 +565,6 @@ const Rotas = (() => {
         </div>
         <div class="ro-nav"><button type="button" class="btn btn-outline-secondary" data-ir2="2"><i class="bi bi-arrow-left"></i> Ordem</button>
           <span class="d-flex gap-2 flex-wrap ms-auto">
-            ${url ? `<a class="btn btn-outline-primary" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Google Maps</a>` : ''}
             <button type="button" class="btn btn-outline-secondary" id="ro-imprimir"><i class="bi bi-printer"></i> Imprimir</button>
             <button type="button" class="btn btn-primary" id="ro-salvar"><i class="bi bi-calendar-check"></i> ${plano ? 'Salvar alterações' : 'Agendar rota'}</button></span></div>
         <div class="small text-muted text-end">Quem é desses locais recebe um aviso com o dia da visita.</div>
@@ -645,16 +655,15 @@ const Rotas = (() => {
         <div class="ro-cab-tx">
           <h5>Rota de ${nomeDia(r.data)} ${tagSit(r)}</h5>
           <div class="ro-cab-info"><span><i class="bi bi-person-badge"></i> ${esc(r.technician_name || 'técnico a definir')}</span>
-            <span><i class="bi bi-signpost-split"></i> ${ordem.length} parada(s) · ~${U.n1(res.km)} km · ~${res.tempo} de estrada</span>
             <span id="ro-lv-resumo"></span>
             ${r.nota ? `<span><i class="bi bi-chat-left-text"></i> ${esc(r.nota)}</span>` : ''}</div>
+          ${resumoBloco(ordem, null, url)}
           ${quem ? `<small class="text-muted">${quem}</small>` : ''}
           ${r.status === 'agendada' && r.data > h ? `<small class="text-muted">Você começa a rota no dia (${dataCurta(r.data)}). Até lá, marque ou desmarque o que vai levar em cada parada.</small>` : ''}
         </div>
         <div class="ro-cab-botoes ro-nao-imprime">
           ${podeComecar ? '<button type="button" class="btn btn-primary" id="ro-comecar"><i class="bi bi-play-fill"></i> Começar rota</button>' : ''}
           ${podeConcluir ? '<button type="button" class="btn btn-success" id="ro-concluir"><i class="bi bi-check2-circle"></i> Concluir rota</button>' : ''}
-          ${url ? `<a class="btn btn-outline-primary" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map"></i> Google Maps</a>` : ''}
           <button type="button" class="btn btn-outline-secondary" id="ro-imprimir"><i class="bi bi-printer"></i> Imprimir</button>
           ${r.pode_editar && r.status !== 'concluida' ? `<a class="btn btn-outline-secondary" href="#/rotas/nova?editar=${r.id}"><i class="bi bi-pencil"></i> Editar</a>` : ''}
           ${r.pode_editar && r.status !== 'concluida' ? '<button type="button" class="btn btn-link text-danger" id="ro-cancelar">Cancelar rota</button>' : ''}
