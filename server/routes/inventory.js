@@ -133,6 +133,36 @@ router.get('/pessoas', requireInv, async (req, res) => {
   res.json(rows);
 });
 
+// Inventário teste (estilo videogame): quantos itens cada local tem (em uso e no estoque) e quantos ficam com cada pessoa
+//   ?entity_id= (opcional) · só o que a pessoa pode ver; o perfil Usuário vê só o seu local
+router.get('/contagem', requireInv, async (req, res) => {
+  const user = req.user;
+  const params = []; const conds = ['a.entity_id IS NOT NULL'];
+  const ents = entityIdsOf(user);
+  if (ents !== null) { params.push(ents); conds.push(`a.entity_id::text = ANY($${params.length}::text[])`); }
+  if (/^\d+$/.test(String(req.query.entity_id || ''))) {
+    if (!canAccessEntity(user, req.query.entity_id)) return res.status(403).json({ error: 'Acesso negado a esta entidade' });
+    params.push(req.query.entity_id); conds.push(`a.entity_id = $${params.length}`);
+  }
+  const fixo = localFixo(user);
+  if (fixo !== null) { params.push(fixo); conds.push(`a.location_id = $${params.length}`); }
+  const UN = "(CASE WHEN a.controle = 'quantidade' THEN a.quantity ELSE 1 END)";
+  const where = conds.join(' AND ');
+  const [locais, pessoas] = await Promise.all([
+    query(`SELECT a.entity_id, a.location_id,
+                  COALESCE(sum(${UN}) FILTER (WHERE a.status IN ('OPERATING','REPAIR','BROKEN')),0)::int AS ativo,
+                  COALESCE(sum(${UN}) FILTER (WHERE a.status IN ('STOCK','READY','ORDERED')),0)::int AS estoque
+           FROM assets a WHERE ${where} GROUP BY 1, 2`, params),
+    fixo !== null ? Promise.resolve({ rows: [] }) : query(
+      `SELECT a.entity_id, a.responsible_user_id, CASE WHEN a.responsible_user_id IS NULL THEN a.dono_nome END AS dono_nome,
+              COALESCE(u.name, a.dono_nome) AS nome, count(*)::int AS n
+       FROM assets a LEFT JOIN users u ON u.id = a.responsible_user_id
+       WHERE ${where} AND (a.responsible_user_id IS NOT NULL OR a.dono_nome IS NOT NULL) AND a.status NOT IN ('DISPOSED','LOST')
+       GROUP BY 1, 2, 3, 4`, params),
+  ]);
+  res.json({ locais: locais.rows, pessoas: pessoas.rows });
+});
+
 // Dono do item: usuário cadastrado OU só o nome (um ou outro). Devolve { uid, nome } ou { erro }
 async function lerDono(b, atual) {
   let uid = atual ? atual.responsible_user_id : null;
@@ -170,6 +200,9 @@ router.get('/assets', requireInv, async (req, res) => {
   if (type) add('a.type = ?', type);
   if (status) add('a.status = ?', status);
   if (req.query.location_id && /^\d+$/.test(req.query.location_id)) add('a.location_id = ?', req.query.location_id);
+  // itens que ficam com uma pessoa (usuário cadastrado ou só o nome)
+  if (req.query.responsible_user_id && /^\d+$/.test(req.query.responsible_user_id)) add('a.responsible_user_id = ?', req.query.responsible_user_id);
+  if (req.query.dono_nome) { add('a.dono_nome = ?', String(req.query.dono_nome)); conds.push('a.responsible_user_id IS NULL'); }
   if (q) {
     const like = `%${q}%`;
     params.push(like, like, like, like);

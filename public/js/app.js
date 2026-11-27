@@ -58,6 +58,8 @@ function buildNav(u) {
   // Estoque da ORCIM: só a equipe da ORCIM (cuida do inventário e vê todas as empresas)
   if (can('inventory.manage') && (master || can('ticket.view_all'))) equip.push({ href: '#/orcim', icon: 'bi-boxes', label: 'Estoque da ORCIM' });
   if (can('stock.report')) equip.push({ href: '#/inventario/relatorio', icon: 'bi-graph-up', label: 'Relatório de inventário' }); // item próprio, no mesmo nível do Inventário
+  // Inventário teste: o mesmo inventário em estilo videogame (as telas antigas continuam)
+  if (can('inventory.view') || can('stock.withdraw')) equip.push({ href: '#/inventario-teste', icon: 'bi-controller', label: 'Inventário teste' });
   grupo('Equipamentos', 'g-equip', equip);
 
   // Locais: Empresas e, logo abaixo (ligada por um "L"), as Localizações de cada empresa
@@ -105,6 +107,7 @@ function pageTitleFromPath() {
     '/pedidos': 'Pedidos',
     '/manutencao': 'Itens em manutenção',
     '/inventario/relatorio': 'Relatório de inventário',
+    '/inventario-teste': 'Inventário teste',
     '/admin/locations': 'Localizações',
     '/admin/materials': 'Materiais',
     '/inventory': Roles.presoAoLocal(currentUser()) ? 'Inventário do local' : 'Inventário da Empresa',
@@ -156,6 +159,7 @@ function pageDescFromPath() {
     '/manutencao': 'Itens que precisam de conserto: peça a manutenção de um item e acompanhe até ele voltar para o local.',
     '/inventario/relatorio': 'Quanto vale o inventário, por que os itens saem do estoque e quanto custam as retiradas. Filtre por estoque de T.I. ou por localidade.',
     '/inventory/agents': 'Programas instalados nos computadores que enviam o inventário sozinhos.',
+    '/inventario-teste': 'O inventário em estilo videogame (teste): escolha o local ou a pessoa e arraste os itens para mover. Tudo fica no histórico. As telas antigas continuam iguais.',
     '/admin/locations': 'Lugares atendidos (lojas, postos, setores). Cada chamado e equipamento fica ligado a um local.',
     '/admin/users': 'Quem acessa o sistema, de qual empresa e local, e com qual perfil.',
     '/admin/entities': window.EMPRESA_UNICA ? 'Nome, logo e contatos da empresa.' : 'Empresas atendidas: nome, logo e contatos de cada uma.',
@@ -410,6 +414,7 @@ const routes = [
   { re: /^#\/meus-pedidos$/, view: () => Views.meusPedidos },
   { re: /^#\/orcim$/, view: () => Views.orcim },
   { re: /^#\/inventario\/relatorio$/, view: () => Views.estoqueRelatorio },
+  { re: /^#\/inventario-teste$/, view: () => Views.inventarioTeste },
   { re: /^#\/estoque\/relatorio$/, view: () => () => { location.replace('#/inventario/relatorio'); } }, // endereço antigo
   { re: /^#\/admin\/locations(\?.*)?$/, view: () => Views.adminLocations },
   { re: /^#\/tickets\/(\d+)(\?.*)?$/, view: (m) => Views.ticketDetail(m[1]) },
