@@ -2776,3 +2776,8 @@ label.ro-lv-item { cursor: pointer; }
 [data-bs-theme="dark"] .ur-caixa.em-chamas > b { color: #fca5a5; }
 .ur-loc-caixa { flex: none; min-width: 34px; display: inline-flex; justify-content: flex-end; }
 .ro-cand .ur-caixa, .ro-parada-cab .ur-caixa { margin-right: 2px; }
+/* Novo equipamento: "Onde fica" (num local ou com uma pessoa) e o selo da pessoa */
+.a-onde-cab { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.seg.seg-mini button { padding: 2px 9px; font-size: .74rem; }
+.it-chip.it-dono { background: #ede9fe; color: #6d28d9; }
+[data-bs-theme="dark"] .it-chip.it-dono { background: rgba(124,58,237,.2); color: #c4b5fd; }

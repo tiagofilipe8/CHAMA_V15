@@ -981,6 +981,8 @@ UPDATE ticket_materials SET asset_ids = ARRAY[asset_id] WHERE asset_id IS NOT NU
 -- =====================================================================
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS controle TEXT NOT NULL DEFAULT 'unidade';
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+-- dono do item que fica com uma pessoa (e não num local): usuário cadastrado (responsible_user_id) ou só o nome
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS dono_nome TEXT;
 ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_controle_check;
 ALTER TABLE assets ADD CONSTRAINT assets_controle_check CHECK (controle IN ('unidade','quantidade'));
 ALTER TABLE assets DROP CONSTRAINT IF EXISTS assets_quantity_check;

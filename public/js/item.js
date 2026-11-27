@@ -84,6 +84,9 @@ const Item = {
     if (o.local) {
       const orcim = a.entity_id === null && !a.location_id;
       const nome = orcim ? 'Estoque da ORCIM' : Item.campo(a, 'location_name', 'asset_location_name', 'posto');
+      // sem local, mas fica com uma pessoa: selo com o nome dela
+      const dono = !nome && !orcim && Item.campo(a, 'responsible_name');
+      if (dono) partes.push(`<span class="it-chip it-dono" title="Fica com ${esc(dono)}"><i class="bi bi-person-fill"></i>${esc(dono)}</span>`);
       if (nome) {
         const empresa = Item.campo(a, 'entity_name', 'empresa');
         partes.push(Item.link(Item.linkLocal(a), `<i class="bi ${orcim ? 'bi-boxes' : 'bi-geo-alt-fill'}"></i>${esc(nome)}`,

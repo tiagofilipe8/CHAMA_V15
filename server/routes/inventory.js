@@ -121,6 +121,34 @@ const PEDIDO_DO_ITEM = `LEFT JOIN LATERAL (
        WHERE mt.asset_id = a.id AND mt.status NOT IN ('devolvida','sem_conserto','cancelada')
        ORDER BY mt.id DESC LIMIT 1) mt ON TRUE`;
 
+// Pessoas da empresa (para escolher com quem o item fica): usuários ativos da empresa ou com acesso a ela
+router.get('/pessoas', requireInv, async (req, res) => {
+  const ent = String(req.query.entity_id || '');
+  if (!/^\d+$/.test(ent)) return res.json([]);
+  if (!canAccessEntity(req.user, ent)) return res.status(403).json({ error: 'Acesso negado a esta entidade' });
+  const { rows } = await query(
+    `SELECT u.id, u.name, l.name AS location_name FROM users u LEFT JOIN locations l ON l.id = u.location_id
+     WHERE u.active AND (u.entity_id = $1 OR EXISTS (SELECT 1 FROM user_entities ue WHERE ue.user_id = u.id AND ue.entity_id = $1))
+     ORDER BY u.name`, [ent]);
+  res.json(rows);
+});
+
+// Dono do item: usuário cadastrado OU só o nome (um ou outro). Devolve { uid, nome } ou { erro }
+async function lerDono(b, atual) {
+  let uid = atual ? atual.responsible_user_id : null;
+  let nome = atual ? atual.dono_nome : null;
+  if (b.responsible_user_id !== undefined) uid = b.responsible_user_id || null;
+  if (b.dono_nome !== undefined) nome = String(b.dono_nome || '').trim().slice(0, 120) || null;
+  if (b.responsible_user_id) nome = null; else if (b.dono_nome && String(b.dono_nome).trim()) uid = null;
+  if (uid) {
+    if (!/^\d+$/.test(String(uid))) return { erro: 'Pessoa inválida.' };
+    const u = (await query('SELECT id, name FROM users WHERE id = $1', [uid])).rows[0];
+    if (!u) return { erro: 'Essa pessoa não está cadastrada.' };
+    return { uid: u.id, nome: null, mostra: u.name };
+  }
+  return { uid: null, nome, mostra: nome };
+}
+
 // Lista ativos com filtros
 router.get('/assets', requireInv, async (req, res) => {
   const { entity_id, type, status, q, limit } = req.query;
@@ -150,7 +178,7 @@ router.get('/assets', requireInv, async (req, res) => {
   const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const lim = Math.min(parseInt(limit,10)||100, 500);
   const { rows } = await query(
-    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name,
+    `SELECT a.*, e.name AS entity_name, COALESCE(u.name, a.dono_nome) AS responsible_name, lo.name AS location_name,
             (SELECT count(*) FROM asset_photos ap WHERE ap.asset_id=a.id)::int AS photos_count,
             COALESCE(
               a.primary_photo_id,
@@ -171,7 +199,7 @@ router.get('/assets', requireInv, async (req, res) => {
 // Detalhe do ativo
 router.get('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query(
-    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name, pd.pedido_status, pd.pedido_ticket_id, mt.manut_id, mt.manut_status
+    `SELECT a.*, e.name AS entity_name, COALESCE(u.name, a.dono_nome) AS responsible_name, lo.name AS location_name, pd.pedido_status, pd.pedido_ticket_id, mt.manut_id, mt.manut_status
      FROM assets a
      LEFT JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
@@ -261,17 +289,19 @@ router.post('/assets', requireInv, async (req, res) => {
   if (!precoValido(b.price)) return res.status(422).json({ error: 'Preço inválido.' });
   const ctl = lerControle(b, null);
   if (ctl.erro) return res.status(422).json({ error: ctl.erro });
+  const dono = await lerDono(b, null);
+  if (dono.erro) return res.status(422).json({ error: dono.erro });
   try {
     const { rows } = await query(
       `INSERT INTO assets (entity_id, asset_tag, name, type, status, manufacturer, model, serial_number, description, location, department, responsible_user_id, purchase_date, warranty_expiration, next_maintenance_date, next_maintenance_notes, notes, mac_address, memory_info, hd_info, cpu_info, os_info, license_info, ip_address, webcam, eth_port, toner, cilindro, created_by,
-                           location_id, price, anydesk_id, anydesk_password_enc, master_user_enc, master_password_enc)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35) RETURNING *`,
-      [entId, asset_tag||null, name, t, st, manufacturer||null, model||null, serial_number||null, description||null, location||null, department||null, responsible_user_id||null, purchase_date||null, warranty_expiration||null, next_maintenance_date||null, next_maintenance_notes||null, notes||null, mac_address||null, memory_info||null, hd_info||null, cpu_info||null, os_info||null, license_info||null, ip_address||null,
+                           location_id, price, anydesk_id, anydesk_password_enc, master_user_enc, master_password_enc, dono_nome)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36) RETURNING *`,
+      [entId, asset_tag||null, name, t, st, manufacturer||null, model||null, serial_number||null, description||null, location||null, department||null, dono.uid, purchase_date||null, warranty_expiration||null, next_maintenance_date||null, next_maintenance_notes||null, notes||null, mac_address||null, memory_info||null, hd_info||null, cpu_info||null, os_info||null, license_info||null, ip_address||null,
        webcam === true || webcam === false ? webcam : null,
        eth_port === true || eth_port === false ? eth_port : null,
        toner||null, cilindro||null, user.id,
        location_id||null, b.price === '' || b.price == null ? null : Number(b.price), anydesk_id||null,
-       cifrar(b.anydesk_password), cifrar(b.master_user), cifrar(b.master_password)]);
+       cifrar(b.anydesk_password), cifrar(b.master_user), cifrar(b.master_password), dono.nome]);
     if (ctl.controle !== 'unidade' || ctl.quantidade !== 1) {
       const up = await query('UPDATE assets SET controle = $2, quantity = $3 WHERE id = $1 RETURNING *', [rows[0].id, ctl.controle, ctl.quantidade]);
       rows[0] = up.rows[0];
@@ -313,7 +343,7 @@ router.patch('/assets/:id', requireInv, async (req, res) => {
   const entDestino = b.entity_id !== undefined ? b.entity_id : asset.entity_id;
   const locDestino = b.location_id !== undefined ? b.location_id : (String(entDestino) !== String(asset.entity_id) ? null : asset.location_id);
   if (locDestino && !(await localDaEmpresa(locDestino, entDestino))) return res.status(422).json({ error: 'Esse local não é da empresa do equipamento.' });
-  const fields = ['name','asset_tag','type','status','manufacturer','model','serial_number','description','location','department','responsible_user_id','purchase_date','warranty_expiration','next_maintenance_date','next_maintenance_notes','notes','mac_address','memory_info','hd_info','cpu_info','os_info','license_info','ip_address','webcam','eth_port','toner','cilindro','price','anydesk_id'];
+  const fields = ['name','asset_tag','type','status','manufacturer','model','serial_number','description','location','department','purchase_date','warranty_expiration','next_maintenance_date','next_maintenance_notes','notes','mac_address','memory_info','hd_info','cpu_info','os_info','license_info','ip_address','webcam','eth_port','toner','cilindro','price','anydesk_id'];
   const params = [req.params.id];
   const sets = [];
   const add = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
@@ -352,6 +382,16 @@ router.patch('/assets/:id', requireInv, async (req, res) => {
     const nomes = await query('SELECT id, name FROM locations WHERE id = ANY($1::bigint[])', [[asset.location_id, locDestino].filter(Boolean)]);
     const nome = (id) => (nomes.rows.find((r) => String(r.id) === String(id)) || {}).name || '';
     await query(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','location_id',$3,$4)`, [asset.id, req.user.id, nome(asset.location_id), nome(locDestino)]);
+  }
+  // dono (usuário cadastrado ou só o nome): guarda um ou outro e registra o nome no histórico
+  if (b.responsible_user_id !== undefined || b.dono_nome !== undefined) {
+    const dono = await lerDono(b, asset);
+    if (dono.erro) return res.status(422).json({ error: dono.erro });
+    if (String(dono.uid || '') !== String(asset.responsible_user_id || '') || String(dono.nome || '') !== String(asset.dono_nome || '')) {
+      add('responsible_user_id', dono.uid); add('dono_nome', dono.nome);
+      const antes = asset.responsible_user_id ? (await query('SELECT name FROM users WHERE id = $1', [asset.responsible_user_id])).rows[0]?.name : asset.dono_nome;
+      await query(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','dono',$3,$4)`, [asset.id, req.user.id, antes || '', dono.mostra || '']);
+    }
   }
   // senhas: guarda criptografado; no histórico só "alterada" ou "apagada"
   const COLUNA = { anydesk_password: 'anydesk_password_enc', master_user: 'master_user_enc', master_password: 'master_password_enc' };

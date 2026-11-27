@@ -41,9 +41,13 @@ async function openAssetModal(asset, cb) {
         <div class="col-md-4 mb-2"><label class="form-label small">N° Série / TAG</label><input class="form-control inv-upper" id="a-serial" value="${esc(up(a?.serial_number).toUpperCase())}"></div>
       </div>
       <div class="row">
-        <div class="col-md-4 mb-2"><label class="form-label small">Estado</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${(a?.status||'OPERATING')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+        <div class="col-md-3 mb-2"><label class="form-label small">Estado</label><select class="form-select" id="a-status">${Object.entries(INV_STATUS).map(([k,v])=>`<option value="${k}" ${(a?.status||'OPERATING')===k?'selected':''}>${v}</option>`).join('')}</select></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Empresa *</label><select class="form-select" id="a-entity">${ents.filter(e=>e.active).map(e=>`<option value="${e.id}" ${String(a?.entity_id)===String(e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
-        <div class="col-md-4 mb-2"><label class="form-label small">Local (posto) para onde vai</label><select class="form-select" id="a-loc"><option value="">— sem local —</option></select></div>
+        <div class="col-md-5 mb-2"><div class="a-onde-cab"><label class="form-label small mb-0">Onde fica</label>
+            <span class="seg seg-mini" role="group" aria-label="Onde fica o item"><button type="button" data-onde="local"><i class="bi bi-geo-alt"></i> Num local</button><button type="button" data-onde="pessoa"><i class="bi bi-person"></i> Com uma pessoa</button></span></div>
+          <div data-onde-box="local"><select class="form-select" id="a-loc"><option value="">— sem local —</option></select></div>
+          <div data-onde-box="pessoa" class="d-none"><select class="form-select" id="a-dono"><option value="">— escolha a pessoa —</option></select>
+            <input class="form-control mt-1 d-none" id="a-dono-nome" maxlength="120" placeholder="Nome de quem fica com o item" value="${esc(a?.dono_nome || '')}"></div></div>
       </div>
       <div class="row">
         <div class="col-md-8 mb-2"><label class="form-label small">Como é contado</label>
@@ -76,12 +80,11 @@ async function openAssetModal(asset, cb) {
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">Setor</label><input class="form-control inv-upper" id="a-dept" value="${esc(up(a?.department).toUpperCase())}"></div>
-        <div class="col-md-4 mb-2"><label class="form-label small">Usuário / Posse</label><input class="form-control" id="a-resp" placeholder="ID usuário" value="${esc(a?.responsible_user_id||'')}"></div>
+        <div class="col-md-4 mb-2"><label class="form-label small">Data de compra</label><input class="form-control" id="a-purchase" type="date" value="${a?.purchase_date ? a.purchase_date.slice(0,10):''}"></div>
         <div class="col-md-4 mb-2"><label class="form-label small">Garantia até</label><input class="form-control" id="a-warranty" type="date" value="${a?.warranty_expiration ? a.warranty_expiration.slice(0,10):''}"></div>
       </div>
       <div class="row">
-        <div class="col-md-4 mb-2"><label class="form-label small">Data de compra</label><input class="form-control" id="a-purchase" type="date" value="${a?.purchase_date ? a.purchase_date.slice(0,10):''}"></div>
-        <div class="col-md-8 mb-2"><label class="form-label small">Descrição</label><input class="form-control inv-upper" id="a-desc" value="${esc(up(a?.description).toUpperCase())}"></div>
+        <div class="col-12 mb-2"><label class="form-label small">Descrição</label><input class="form-control inv-upper" id="a-desc" value="${esc(up(a?.description).toUpperCase())}"></div>
       </div>
       <div class="row">
         <div class="col-md-4 mb-2"><label class="form-label small">IP</label><input class="form-control inv-upper" id="a-ip" value="${esc(up(a?.ip_address).toUpperCase())}"></div>
@@ -149,8 +152,36 @@ async function openAssetModal(asset, cb) {
     selLoc.innerHTML = '<option value="">— sem local —</option>' + locs.map((l) => `<option value="${l.id}">${esc(l.name)}${l.city ? ` (${esc(l.city)})` : ''}</option>`).join('');
     selLoc.value = locs.some((l) => String(l.id) === atual) ? atual : '';
   };
-  m.querySelector('#a-entity').addEventListener('change', () => { selLoc.value = ''; carregarLocais(); });
+  // Onde fica: num local (posto) OU com uma pessoa (usuário cadastrado ou só o nome) — um ou outro
+  const comPessoa = !!(a && !a.location_id && (a.responsible_user_id || a.dono_nome));
+  let onde = comPessoa ? 'pessoa' : 'local';
+  const selDono = m.querySelector('#a-dono');
+  const inDonoNome = m.querySelector('#a-dono-nome');
+  const OUTRA = '__nome';
+  const pintarOnde = () => {
+    m.querySelectorAll('[data-onde]').forEach((b) => b.classList.toggle('active', b.dataset.onde === onde));
+    m.querySelectorAll('[data-onde-box]').forEach((b) => b.classList.toggle('d-none', b.dataset.ondeBox !== onde));
+    inDonoNome.classList.toggle('d-none', selDono.value !== OUTRA);
+  };
+  m.querySelectorAll('[data-onde]').forEach((b) => b.addEventListener('click', () => { onde = b.dataset.onde; pintarOnde(); }));
+  selDono.addEventListener('change', () => { pintarOnde(); if (selDono.value === OUTRA) inDonoNome.focus(); });
+  const carregarPessoas = async () => {
+    const ent = m.querySelector('#a-entity').value;
+    let pessoas = [];
+    try { pessoas = ent ? await API.get(`/inventory/pessoas?entity_id=${ent}`) : []; } catch {}
+    const atual = selDono.value || (a?.dono_nome ? OUTRA : String(a?.responsible_user_id || ''));
+    // quem já estava com o item continua na lista, mesmo que seja de outra empresa
+    if (a?.responsible_user_id && !pessoas.some((p) => String(p.id) === String(a.responsible_user_id))) pessoas.unshift({ id: a.responsible_user_id, name: a.responsible_name || `Usuário ${a.responsible_user_id}` });
+    selDono.innerHTML = '<option value="">— escolha a pessoa —</option>'
+      + (pessoas.length ? `<optgroup label="Cadastrados">${pessoas.map((p) => `<option value="${p.id}">${esc(p.name)}${p.location_name ? ` (${esc(p.location_name)})` : ''}</option>`).join('')}</optgroup>` : '')
+      + `<option value="${OUTRA}">✎ Outra pessoa (escrever o nome)</option>`;
+    selDono.value = [...selDono.options].some((o) => o.value === atual) ? atual : '';
+    pintarOnde();
+  };
+  m.querySelector('#a-entity').addEventListener('change', () => { selLoc.value = ''; if (selDono.value !== OUTRA) selDono.value = ''; carregarLocais(); carregarPessoas(); });
   carregarLocais();
+  carregarPessoas();
+  pintarOnde();
   // AnyDesk e acesso mestre: só para computador e notebook
   m.querySelector('#a-type').addEventListener('change', (e) => {
     m.querySelector('#a-acesso').classList.toggle('d-none', !INV_COM_ACESSO.includes(e.target.value));
@@ -173,10 +204,9 @@ async function openAssetModal(asset, cb) {
       model: val('#a-model'),
       serial_number: val('#a-serial'),
       entity_id: parseInt(m.querySelector('#a-entity').value,10)||null,
-      location_id: selLoc.value || null,
+      location_id: onde === 'local' ? (selLoc.value || null) : null,
       anydesk_id: INV_COM_ACESSO.includes(m.querySelector('#a-type').value) ? (m.querySelector('#a-anydesk').value.trim() || null) : (a?.anydesk_id ? null : undefined),
       department: val('#a-dept'),
-      responsible_user_id: parseInt(m.querySelector('#a-resp').value,10)||null,
       warranty_expiration: m.querySelector('#a-warranty').value||null,
       purchase_date: m.querySelector('#a-purchase').value||null,
       description: val('#a-desc'),
@@ -199,6 +229,19 @@ async function openAssetModal(asset, cb) {
       if (!(body.quantity >= 0)) { toast('Informe a quantidade.', 'warning'); return; }
     }
     if (!body.name || !body.entity_id) { toast('Nome e empresa são obrigatórios','warning'); return; }
+    if (onde === 'pessoa') {
+      // com uma pessoa: usuário cadastrado ou só o nome (o item sai do local)
+      if (selDono.value === OUTRA) {
+        body.dono_nome = inDonoNome.value.trim();
+        body.responsible_user_id = null;
+        if (!body.dono_nome) { toast('Escreva o nome de quem fica com o item.', 'warning'); inDonoNome.focus(); return; }
+      } else if (selDono.value) {
+        body.responsible_user_id = Number(selDono.value); body.dono_nome = null;
+      } else { toast('Escolha com quem o item fica (ou escreva o nome).', 'warning'); return; }
+    } else if (comPessoa) {
+      // estava com uma pessoa e agora vai para um local: deixa de ter dono
+      body.responsible_user_id = null; body.dono_nome = null;
+    }
     if (invVeSegredos()) {
       const pr = m.querySelector('#a-price');
       if (pr) body.price = pr.value === '' ? null : Number(pr.value);
@@ -316,15 +359,17 @@ Views.inventory = async function inventory(el) {
     // local -> categoria -> itens
     const locais = new Map();
     assets.forEach((a) => {
-      const k = `${a.entity_id}:${a.location_id || ''}`;
-      if (!locais.has(k)) locais.set(k, { nome: a.location_name || 'Sem local definido', empresa: a.entity_name, tipos: new Map(), n: 0, valor: 0 });
+      // item que fica com uma pessoa (sem local): grupo "Com pessoas"
+      const comPessoa = !a.location_id && !!a.responsible_name;
+      const k = `${a.entity_id}:${a.location_id || (comPessoa ? 'pessoas' : '')}`;
+      if (!locais.has(k)) locais.set(k, { nome: a.location_name || (comPessoa ? 'Com pessoas' : 'Sem local definido'), pessoas: comPessoa, empresa: a.entity_name, tipos: new Map(), n: 0, valor: 0 });
       const L = locais.get(k);
       if (!L.tipos.has(a.type)) L.tipos.set(a.type, []);
       L.tipos.get(a.type).push(a); L.n += a.controle === 'quantidade' ? Number(a.quantity || 0) : 1;
       if (!['DISPOSED', 'LOST', 'BROKEN'].includes(a.status)) L.valor += Number(a.price || 0) * (a.controle === 'quantidade' ? Number(a.quantity || 0) : 1);
     });
     const ordem = [...locais.entries()].sort((x, y) => (prefs.ordem === 'valor' && invVeSegredos() ? y[1].valor - x[1].valor : 0)
-      || (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || x[1].nome.localeCompare(y[1].nome));
+      || (x[1].nome === 'Sem local definido') - (y[1].nome === 'Sem local definido') || !!x[1].pessoas - !!y[1].pessoas || x[1].nome.localeCompare(y[1].nome));
     // empresa -> locais (subcategoria) -> categorias. A empresa principal (Grupo Beija-flor) vem primeiro.
     const empresas = new Map();
     ordem.forEach(([k, L]) => {
@@ -339,7 +384,7 @@ Views.inventory = async function inventory(el) {
       const aberto = prefs.abertos[k] !== false;
       return `<details class="card panel-card iv-local mb-2" data-k="${esc(k)}" ${aberto ? 'open' : ''}>
         <summary class="iv-local-cab">
-          <i class="bi bi-chevron-right iv-seta"></i><i class="bi bi-geo-alt-fill iv-pin"></i>
+          <i class="bi bi-chevron-right iv-seta"></i><i class="bi ${L.pessoas ? 'bi-people-fill' : 'bi-geo-alt-fill'} iv-pin"></i>
           <b>${esc(L.nome)}</b>
           <span class="iv-chips">${[...L.tipos.entries()].map(([tp, it]) => `<span class="iv-chip" title="${esc(INV_TYPES[tp] || tp)}"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${it.length}</span>`).join('')}</span>
           <span class="iv-local-n">${L.n} item(ns)${invVeSegredos() && L.valor ? ` · ${invMoeda(L.valor)}` : ''}</span>
@@ -382,7 +427,7 @@ Views.inventory.openAssetModal = openAssetModal;
 const INV_CAMPOS = {
   name: 'Nome', asset_tag: 'Etiqueta Orcim', type: 'Categoria', status: 'Estado', manufacturer: 'Fabricante', model: 'Modelo',
   serial_number: 'Nº de série', description: 'Descrição', location: 'Local (anotação)', location_id: 'Local (posto)', department: 'Setor',
-  responsible_user_id: 'Responsável', purchase_date: 'Data de compra', warranty_expiration: 'Garantia', notes: 'Observações',
+  responsible_user_id: 'Responsável', dono: 'Fica com', purchase_date: 'Data de compra', warranty_expiration: 'Garantia', notes: 'Observações',
   price: 'Preço', anydesk_id: 'AnyDesk', anydesk_password: 'Senha do AnyDesk', master_user: 'Usuário do acesso mestre',
   master_password: 'Senha do acesso mestre', entity_id: 'Empresa', next_maintenance_date: 'Próxima manutenção',
   next_maintenance_notes: 'Plano de manutenção', ip_address: 'IP', mac_address: 'MAC', memory_info: 'Memória', hd_info: 'HD',
@@ -460,7 +505,7 @@ Views.assetDetail = async function assetDetail(id, el) {
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
           <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
           <div class="row">${a.location ? `<div class="col-6"><b>Local (anotação antiga):</b> ${esc(a.location)}</div>` : ''}<div class="col-6"><b>Setor:</b> ${esc(a.department||'—')}</div></div>
-          <div class="row"><div class="col-6"><b>Usuário / Posse:</b> ${esc(a.responsible_name||a.responsible_user_id||'—')}</div><div class="col-6"><b>Data de compra:</b> ${a.purchase_date ? String(a.purchase_date).slice(0,10) : '—'}</div></div>
+          <div class="row"><div class="col-6"><b>${a.location_id ? 'Com quem está:' : 'Fica com:'}</b> ${a.responsible_name ? `<i class="bi bi-person-fill text-muted"></i> ${esc(a.responsible_name)}${a.dono_nome && !a.responsible_user_id ? ' <small class="text-muted">(sem cadastro)</small>' : ''}` : '—'}</div><div class="col-6"><b>Data de compra:</b> ${a.purchase_date ? String(a.purchase_date).slice(0,10) : '—'}</div></div>
           <div class="row"><div class="col-6"><b>Garantia até:</b> ${a.warranty_expiration ? String(a.warranty_expiration).slice(0,10) : '—'}</div><div class="col-6"><b>IP:</b> ${esc(a.ip_address||'—')}</div></div>
           <div class="row"><div class="col-6"><b>MAC:</b> ${esc(a.mac_address||'—')}</div><div class="col-6"><b>Memória:</b> ${esc(a.memory_info||'—')}</div></div>
           <div class="row"><div class="col-6"><b>HD:</b> ${esc(a.hd_info||'—')}</div><div class="col-6"><b>CPU:</b> ${esc(a.cpu_info||'—')}</div></div>
