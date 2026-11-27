@@ -1,10 +1,8 @@
 // ---------------------------------------------------------------
-// Score de urgência (e as peças da tela de Rotas: score, chamados, ordem de visita, "O que levar")
+// Score de urgência (e as peças da tela de Rotas: distância, caixinha do "O que levar", faixas do score)
 //   score do chamado = peso da urgência × fator de atraso × fator de prazo (ver o servidor:
 //   server/services/scoreUrgencia.js); score do local = soma dos chamados abertos dele.
-//   Rotas: escolhe quantos locais atender, o sistema sugere os de maior score e monta a ordem
-//   de visita pela menor distância (coordenadas dos locais, sem API paga); abre no Google Maps
-//   e gera um relatório para imprimir com os chamados e o que levar.
+//   A tela de Rotas (montar, agenda e página da rota) fica em rotas.js.
 // ---------------------------------------------------------------
 
 const Urgencia = (() => {
@@ -187,21 +185,6 @@ const Urgencia = (() => {
   const FATOR_ESTRADA = 1.3; // linha reta -> estrada (estimativa)
   const VELOCIDADE = 50;     // km/h médio (estimativa)
 
-  // ordem de visita: vizinho mais próximo a partir do ponto de partida (ou do mais urgente)
-  function ordenar(paradas, inicio) {
-    const resto = paradas.slice();
-    const ordem = [];
-    let atual = inicio;
-    if (!atual) { resto.sort((a, b) => b.score - a.score); const p = resto.shift(); ordem.push(p); atual = p; }
-    while (resto.length) {
-      let melhor = 0; let dist = Infinity;
-      resto.forEach((p, i) => { const dd = km(atual, p); if (dd < dist) { dist = dd; melhor = i; } });
-      const p = resto.splice(melhor, 1)[0];
-      ordem.push(p); atual = p;
-    }
-    return ordem;
-  }
-
   // ---------------- Caixinha em pixel art (ícone do "O que levar") ----------------
   const CAIXA_PIX = [
     '............',
@@ -223,162 +206,8 @@ const Urgencia = (() => {
     return `<svg class="caixa-pix" width="${tam}" height="${tam}" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true">${r}</svg>`;
   };
 
-  // ---------------- "O que levar": janela com o checklist de todos os pedidos das paradas ----------------
-  //   Marque os itens que serão entregues, escolha para onde cada um vai e entregue tudo de uma vez.
-  //   Se o item existe no Estoque da ORCIM, a etiqueta mostra "Em estoque na ORCIM" e ele sai de lá.
-  const DESTINOS = { inventario: 'Inventário da Empresa (em uso)', estoque: 'Estoque de T.I. do local' };
-  //   op.comecar: abre no modo "Começar rota" (os itens marcados saem para entrega e a rota começa)
-  async function abrirLevar(ordem, depois, op = {}) {
-    const u = API.user || {};
-    const podeEntregar = Roles.can(u, 'inventory.manage') || Roles.isMaster(u);
-    const veOrcim = podeEntregar && (Roles.isMaster(u) || Roles.can(u, 'ticket.view_all'));
-    const pendentes = [];
-    ordem.forEach((p) => p.chamados.forEach((c) => (c.materiais || []).forEach((m) => {
-      // item já comprado é entregue ele mesmo: não procura no Estoque da ORCIM
-      if (!['entregue', 'cancelado'].includes(m.status) && !m.comprado) pendentes.push({ id: m.id, name: m.name });
-    })));
-    let naOrcim = {};
-    if (veOrcim && pendentes.length) { try { naOrcim = await API.post('/orcim/procurar', { materiais: pendentes }); } catch { naOrcim = {}; } }
-    const tagOrcim = (m) => {
-      const o = naOrcim[m.id];
-      if (!o) return '';
-      const basta = o.disponivel >= Number(m.quantity || 1);
-      return `<span class="pd-tag lv-orcim ${basta ? '' : 'pouco'}" title="${esc(o.itens.map((a) => `${a.asset_tag ? `${a.asset_tag} · ` : ''}${a.name}${a.controle === 'quantidade' ? ` (×${a.quantity})` : ''}`).join('\n'))}"><i class="bi bi-boxes"></i>Em estoque na ORCIM <b>${o.disponivel}</b></span>`;
-    };
-    const blocos = ordem.map((p, i) => {
-      const chs = p.chamados.filter((c) => (c.materiais || []).some((m) => m.status !== 'cancelado'));
-      if (!chs.length) return '';
-      return `<div class="lv-parada"><div class="lv-parada-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b></div>
-        ${chs.map((c) => `<div class="lv-ch"><a href="#/tickets/${c.id}" class="lv-ch-num">${esc(c.number)}</a> <span class="text-muted">${esc(c.title)}</span></div>
-          ${(c.materiais || []).filter((m) => m.status !== 'cancelado').map((m) => {
-            const feito = m.status === 'entregue';
-            const o = naOrcim[m.id];
-            const daOrcim = o && o.disponivel >= Number(m.quantity || 1);
-            return `
-          <div class="lv-item ${feito ? 'feito' : ''}" data-t="${c.id}" data-m="${m.id}" data-nome="${esc(m.name)}" ${m.status === 'rota' ? 'data-rota="1"' : ''}>
-            <label class="lv-check" title="${feito ? 'Já entregue' : 'Entregar este item'}"><input type="checkbox" class="lv-marca" ${feito ? 'checked disabled' : ''} ${!feito && !podeEntregar ? 'disabled' : ''}></label>
-            <span class="lv-qtd">${m.quantity} ${esc(m.unit || 'un')}</span>
-            <span class="lv-nome">${Item.titulo({ name: m.name, type: m.asset_type || 'PERIPHERAL' }, { link: false, estado: false, local: false, etapa: false, etiqueta: false })}</span>
-            <span class="lv-st">${feito ? `${pedidoTag('entregue')}${m.destino && m.destino !== 'nenhum' ? ` <small class="text-muted">${m.destino === 'estoque' ? 'no Estoque de T.I.' : 'no Inventário da Empresa'}</small>` : ''}` : m.status === 'rota' ? `${pedidoTag('rota')}${m.previsao ? ` <small class="text-muted">prev. ${esc(String(m.previsao).slice(8, 10))}/${esc(String(m.previsao).slice(5, 7))}</small>` : ''}` : (o ? tagOrcim(m) : pedidoTag(m.status))}</span>
-            ${!feito && podeEntregar ? `<span class="lv-acao">
-              ${o ? `<label class="lv-origem" title="${daOrcim ? 'O item sai do Estoque da ORCIM e vai para a empresa' : 'A ORCIM não tem a quantidade toda'}"><input type="checkbox" class="lv-usa-orcim" ${daOrcim && (m.status !== 'rota' || m.origem_orcim) ? 'checked' : ''} ${daOrcim ? '' : 'disabled'}> do Estoque da ORCIM</label>` : ''}
-              <select class="form-select form-select-sm lv-dest" aria-label="Para onde vai">${Object.entries(m.destino === 'nenhum' ? { ...DESTINOS, nenhum: 'Consumível (só entregar)' } : DESTINOS).map(([k, v]) => `<option value="${k}" ${k === (m.destino || 'inventario') ? 'selected' : ''}>${v}</option>`).join('')}</select></span>` : ''}
-          </div>`;
-          }).join('')}`).join('')}
-      </div>`;
-    }).join('');
-    const total = new Map();
-    ordem.forEach((p) => p.chamados.forEach((c) => (c.materiais || []).filter((m) => !['entregue', 'cancelado'].includes(m.status)).forEach((m) => {
-      const k = `${m.name}|${m.unit || ''}`; total.set(k, { ...m, quantity: (total.get(k)?.quantity || 0) + Number(m.quantity || 0) });
-    })));
-    const m = document.createElement('div');
-    m.className = 'modal fade';
-    m.innerHTML = `<div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
-      <div class="modal-header"><h6 class="mb-0 d-flex align-items-center gap-2">${caixaPixel(26)} O que levar nesta rota</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body">
-        ${total.size ? `<div class="lv-total"><b>Para separar:</b> ${[...total.values()].map((x) => `<span class="tg tg-teal">${x.quantity} ${esc(x.unit || 'un')} · ${esc(x.name)}</span>`).join(' ')}</div>` : ''}
-        ${podeEntregar && pendentes.length ? `<div class="lv-instr"><i class="bi bi-check2-square"></i><span><b>Marque os itens que serão entregues</b> e escolha para onde cada um vai: <b>Inventário da Empresa</b> (já em uso no local) ou <b>Estoque de T.I.</b> do local. ${op.comecar ? '<b>Começar rota</b> põe os itens marcados como a caminho do local e avisa quem pediu' : '<b>Saiu para entrega</b> avisa quem pediu que o item está a caminho (entrega prevista para hoje)'}; a entrega é <b>confirmada</b> por você no local ou por quem pediu.${Object.keys(naOrcim).length ? ' Os itens com <span class="pd-tag lv-orcim"><i class="bi bi-boxes"></i>Em estoque na ORCIM</span> saem do Estoque da ORCIM.' : ''}</span>
-          <button type="button" class="btn btn-sm btn-link lv-todos">Marcar todos</button></div>` : ''}
-        ${blocos || '<div class="dp-vazio">Nenhum material pedido nos chamados dessas paradas.</div>'}
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-        ${podeEntregar && pendentes.length ? `${op.comecar ? '' : '<button class="btn btn-outline-primary btn-sm" id="lv-rota" disabled><i class="bi bi-truck"></i> <span>Saiu para entrega</span></button>'}<button class="btn ${op.comecar ? 'btn-outline-success' : 'btn-success'} btn-sm" id="lv-entregar" disabled><i class="bi bi-check2-circle"></i> <span>Confirmar entrega</span></button>` : ''}
-        ${op.comecar ? '<button class="btn btn-primary btn-sm" id="lv-comecar"><i class="bi bi-play-fill"></i> <span>Começar rota</span></button>' : ''}
-      </div></div></div>`;
-    document.body.appendChild(m);
-    const bm = new bootstrap.Modal(m);
-    let mudou = false;
-    m.addEventListener('hidden.bs.modal', () => { m.remove(); if (mudou && depois) depois(); });
-    const btn = m.querySelector('#lv-entregar');
-    const btnRota = m.querySelector('#lv-rota');
-    const btnComecar = m.querySelector('#lv-comecar');
-    const marcados = () => [...m.querySelectorAll('.lv-item:not(.feito) .lv-marca:checked')].map((c) => c.closest('.lv-item'));
-    const contar = () => {
-      m.querySelectorAll('.lv-item:not(.feito)').forEach((it) => it.classList.toggle('marcado', it.querySelector('.lv-marca').checked));
-      const n = marcados().length;
-      const naRota = marcados().filter((it) => !it.dataset.rota).length;
-      if (btnComecar) btnComecar.querySelector('span').textContent = naRota ? `Começar rota levando ${naRota} item${naRota === 1 ? '' : 's'}` : 'Começar rota';
-      if (!btn) return;
-      btn.disabled = !n;
-      btn.querySelector('span').textContent = n ? `Confirmar entrega (${n})` : 'Confirmar entrega';
-      if (btnRota) {
-        btnRota.disabled = !naRota;
-        btnRota.querySelector('span').textContent = naRota ? `Saiu para entrega (${naRota})` : 'Saiu para entrega';
-      }
-    };
-    m.querySelectorAll('.lv-marca').forEach((c) => c.addEventListener('change', contar));
-    m.querySelector('.lv-todos')?.addEventListener('click', (e) => {
-      const caixas = [...m.querySelectorAll('.lv-item:not(.feito) .lv-marca:not(:disabled)')];
-      const todos = caixas.every((c) => c.checked);
-      caixas.forEach((c) => { c.checked = !todos; });
-      e.target.textContent = todos ? 'Marcar todos' : 'Desmarcar todos';
-      contar();
-    });
-    btn?.addEventListener('click', async () => {
-      const lista = marcados();
-      if (!lista.length) return;
-      btn.disabled = true;
-      let ok = 0;
-      for (const it of lista) {
-        const destino = it.querySelector('.lv-dest').value;
-        const orcim = !!it.querySelector('.lv-usa-orcim:checked');
-        try {
-          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/confirmar`, { destino, orcim });
-          ok += 1; mudou = true;
-          it.classList.remove('marcado'); it.classList.add('feito');
-          const c = it.querySelector('.lv-marca'); c.checked = true; c.disabled = true;
-          it.querySelector('.lv-st').innerHTML = `${pedidoTag('entregue')} <small class="text-muted">${destino === 'estoque' ? 'no Estoque de T.I.' : 'no Inventário da Empresa'}${orcim ? ' · saiu da ORCIM' : ''}</small>`;
-          it.querySelector('.lv-acao')?.remove();
-        } catch (e) { showError(e); }
-      }
-      if (ok) toast(`${ok} item${ok === 1 ? '' : 's'} entregue${ok === 1 ? '' : 's'} e registrado${ok === 1 ? '' : 's'} no inventário.`, 'success');
-      contar();
-    });
-    // levar na rota: fica "a caminho do local" e quem pediu acompanha
-    btnRota?.addEventListener('click', async () => {
-      const lista = marcados().filter((it) => !it.dataset.rota);
-      if (!lista.length) return;
-      btnRota.disabled = true;
-      let ok = 0;
-      for (const it of lista) {
-        const destino = it.querySelector('.lv-dest').value;
-        const orcim = !!it.querySelector('.lv-usa-orcim:checked');
-        try {
-          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/rota`, { destino, orcim });
-          ok += 1; mudou = true;
-          it.dataset.rota = '1';
-          it.querySelector('.lv-st').innerHTML = `${pedidoTag('rota')} <small class="text-muted">prev. hoje</small>`;
-        } catch (e) { showError(e); }
-      }
-      if (ok) toast(`${ok} item${ok === 1 ? '' : 's'} a caminho do local. Quem pediu já pode acompanhar e confirmar quando receber.`, 'success');
-      contar();
-    });
-    // começar a rota: os itens marcados ficam "a caminho do local" (quem pediu é avisado) e a rota começa
-    btnComecar?.addEventListener('click', async () => {
-      btnComecar.disabled = true;
-      let ok = 0;
-      for (const it of marcados().filter((x) => !x.dataset.rota)) {
-        const destino = it.querySelector('.lv-dest').value;
-        const orcim = !!it.querySelector('.lv-usa-orcim:checked');
-        try {
-          await API.post(`/tickets/${it.dataset.t}/materials/${it.dataset.m}/rota`, { destino, orcim });
-          ok += 1; mudou = true; it.dataset.rota = '1';
-        } catch (e) { showError(e); }
-      }
-      try {
-        await op.comecar();
-        mudou = true;
-        toast(`Rota começada${ok ? `: ${ok} item${ok === 1 ? '' : 's'} a caminho do local` : ''}.`, 'success');
-        bm.hide();
-      } catch (e) { showError(e); btnComecar.disabled = false; }
-    });
-    contar();
-    bm.show();
-  }
-
   // peças usadas pela tela de Rotas (public/js/views/rotas.js)
-  return { pagina, numScore, linhaChamado, ordenar, km, FATOR_ESTRADA, VELOCIDADE, abrirLevar, caixaPixel, temParada, ALVO_LOCAL, n1 };
+  return { pagina, km, FATOR_ESTRADA, VELOCIDADE, caixaPixel, temParada, ALVO_LOCAL, n1 };
 })();
 
 Views.urgencia = (el) => Urgencia.pagina(el);

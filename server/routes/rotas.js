@@ -22,7 +22,7 @@ const hojeSP = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America
 const dataBR = (d) => String(d).slice(0, 10).split('-').reverse().join('/');
 
 // campos de uma rota (com as paradas); $1.. vêm de quem chama
-const CAMPOS = `p.id, to_char(p.data, 'YYYY-MM-DD') AS data, p.nota, p.status, p.technician_id, p.created_by, p.created_at,
+const CAMPOS = `p.id, to_char(p.data, 'YYYY-MM-DD') AS data, p.nota, p.status, p.technician_id, p.created_by, p.created_at, p.itens_fora,
             p.started_at, p.concluded_at, t.name AS technician_name, c.name AS created_by_name,
             si.name AS started_by_name, co.name AS concluded_by_name,
             (SELECT json_agg(json_build_object('location_id', s.location_id, 'location_name', l.name, 'city', l.city, 'address', l.address,
@@ -89,7 +89,10 @@ router.get('/:id(\\d+)', async (req, res) => {
   res.json({ ...p, hoje: hojeSP(), pode_agendar: podeAgendar(req.user), pode_editar: dono(req.user, p) });
 });
 
-// Lê e confere { data, technician_id, nota, locais } (para agendar e para editar)
+// itens de pedido desmarcados no "O que levar" (ids de ticket_materials)
+const lerItensFora = (v) => [...new Set((Array.isArray(v) ? v : []).map(String).filter((x) => /^\d+$/.test(x)))].slice(0, 500);
+
+// Lê e confere { data, technician_id, nota, locais, itens_fora } (para agendar e para editar)
 async function lerPlano(b, { dataAntiga } = {}) {
   if (!dataValida(b.data)) return { error: 'Escolha o dia da rota.' };
   if (b.data < hojeSP() && b.data !== dataAntiga) return { error: 'O dia da rota não pode ser no passado.' };
@@ -103,7 +106,7 @@ async function lerPlano(b, { dataAntiga } = {}) {
     if (!tecnico) return { error: 'Técnico inválido.' };
   }
   const nomes = locais.map((id) => achados.find((l) => String(l.id) === id).name);
-  return { data: b.data, locais, nomes, tecnico, nota: String(b.nota || '').trim().slice(0, 500) || null };
+  return { data: b.data, locais, nomes, tecnico, nota: String(b.nota || '').trim().slice(0, 500) || null, itensFora: lerItensFora(b.itens_fora) };
 }
 
 // grava as paradas e põe a previsão dos pedidos desses locais no dia da rota
@@ -135,8 +138,8 @@ router.post('/', async (req, res) => {
   const v = await lerPlano(req.body || {});
   if (v.error) return res.status(422).json({ error: v.error });
   const plano = await withTransaction(async (q) => {
-    const { rows } = await q(`INSERT INTO route_plans (data, technician_id, nota, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [v.data, v.tecnico ? v.tecnico.id : null, v.nota, req.user.id]);
+    const { rows } = await q(`INSERT INTO route_plans (data, technician_id, nota, created_by, itens_fora) VALUES ($1, $2, $3, $4, $5::bigint[]) RETURNING id`,
+      [v.data, v.tecnico ? v.tecnico.id : null, v.nota, req.user.id, v.itensFora]);
     await gravarParadas(q, rows[0].id, v);
     return rows[0];
   });
@@ -156,7 +159,7 @@ router.put('/:id(\\d+)', async (req, res) => {
   const v = await lerPlano(req.body || {}, { dataAntiga: p.data });
   if (v.error) return res.status(422).json({ error: v.error });
   await withTransaction(async (q) => {
-    await q('UPDATE route_plans SET data = $2, technician_id = $3, nota = $4 WHERE id = $1', [p.id, v.data, v.tecnico ? v.tecnico.id : null, v.nota]);
+    await q('UPDATE route_plans SET data = $2, technician_id = $3, nota = $4, itens_fora = $5::bigint[] WHERE id = $1', [p.id, v.data, v.tecnico ? v.tecnico.id : null, v.nota, v.itensFora]);
     await gravarParadas(q, p.id, v);
   });
   // avisa: todos os locais se o dia mudou; senão, só os locais que entraram agora
@@ -166,6 +169,16 @@ router.put('/:id(\\d+)', async (req, res) => {
   if (v.tecnico && String(v.tecnico.id) !== String(req.user.id) && String(v.tecnico.id) !== String(p.technician_id || '')) {
     await notify.createInApp(v.tecnico.id, `Você tem uma rota em ${dataBR(v.data)}`, v.nomes.join(' → '), null, `#/rotas/${p.id}`).catch(() => {});
   }
+  res.json({ ok: true });
+});
+
+// Só o "O que levar" (marcar/desmarcar na página da rota): { itens_fora: [ids] }
+router.put('/:id(\\d+)/itens', async (req, res) => {
+  if (!podeAgendar(req.user)) return res.status(403).json({ error: 'Seu perfil não mexe nas rotas.' });
+  const p = await carregar(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Rota não encontrada.' });
+  if (p.status === 'concluida') return res.status(422).json({ error: 'Essa rota já foi concluída.' });
+  await query('UPDATE route_plans SET itens_fora = $2::bigint[] WHERE id = $1', [p.id, lerItensFora(req.body?.itens_fora)]);
   res.json({ ok: true });
 });
 

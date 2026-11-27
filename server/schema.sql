@@ -924,6 +924,8 @@ ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS started_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS concluded_at TIMESTAMPTZ;
 ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS concluded_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+-- O que levar: os itens de pedido das paradas entram marcados; aqui ficam os que a pessoa desmarcou
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS itens_fora BIGINT[] NOT NULL DEFAULT '{}';
 
 -- Pedido ligado ao inventário: preço unitário, posto de destino, categoria e os equipamentos criados (2026-11-26)
 ALTER TABLE ticket_materials ADD COLUMN IF NOT EXISTS price NUMERIC(12,2);
