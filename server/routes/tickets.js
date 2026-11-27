@@ -1046,6 +1046,9 @@ router.post('/:id/status', async (req, res) => {
     `INSERT INTO ticket_status_history (ticket_id, old_status, new_status, user_id)
      VALUES ($1, $2, $3, $4)`, [req.params.id, ticket.status, toStatus, user.id]);
   if (resolution) await saveResolution(ticket, user, resolution);
+  // chamado cancelado: os pedidos de material que não foram entregues são cancelados junto
+  //   (o que já tinha sido comprado vai para o Estoque da ORCIM)
+  if (toStatus === 7) await cancelarPedidosDoChamado(ticket, user);
   if (pausa) {
     await query(
       `UPDATE tickets SET pause_reason = $2, pause_until = $3, pause_prev_status = $4, paused_at = now(), paused_by = $5 WHERE id = $1`,
@@ -1330,20 +1333,55 @@ const ESTADO_DO_PEDIDO = { comprado: 'ORDERED', chegou: 'READY', rota: 'READY' }
 const TIPOS_EQUIP = ['COMPUTER', 'NOTEBOOK', 'SERVER', 'PRINTER', 'MONITOR', 'UPS', 'NETWORK_DEVICE', 'MOBILE_DEVICE', 'PERIPHERAL', 'OTHER'];
 const podeMexerPedido = (user, ticket) => canResolve(user, ticket) || (has(user, 'inventory.manage') && canViewTicket(user, ticket));
 
+// Pedido cancelado com item já comprado: o item existe (está chegando ou já chegou na ORCIM),
+//   então vai para o Estoque da ORCIM em vez de sumir (Comprado continua "a caminho"; Na ORCIM / a caminho do local = em estoque)
+async function devolverParaOrcim(q, ticket, vivos, user) {
+  for (const a of vivos.filter((x) => ['ORDERED', 'READY'].includes(x.status))) {
+    const estado = a.status === 'ORDERED' ? 'ORDERED' : 'STOCK';
+    await q(`UPDATE assets SET entity_id = NULL, location_id = NULL, status = $2, updated_at = now(),
+               notes = concat_ws(' · ', notes, $3::text) WHERE id = $1`, [a.id, estado, `Pedido #${ticket.id} cancelado: voltou para o Estoque da ORCIM`]);
+    await q(`INSERT INTO asset_history (asset_id, user_id, action, field, old_value, new_value) VALUES ($1,$2,'AssetUpdated','entity_id',$3,'Estoque da ORCIM')`,
+      [a.id, user.id, `pedido #${ticket.id} cancelado`]);
+  }
+}
+
+async function cancelarPedidosDoChamado(ticket, user) {
+  const { rows } = await query("SELECT * FROM ticket_materials WHERE ticket_id = $1 AND status NOT IN ('entregue','cancelado')", [ticket.id]);
+  if (!rows.length) return;
+  await withTransaction(async (q) => {
+    for (const m of rows) {
+      await sincronizarEquipamentos(q, ticket, m, 'cancelado', user);
+      await q(`UPDATE ticket_materials SET status = 'cancelado', asset_ids = '{}', asset_id = NULL, status_at = now(), status_by = $2,
+                      etapas = etapas || jsonb_build_object('cancelado', now()) WHERE id = $1`, [m.id, user.id]);
+    }
+  });
+  const comprados = rows.filter((m) => (m.asset_ids || []).length).length;
+  await query("INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)", [ticket.id, user.id,
+    `Pedido de material cancelado junto com o chamado (${rows.length} item(ns))${comprados ? ` · ${comprados} já comprado(s) foram para o Estoque da ORCIM` : ''}`]);
+}
+
 // Deixa os equipamentos do item iguais à situação do pedido (dentro de uma transação)
 async function sincronizarEquipamentos(q, ticket, m, situacao, user) {
   const ids = (m.asset_ids || []).map(String);
-  const vivos = ids.length ? (await q('SELECT id, status FROM assets WHERE id = ANY($1::bigint[])', [ids])).rows : [];
+  let vivos = ids.length ? (await q('SELECT id, status, controle FROM assets WHERE id = ANY($1::bigint[]) AND entity_id IS NOT NULL', [ids])).rows : [];
   const apagar = async (lista) => { if (lista.length) await q('DELETE FROM assets WHERE id = ANY($1::bigint[])', [lista.map((a) => a.id)]); };
-  if (situacao === 'solicitado' || situacao === 'cancelado' || (situacao === 'entregue' && m.destino === 'nenhum')) {
-    // não entra (ou sai) do inventário: só o que ainda não foi entregue
+  if (situacao === 'cancelado') { await devolverParaOrcim(q, ticket, vivos, user); return []; }
+  if (situacao === 'solicitado' || (situacao === 'entregue' && m.destino === 'nenhum')) {
+    // voltou para "Pedido" (a compra foi desfeita) ou é consumível: não fica no inventário
     await apagar(vivos.filter((a) => ['ORDERED', 'READY'].includes(a.status) || situacao === 'entregue'));
     return [];
   }
+  // vai sair do Estoque da ORCIM e não foi comprado: nada na empresa até a entrega (a entrega tira de lá)
+  if (m.origem_orcim && !vivos.length && situacao !== 'entregue') return [];
   const estado = situacao === 'entregue' ? (m.destino === 'estoque' ? 'STOCK' : 'OPERATING') : ESTADO_DO_PEDIDO[situacao];
-  const qtd = Math.min(Math.max(Number(m.quantity) || 1, 1), 20);
+  const qtd = Math.min(Math.max(Number(m.quantity) || 1, 1), 200);
   const local = m.location_id || ticket.location_id || null;
   const tipo = TIPOS_EQUIP.includes(m.asset_type) ? m.asset_type : 'PERIPHERAL';
+  // deixou de ser periférico: o registro único "por quantidade" sai e entram os itens com etiqueta
+  if (tipo !== 'PERIPHERAL' && vivos.some((a) => a.controle === 'quantidade')) {
+    await apagar(vivos.filter((a) => a.controle === 'quantidade'));
+    vivos = vivos.filter((a) => a.controle !== 'quantidade');
+  }
   // periférico (mouse, teclado, cabo...): sem etiqueta, um registro só com a quantidade
   if (tipo === 'PERIPHERAL') {
     const n = Math.max(Number(m.quantity) || 1, 1);
@@ -1453,7 +1491,8 @@ async function atualizarItemPedido(req, res, forcar = {}) {
     if (b.previsao && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.previsao))) return res.status(422).json({ error: 'Data prevista inválida.' });
     novo.previsao = b.previsao || null;
   }
-  if (b.orcim !== undefined) novo.origem_orcim = !!b.orcim;
+  // item já comprado (tem equipamento próprio) é entregue ele mesmo: não sai do Estoque da ORCIM
+  if (b.orcim !== undefined) novo.origem_orcim = !!b.orcim && !(atual.asset_ids || []).length;
   if (novo.status === 'entregue' && !novo.destino) novo.destino = 'inventario';
   // entregue pela tela de pedidos = o técnico confirmou a entrega
   if (novo.status === 'entregue' && atual.status !== 'entregue') {
@@ -1468,7 +1507,11 @@ async function atualizarItemPedido(req, res, forcar = {}) {
   }
   const mudouSituacao = novo.status !== atual.status;
   let ids = atual.asset_ids || [];
+  try {
   await withTransaction(async (q) => {
+    // trava a linha: outra pessoa pode ter mudado o pedido agora há pouco
+    const agora = (await q('SELECT status FROM ticket_materials WHERE id = $1 FOR UPDATE', [atual.id])).rows[0];
+    if (!agora || agora.status !== atual.status) throw Object.assign(new Error('Esse pedido mudou agora há pouco. Recarregue a página.'), { status: 409 });
     // o inventário acompanha (também quando só o preço, o posto ou o destino mudam)
     // item já entregue: o que está no inventário segue a vida dele (baixas, transferências, conserto);
     //   mudar preço, posto ou previsão do pedido não mexe mais lá
@@ -1482,6 +1525,10 @@ async function atualizarItemPedido(req, res, forcar = {}) {
       [atual.id, novo.status, novo.price, novo.location_id, novo.destino || null, novo.asset_type || null, ids, ids[0] || null, mudouSituacao, user.id,
         novo.previsao || null, !!novo.origem_orcim]);
   });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
   if (mudouSituacao) {
     const posto = novo.location_id ? (await query('SELECT name FROM locations WHERE id = $1', [novo.location_id])).rows[0]?.name : ticket.location_name;
     const onde = novo.status === 'entregue' && novo.destino === 'estoque' ? ' (Estoque de T.I.)' : '';
@@ -1547,12 +1594,20 @@ async function entregaDaOrcim(q, ticket, m, destino, user) {
 
 // Conclui a entrega (Entregue): registra no inventário, grava a etapa, avisa quem precisa saber
 async function concluirEntrega(ticket, m, { destino, orcim, porQuemPediu }, user) {
-  let ids = []; let unit = null; let daOrcim = false;
+  let ids = []; let unit = null; let daOrcim = false; let faltouNaOrcim = false;
+  // item já comprado é entregue ele mesmo (não tira do Estoque da ORCIM)
+  if ((m.asset_ids || []).length) orcim = false;
   await withTransaction(async (q) => {
+    // trava a linha: "Recebi" de quem pediu e a confirmação do técnico ao mesmo tempo não entregam duas vezes
+    const agora = (await q('SELECT status FROM ticket_materials WHERE id = $1 FOR UPDATE', [m.id])).rows[0];
+    if (!agora || ['entregue', 'cancelado'].includes(agora.status) || agora.status !== m.status) {
+      throw Object.assign(new Error('Esse item já foi entregue ou mudou agora há pouco. Recarregue a página.'), { status: 409 });
+    }
     if (orcim && destino !== 'nenhum') {
       const r = await entregaDaOrcim(q, ticket, m, destino, user);
       if (r) { ids = r.ids; unit = r.unit; daOrcim = true; }
       else if (!porQuemPediu) throw Object.assign(new Error(`O Estoque da ORCIM não tem a quantidade de "${m.name}".`), { status: 422 });
+      else faltouNaOrcim = true; // quem pediu recebeu: registra a entrega e avisa a TI para conferir o Estoque da ORCIM
     }
     if (!daOrcim) ids = await sincronizarEquipamentos(q, ticket, { ...m, status: 'entregue', destino }, 'entregue', user);
     await q(`UPDATE ticket_materials SET status = 'entregue', destino = $2, asset_ids = $3::bigint[], asset_id = $4, price = COALESCE(price, $5),
@@ -1563,13 +1618,13 @@ async function concluirEntrega(ticket, m, { destino, orcim, porQuemPediu }, user
   const posto = m.location_id ? (await query('SELECT name FROM locations WHERE id = $1', [m.location_id])).rows[0]?.name : ticket.location_name;
   const onde = destino === 'estoque' ? 'Estoque de T.I.' : destino === 'inventario' ? 'Inventário da Empresa' : 'consumível';
   const quem = porQuemPediu ? `${user.name} (quem pediu)` : user.name;
-  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: Entregue${posto ? ` em ${posto}` : ''} (${onde})${daOrcim ? ' · saiu do Estoque da ORCIM' : ''} · confirmado por ${quem}`;
+  const texto = `${m.quantity} ${m.unit || 'un'} · ${m.name}: Entregue${posto ? ` em ${posto}` : ''} (${onde})${daOrcim ? ' · saiu do Estoque da ORCIM' : ''}${faltouNaOrcim ? ' · o Estoque da ORCIM não tinha esse item no sistema: confira lá' : ''} · confirmado por ${quem}`;
   await query("INSERT INTO ticket_messages (ticket_id, user_id, kind, content) VALUES ($1, $2, 'system', $3)", [ticket.id, user.id, `Pedido de material — ${texto}`]);
   if (ticket.requester_id && String(ticket.requester_id) !== String(user.id)) {
     await notify.createInApp(ticket.requester_id, `Seu pedido #${ticket.id}: entregue`, texto, ticket.id, '#/meus-pedidos').catch(() => {});
   }
   // quem pediu confirmou: avisa quem levou (técnico que marcou "a caminho do local")
-  if (porQuemPediu && m.status_by && String(m.status_by) !== String(user.id)) {
+  if ((porQuemPediu || faltouNaOrcim) && m.status_by && String(m.status_by) !== String(user.id)) {
     await notify.createInApp(m.status_by, `Entrega confirmada · #${ticket.id}`, texto, ticket.id).catch(() => {});
   }
   return { ids, daOrcim };

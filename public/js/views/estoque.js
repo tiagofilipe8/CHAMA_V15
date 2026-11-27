@@ -240,8 +240,9 @@ const Estoque = (() => {
               <div class="es-card-rodape">
                 <small class="text-muted">${[it.desde ? `no estoque desde ${dataCurta(it.desde)}` : '', it.price !== undefined && it.price !== null ? (it.controle === 'quantidade' ? `${invMoeda(it.price)}/un · <b>${invMoeda(Number(it.price) * Number(it.quantity || 0))}</b>` : `<b>${invMoeda(it.price)}</b>`) : ''].filter(Boolean).join(' · ')}</small>
                 <span class="d-flex gap-1">
+                  ${['comprado', 'chegou', 'rota'].includes(it.pedido_status) ? `<small class="text-muted align-self-center" title="Fica livre depois de entregue"><i class="bi bi-lock"></i> reservado p/ #${esc(it.pedido_ticket_id)}</small>` : `
                   ${can('inventory.manage') ? `<button class="btn btn-sm btn-outline-secondary" data-transf="${it.id}" title="Transferir para outra unidade"><i class="bi bi-arrow-left-right"></i></button>` : ''}
-                  ${can('stock.withdraw') && PODE_PEGAR.includes(it.status) && !(it.controle === 'quantidade' && !(it.quantity > 0)) ? `<button class="btn btn-sm btn-primary" data-baixa="${it.id}"><i class="bi bi-box-arrow-up"></i> Dar baixa</button>` : ''}
+                  ${can('stock.withdraw') && PODE_PEGAR.includes(it.status) && !(it.controle === 'quantidade' && !(it.quantity > 0)) ? `<button class="btn btn-sm btn-primary" data-baixa="${it.id}"><i class="bi bi-box-arrow-up"></i> Dar baixa</button>` : ''}`}
                 </span>
               </div>
             </div>`).join('')}</div>

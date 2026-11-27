@@ -43,7 +43,7 @@ Views.orcim = async function orcim(el) {
         <div class="card panel-card mb-2 oc-grupo">
           <div class="iv-tipo-cab"><i class="bi ${INV_ICONES[tp] || 'bi-box'}"></i>${esc(INV_TYPES[tp] || tp)} <span>${lista.reduce((s, a) => s + qtdDe(a), 0)}</span></div>
           ${lista.map((a) => `<div class="oc-item">
-            <span class="iv-tx">${Item.titulo(a, { link: false, local: false, semEtiqueta: true,
+            <span class="iv-tx">${Item.titulo(a, { local: false, semEtiqueta: true,
               depois: `<small>${esc([[a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_number ? `S/N ${a.serial_number}` : '', a.criado_por ? `registrado por ${a.criado_por}` : ''].filter(Boolean).join(' · ') || '—')}</small>` })}</span>
             ${vePreco ? `<span class="iv-preco">${a.price != null ? (a.controle === 'quantidade' ? `${invMoeda(Number(a.price) * qtdDe(a))}<small class="d-block text-muted">${invMoeda(a.price)}/un</small>` : invMoeda(a.price)) : ''}</span>` : ''}
             <span class="oc-btns">

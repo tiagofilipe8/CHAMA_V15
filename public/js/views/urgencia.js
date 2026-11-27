@@ -232,7 +232,8 @@ const Urgencia = (() => {
     const veOrcim = podeEntregar && (Roles.isMaster(u) || Roles.can(u, 'ticket.view_all'));
     const pendentes = [];
     ordem.forEach((p) => p.chamados.forEach((c) => (c.materiais || []).forEach((m) => {
-      if (!['entregue', 'cancelado'].includes(m.status)) pendentes.push({ id: m.id, name: m.name });
+      // item já comprado é entregue ele mesmo: não procura no Estoque da ORCIM
+      if (!['entregue', 'cancelado'].includes(m.status) && !m.comprado) pendentes.push({ id: m.id, name: m.name });
     })));
     let naOrcim = {};
     if (veOrcim && pendentes.length) { try { naOrcim = await API.post('/orcim/procurar', { materiais: pendentes }); } catch { naOrcim = {}; } }

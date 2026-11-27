@@ -158,13 +158,15 @@ router.get('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query(
     `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name, pd.pedido_status, pd.pedido_ticket_id
      FROM assets a
-     JOIN entities e ON e.id=a.entity_id
+     LEFT JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
      LEFT JOIN locations lo ON lo.id=a.location_id
      ${PEDIDO_DO_ITEM}
      WHERE a.id=$1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Ativo não encontrado' });
   const asset = rows[0];
+  // item do Estoque da ORCIM (sem empresa): só a equipe da ORCIM que cuida do inventário
+  if (asset.entity_id === null && !(entityIdsOf(req.user) === null && has(req.user, 'inventory.manage'))) return res.status(403).json({ error: 'Acesso negado' });
   if (!canAccessEntity(req.user, asset.entity_id)) return res.status(403).json({ error: 'Acesso negado' });
   // hardware
   const [details, mem, storage, gpu, net, software, photos, history, agent, tickets, maints, movs] = await Promise.all([

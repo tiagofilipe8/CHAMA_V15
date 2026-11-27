@@ -37,6 +37,14 @@ async function carregarItem(id) {
   return rows[0] || null;
 }
 
+// Item reservado para um pedido que ainda não chegou ao posto (comprado / na ORCIM / a caminho do local):
+//   ele aparece no Estoque de T.I. do posto, mas só fica livre depois de entregue
+async function pedidoReservado(id) {
+  const { rows } = await query(
+    `SELECT ticket_id FROM ticket_materials WHERE (asset_id = $1 OR asset_ids @> ARRAY[$1::bigint]) AND status IN ('comprado','chegou','rota') LIMIT 1`, [id]);
+  return rows[0] ? rows[0].ticket_id : null;
+}
+
 // avisa quem cuida do estoque (equipe e gestores da empresa) que um item saiu
 async function avisarSaida(item, user, texto) {
   const { rows } = await query(
@@ -110,6 +118,8 @@ router.post('/:id/withdraw', async (req, res) => {
   if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
   if (!canAccessEntity(req.user, item.entity_id)) return res.status(403).json({ error: 'Esse item não é do estoque da sua empresa.' });
   if (!PODE_PEGAR.includes(item.status)) return res.status(422).json({ error: 'Esse item não está disponível no estoque.' });
+  const reservado = await pedidoReservado(item.id);
+  if (reservado) return res.status(422).json({ error: `Esse item está reservado para o pedido do chamado #${reservado}. Ele fica livre depois de entregue.` });
   const porQuantidade = item.controle === 'quantidade';
   const qtd = porQuantidade ? parseInt(req.body?.quantidade, 10) || 1 : 1;
   if (porQuantidade && (qtd < 1 || qtd > item.quantity)) {
@@ -207,6 +217,8 @@ router.post('/:id/transfer', async (req, res) => {
   const item = await carregarItem(req.params.id);
   if (!item) return res.status(404).json({ error: 'Item não encontrado.' });
   if (!canAccessEntity(req.user, item.entity_id)) return res.status(403).json({ error: 'Acesso negado.' });
+  const reservado = await pedidoReservado(item.id);
+  if (reservado) return res.status(422).json({ error: `Esse item está reservado para o pedido do chamado #${reservado}. Para mudar o posto, mude no pedido.` });
   const loc = (await query('SELECT id, entity_id, name FROM locations WHERE id = $1', [req.body?.location_id])).rows[0];
   if (!loc) return res.status(422).json({ error: 'Escolha a unidade de destino.' });
   if (!canAccessEntity(req.user, loc.entity_id)) return res.status(403).json({ error: 'Você não pode mandar itens para essa empresa.' });

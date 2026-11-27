@@ -458,7 +458,7 @@ router.get('/urgencia', async (req, res) => {
             il.name AS impact_name, u.name AS assigned_name,
             COALESCE(sc.name, c.name) AS category_name,
             COALESCE((SELECT json_agg(json_build_object('id', m.id, 'name', m.name, 'unit', m.unit, 'quantity', m.quantity,
-                                                         'status', m.status, 'destino', m.destino, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim, 'asset_type', m.asset_type) ORDER BY m.id)
+                                                         'status', m.status, 'destino', m.destino, 'previsao', m.previsao, 'origem_orcim', m.origem_orcim, 'asset_type', m.asset_type, 'comprado', COALESCE(array_length(m.asset_ids, 1), 0) > 0) ORDER BY m.id)
                       FROM ticket_materials m WHERE m.ticket_id = t.id), '[]') AS materiais
      FROM tickets t
      JOIN entities e ON e.id = t.entity_id

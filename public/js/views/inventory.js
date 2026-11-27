@@ -439,11 +439,12 @@ Views.assetDetail = async function assetDetail(id, el) {
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h4 class="mb-0">${Item.titulo(a, { link: false, semEtiqueta: true }).replace('class="it-tit"', 'class="it-tit it-grande"')}</h4>
       <div class="d-flex gap-2">
+        ${a.entity_id === null ? '<a class="btn btn-sm btn-outline-primary" href="#/orcim"><i class="bi bi-boxes"></i> Abrir no Estoque da ORCIM</a>' : `
         ${Roles.can(user, 'inventory.manage') && a.status !== 'STOCK' ? '<button class="btn btn-sm btn-outline-success" id="btn-devolver"><i class="bi bi-box-arrow-in-down"></i> Devolver ao estoque</button>' : ''}
         ${Roles.can(user, 'inventory.manage') ? '<button class="btn btn-sm btn-outline-secondary" id="btn-transferir"><i class="bi bi-arrow-left-right"></i> Transferir</button>' : ''}
         <button class="btn btn-sm btn-outline-secondary" id="btn-edit-asset"><i class="bi bi-pencil"></i> Editar</button>
         <button class="btn btn-sm btn-outline-primary" id="btn-provision"><i class="bi bi-cpu"></i> Gerar token Agent</button>
-        <button class="btn btn-sm btn-outline-danger" id="btn-del-asset"><i class="bi bi-trash"></i></button>
+        <button class="btn btn-sm btn-outline-danger" id="btn-del-asset"><i class="bi bi-trash"></i></button>`}
       </div>
     </div>
     <div class="row g-3">
@@ -598,7 +599,9 @@ Views.assetDetail = async function assetDetail(id, el) {
     </div>
     <div id="provision-area" class="mt-2"></div>`;
 
-  document.getElementById('btn-edit-asset').onclick = ()=> Views.inventory.openAssetModal(a.id, ()=> Views.assetDetail(a.id, el));
+  // item do Estoque da ORCIM: editar, transferir e excluir ficam na tela da ORCIM
+  const noBotao = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+  noBotao('btn-edit-asset', ()=> Views.inventory.openAssetModal(a.id, ()=> Views.assetDetail(a.id, el)));
   // senhas: busca na hora (fica no histórico) e some depois de 30 s
   el.querySelectorAll('.inv-mostrar').forEach((b) => b.addEventListener('click', async () => {
     try {
@@ -616,17 +619,18 @@ Views.assetDetail = async function assetDetail(id, el) {
   if (btnDev) btnDev.onclick = () => Estoque.devolver(a, () => Views.assetDetail(a.id, el));
   const btnTr = document.getElementById('btn-transferir');
   if (btnTr) btnTr.onclick = () => Estoque.transferir(a, () => Views.assetDetail(a.id, el));
-  document.getElementById('btn-del-asset').onclick = async ()=>{
+  noBotao('btn-del-asset', async ()=>{
     if (!await confirmDialog({title:'Excluir ativo', body:'Excluir permanentemente este ativo? Fotos e histórico serão removidos.', confirmText:'Excluir', danger:true})) return;
     try{ await API.del('/inventory/assets/' + a.id); toast('Ativo excluído','warning'); location.hash='#/inventory'; }catch(e){ showError(e); }
-  };
-  document.getElementById('btn-provision').onclick = async ()=>{
+  });
+  noBotao('btn-provision', async ()=>{
     try{
       const r = await API.post('/inventory/agents/provision', { entity_id: a.entity_id });
       document.getElementById('provision-area').innerHTML = `<div class="alert alert-success"><b>Token de instalação:</b> <code>${esc(r.token)}</code> <button class="btn btn-sm btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${esc(r.token)}');toast('Copiado','success')"><i class="bi bi-clipboard"></i></button><br><small>Validade 24h<span class=""> · Entidade: ${esc(a.entity_name)}</span></small></div>`;
     }catch(e){ showError(e); }
-  };
-  document.getElementById('btn-new-os-asset').onclick = ()=> { location.hash = `#/new?entity_id=${a.entity_id}&asset_id=${a.id}`; };
+  });
+  if (a.entity_id === null) document.getElementById('btn-new-os-asset')?.remove();
+  else noBotao('btn-new-os-asset', ()=> { location.hash = `#/new?entity_id=${a.entity_id}&asset_id=${a.id}`; });
 
   // manutencoes
   const maintForm = document.getElementById('maint-form');
