@@ -77,13 +77,14 @@ const Rotas = (() => {
   // Resumo em destaque: paradas, km e tempo, com o botão do Google Maps ao lado
   const resumoBloco = (ordem, inicio, url) => {
     const r = resumoKm(ordem, inicio);
-    return `<div class="ro-resumo">
-      <div class="ro-stat"><i class="bi bi-geo-alt-fill"></i><span><b>${ordem.length}</b><small>parada${ordem.length === 1 ? '' : 's'}</small></span></div>
-      <div class="ro-stat"><i class="bi bi-signpost-2-fill"></i><span><b>~${U.n1(r.km)} km</b><small>no total</small></span></div>
-      <div class="ro-stat"><i class="bi bi-clock-fill"></i><span><b>~${r.tempo}</b><small>de estrada</small></span></div>
+    // uma barra só (cabe na tela do notebook): os números em destaque e o Google Maps na ponta
+    return `<div class="ro-resumo" title="Estimativa pela distância entre os locais. O Google Maps mostra o caminho e o trânsito de verdade.">
+      <div class="ro-stat"><i class="bi bi-geo-alt-fill"></i><b>${ordem.length}</b><small>parada${ordem.length === 1 ? '' : 's'}</small></div>
+      <div class="ro-stat"><i class="bi bi-signpost-2-fill"></i><b>~${U.n1(r.km)} km</b><small>no total</small></div>
+      <div class="ro-stat"><i class="bi bi-clock-fill"></i><b>~${r.tempo}</b><small>de estrada</small></div>
+      <span class="ro-resumo-nota">estimativa pela distância</span>
       ${url ? `<a class="btn btn-maps ro-nao-imprime" href="${url}" target="_blank" rel="noopener noreferrer"><i class="bi bi-map-fill"></i> Abrir no Google Maps</a>` : ''}
-    </div>
-    <div class="ro-resumo-nota">Estimativa pela distância entre os locais. O Google Maps mostra o caminho e o trânsito de verdade.</div>`;
+    </div>`;
   };
 
   // Caminho mais curto saindo de "inicio" (opcional) e terminando em "fim" (opcional).
@@ -123,7 +124,7 @@ const Rotas = (() => {
   }
 
   // ---------------- O que levar (dentro da tela, por parada, marcado como sugestão) ----------------
-  const DESTINOS = { inventario: 'Inventário da Empresa (em uso)', estoque: 'Estoque de T.I. do local' };
+  const DESTINOS = { inventario: 'Inventário (em uso)', estoque: 'Estoque de T.I. do local' };
   const itensDaParada = (p) => (p.chamados || []).flatMap((c) => (c.materiais || []).filter((m) => m.status !== 'cancelado')
     .map((m) => ({ ...m, ticket_id: c.id, ticket_number: c.number })));
   async function procurarOrcim(itens) {
@@ -600,8 +601,8 @@ const Rotas = (() => {
           ${lista.map((m) => itemLevar(m, op)).join('')}${ms.map((o) => manutLevar(o, op)).join('')}</div>` : '';
       }).join('');
       tela.innerHTML = `<div class="card panel-card ro-tela">
-        <div class="ro-q"><b>Quando e quem?</b></div>
-        <div class="ro-trajeto ro-trajeto-resumo">${ordem.map((p) => `<span>${esc(p.location_name)}</span>`).join('<i class="bi bi-arrow-right"></i>')}</div>
+        <div class="ro-q"><b>Quando e quem?</b>
+          <span class="ro-trajeto ro-trajeto-resumo">${ordem.map((p) => `<span>${esc(p.location_name)}</span>`).join('<i class="bi bi-arrow-right"></i>')}</span></div>
         ${resumoBloco(ordem, pontoInicio(), url)}
         <div class="ro-campos">
           <label>Dia<input type="date" class="form-control form-control-sm" id="ro-dia" min="${plano && plano.data < h ? plano.data : h}" value="${campos.dia}"></label>
@@ -610,7 +611,7 @@ const Rotas = (() => {
           <label class="ro-nota">Observação<input class="form-control form-control-sm" id="ro-nota" maxlength="500" placeholder="Saída 8h da base, levar toner" value="${esc(campos.nota)}"></label>
         </div>
         <div class="ro-levar-box">
-          <div class="ro-levar-cab">${U.caixaPixel(30)}<span><b>O que levar</b><small id="ro-lv-conta"></small></span>
+          <div class="ro-levar-cab">${U.caixaPixel(24)}<span><b>O que levar</b><small id="ro-lv-conta"></small></span>
             ${contarLevar(itens, fora, naOrcim, manutsRota, foraM).total ? '<button type="button" class="btn btn-sm btn-link ms-auto" id="ro-lv-todos"></button>' : ''}</div>
           ${blocos || '<div class="ro-sem-ch">Nenhum material pedido nem item de manutenção nessas paradas.</div>'}
         </div>
@@ -722,14 +723,7 @@ const Rotas = (() => {
     el.innerHTML = `
       <div class="card panel-card mb-3 ro-cab ro-cab-${sit}">
         <div class="ro-cab-tx">
-          <h5>Rota de ${nomeDia(r.data)} ${tagSit(r)}</h5>
-          <div class="ro-cab-info"><span><i class="bi bi-person-badge"></i> ${esc(r.technician_name || 'técnico a definir')}</span>
-            <span id="ro-lv-resumo"></span>
-            ${r.nota ? `<span><i class="bi bi-chat-left-text"></i> ${esc(r.nota)}</span>` : ''}</div>
-          ${resumoBloco(ordem, null, url)}
-          ${quem ? `<small class="text-muted">${quem}</small>` : ''}
-          ${r.status === 'agendada' && r.data > h ? `<small class="text-muted">Você começa a rota no dia (${dataCurta(r.data)}). Até lá, marque ou desmarque o que vai levar em cada parada.</small>` : ''}
-        </div>
+          <div class="ro-cab-topo"><h5>Rota de ${nomeDia(r.data)} ${tagSit(r)}</h5>
         <div class="ro-cab-botoes ro-nao-imprime">
           ${podeComecar ? '<button type="button" class="btn btn-primary" id="ro-comecar"><i class="bi bi-play-fill"></i> Começar rota</button>' : ''}
           ${podeConcluir ? '<button type="button" class="btn btn-success" id="ro-concluir"><i class="bi bi-check2-circle"></i> Concluir rota</button>' : ''}
@@ -737,6 +731,13 @@ const Rotas = (() => {
           ${r.pode_editar && r.status !== 'concluida' ? `<a class="btn btn-outline-secondary" href="#/rotas/nova?editar=${r.id}"><i class="bi bi-pencil"></i> Editar</a>` : ''}
           ${r.pode_editar && r.status !== 'concluida' ? '<button type="button" class="btn btn-link text-danger" id="ro-cancelar">Cancelar rota</button>' : ''}
           ${r.pode_agendar && r.status === 'concluida' ? '<button type="button" class="btn btn-link" id="ro-reabrir">Reabrir</button>' : ''}
+        </div></div>
+          <div class="ro-cab-info"><span><i class="bi bi-person-badge"></i> ${esc(r.technician_name || 'técnico a definir')}</span>
+            <span id="ro-lv-resumo"></span>
+            ${r.nota ? `<span><i class="bi bi-chat-left-text"></i> ${esc(r.nota)}</span>` : ''}</div>
+          ${resumoBloco(ordem, null, url)}
+          ${quem ? `<small class="text-muted">${quem}</small>` : ''}
+          ${r.status === 'agendada' && r.data > h ? `<small class="text-muted">Você começa a rota no dia (${dataCurta(r.data)}). Até lá, marque ou desmarque o que vai levar em cada parada.</small>` : ''}
         </div>
       </div>
       <ol class="ro-paradas ro-paradas-pag">${ordem.map((p, i) => `<li class="card panel-card ro-parada">
