@@ -488,13 +488,24 @@ router.get('/urgencia', async (req, res) => {
       category_name: t.category_name, assigned_name: t.assigned_name, materiais: t.materiais, ...calc,
     });
   }
+  // Entregas pendentes por local (a caixinha): itens de pedido que ainda não chegaram ao posto de destino.
+  //   Não mexe no score. parada = quantos são de chamado de operação parada (a caixa pega fogo).
+  const condsEnt = ['t.status <> 7', ...conds.slice(1)];
+  const entregas = (await query(
+    `SELECT COALESCE(m.location_id, t.location_id) AS location_id, t.entity_id,
+            sum(m.quantity)::int AS itens, count(*)::int AS n, count(*) FILTER (WHERE t.priority = 4)::int AS parada
+     FROM ticket_materials m JOIN tickets t ON t.id = m.ticket_id
+     WHERE m.status IN ('solicitado','comprado','chegou','rota') AND ${condsEnt.join(' AND ')}
+     GROUP BY 1, 2`, params)).rows;
+  const entPorLocal = new Map(entregas.map((e) => [`${e.entity_id}:${e.location_id || 'sem'}`, e]));
   const lista = [...locais.values()].map((l) => ({
     ...l,
     score: Math.round(l.score * 100) / 100,
     chamados: l.chamados.sort((a, b) => b.score - a.score),
     atrasados: l.chamados.filter((c) => c.dias_atraso > 0).length,
+    entregas: entPorLocal.get(`${l.entity_id}:${l.location_id || 'sem'}`) || null,
   })).sort((a, b) => b.score - a.score);
-  res.json({ hoje, regras: REGRAS, locais: lista, pausados });
+  res.json({ hoje, regras: REGRAS, locais: lista, pausados, entregas });
 });
 
 module.exports = router;

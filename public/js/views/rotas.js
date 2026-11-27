@@ -382,6 +382,8 @@ const Rotas = (() => {
       urg.locais.filter((l) => l.location_id && temCoord(l)).forEach((l) => porId.set(String(l.location_id), { ...l, lat: Number(l.latitude), lng: Number(l.longitude), manut: manutMap.get(String(l.location_id)) || [] }));
     };
     montarMapa();
+    // entregas pendentes por local (a caixinha ao lado do score; pega fogo se for de operação parada)
+    const entMap = U.entregasPorLocal(urg);
     // candidatos: locais com chamado aberto (por score) e, depois, os que só têm item para buscar ou devolver da manutenção
     const candidatos = () => {
       const c = urg.locais.filter((l) => l.location_id && temCoord(l)).map((l) => String(l.location_id));
@@ -473,7 +475,7 @@ const Rotas = (() => {
           <span class="ro-pos">${pos || ''}</span>
           <span class="ro-cand-tx"><b>${esc(l.location_name)}</b>
             <small>${l.chamados.length ? `${l.chamados.length} chamado(s)${l.atrasados ? ` · ${l.atrasados} atrasado(s)` : ''}` : 'sem chamado aberto'}${l.city ? ` · ${esc(l.city)}` : ''}${infoManut ? ` · <span class="text-warning-emphasis"><i class="bi bi-tools"></i> manutenção: ${infoManut}</span>` : ''}${jaTemRota[id] ? ` · <span class="text-primary"><i class="bi bi-truck"></i> já tem rota ${nomeDia(jaTemRota[id])}</span>` : ''}</small></span>
-          ${l.chamados.length ? scorePill(l.score, U.temParada(l.chamados)) : ''}
+          ${U.caixaEntregas(entMap.get(String(id)))}${l.chamados.length ? scorePill(l.score, U.temParada(l.chamados)) : ''}
         </label>`;
       };
       tela.innerHTML = `<div class="card panel-card ro-tela">
@@ -539,7 +541,7 @@ const Rotas = (() => {
               <span class="ur-num">${i + 1}</span>
               <span class="ro-parada-tx"><b>${esc(p.location_name)}${modoOrdem === 'curto' && fimId && String(p.location_id) === fimId ? ' <i class="bi bi-flag-fill text-success" title="Destino final"></i>' : ''}</b>
                 <small>${esc([p.address, p.city].filter(Boolean).join(' · '))}${r.trechos[i] ? ` · ~${U.n1(Math.round(r.trechos[i]))} km do anterior` : ''}</small></span>
-              ${p.chamados.length ? scorePill(p.score, U.temParada(p.chamados)) : ''}
+              ${U.caixaEntregas(entMap.get(String(p.location_id)))}${p.chamados.length ? scorePill(p.score, U.temParada(p.chamados)) : ''}
               <span class="ro-mover">
                 <button type="button" class="btn btn-sm btn-light" data-sobe="${p.location_id}" title="Passar antes" ${i === 0 ? 'disabled' : ''}><i class="bi bi-arrow-up"></i></button>
                 <button type="button" class="btn btn-sm btn-light" data-desce="${p.location_id}" title="Passar depois" ${i === ordem.length - 1 ? 'disabled' : ''}><i class="bi bi-arrow-down"></i></button>
@@ -682,6 +684,7 @@ const Rotas = (() => {
     } catch (e) { el.innerHTML = emptyState('Não foi possível abrir a rota', e.message, 'bi-exclamation-triangle'); return; }
     if (window.migalhaDetalhe) window.migalhaDetalhe(`Rota de ${nomeDia(r.data)}`);
     const porLoc = new Map(urg.locais.filter((l) => l.location_id).map((l) => [String(l.location_id), l]));
+    const entMap = U.entregasPorLocal(urg);
     const manutMap = manutPorLocal(manuts.itens);
     const ordem = (r.paradas || []).map((p) => {
       const l = porLoc.get(String(p.location_id));
@@ -743,7 +746,7 @@ const Rotas = (() => {
       <ol class="ro-paradas ro-paradas-pag">${ordem.map((p, i) => `<li class="card panel-card ro-parada">
           <div class="ro-parada-cab"><span class="ur-num">${i + 1}</span>
             <span class="ro-parada-tx"><b>${esc(p.location_name)}</b><small>${esc([p.address, p.city].filter(Boolean).join(' · '))}${res.trechos[i] ? ` · ~${U.n1(Math.round(res.trechos[i]))} km do anterior` : ''}</small></span>
-            ${p.chamados.length ? scorePill(p.score, U.temParada(p.chamados)) : ''}</div>
+            ${U.caixaEntregas(entMap.get(String(p.location_id)))}${p.chamados.length ? scorePill(p.score, U.temParada(p.chamados)) : ''}</div>
           ${chamadosHtml(p)}
           ${levarDaParada(p)}
         </li>`).join('')}</ol>`;

@@ -167,6 +167,7 @@ const Urgencia = (() => {
               <span class="ur-loc-tx"><b>${esc(l.location_name)}</b><small>${esc(l.entity_name)}${l.city ? ` · ${esc(l.city)}` : ''}${l.latitude === null ? ' · <span class="text-warning-emphasis">sem coordenadas</span>' : ''}</small></span>
               <span class="ur-barra" title="quanto maior e mais vermelha, mais urgente"><i style="--w:${Math.max(4, Math.round((l.score / max) * 100))}%"></i></span>
               <span class="ur-loc-n">${l.chamados.length} chamado(s)${l.atrasados ? ` · <b class="text-danger">${l.atrasados} atrasado(s)</b>` : ''}</span>
+              <span class="ur-loc-caixa">${caixaEntregas(l.entregas, 22)}</span>
               <span class="ur-loc-score">${numScore(l.score, ALVO_LOCAL, '', 1.05, temParada(l.chamados))}<small>score</small></span>
             </summary>
             <div class="ur-chs">${l.chamados.map(linhaChamado).join('')}</div>
@@ -206,8 +207,18 @@ const Urgencia = (() => {
     return `<svg class="caixa-pix" width="${tam}" height="${tam}" viewBox="0 0 12 12" shape-rendering="crispEdges" aria-hidden="true">${r}</svg>`;
   };
 
+  // Entregas pendentes do local: caixinha com o número de pedidos que ainda não chegaram lá.
+  //   Se algum é de chamado de operação parada, a caixa pega fogo. Não muda o score.
+  const caixaEntregas = (e, tam = 20) => {
+    if (!e || !e.n) return '';
+    const titulo = `${e.n} pedido(s) para entregar neste local${e.parada ? ` · ${e.parada} de operação parada` : ''}`;
+    return `<span class="ur-caixa ${e.parada ? 'em-chamas' : ''}" title="${titulo}" style="--cx:${tam}px">${e.parada ? '<span class="ur-fogo" aria-hidden="true"></span>' : ''}${caixaPixel(tam)}<b>${e.n}</b></span>`;
+  };
+  // entregas pendentes por id do local (vem junto do /dashboard/urgencia)
+  const entregasPorLocal = (d) => new Map((d && d.entregas ? d.entregas : []).filter((e) => e.location_id).map((e) => [String(e.location_id), e]));
+
   // peças usadas pela tela de Rotas (public/js/views/rotas.js)
-  return { pagina, km, FATOR_ESTRADA, VELOCIDADE, caixaPixel, temParada, ALVO_LOCAL, n1 };
+  return { pagina, km, FATOR_ESTRADA, VELOCIDADE, caixaPixel, caixaEntregas, entregasPorLocal, temParada, ALVO_LOCAL, n1 };
 })();
 
 Views.urgencia = (el) => Urgencia.pagina(el);
