@@ -185,7 +185,7 @@ const Estoque = (() => {
     let ents = [];
     try { ents = (await API.get('/entities')).filter((e) => e.active); } catch { /* sem filtro */ }
     // quem só dá baixa (sem "Ver o inventário") vê só o estoque do local do seu cadastro
-    const preso = !can('inventory.view') && !Roles.isMaster(u());
+    const preso = Roles.presoAoLocal(u());
     el.innerHTML = `
       ${preso ? `<div class="es-meu-local mb-2"><i class="bi bi-geo-alt-fill"></i><span>${u().location_name ? `Estoque de T.I. de <b>${esc(u().location_name)}</b>. Você vê e pega itens só do seu local.` : 'Seu usuário não está ligado a um local. Peça ao gestor para escolher o local no seu cadastro.'}</span></div>` : ''}
       <div class="card panel-card mb-3"><div class="card-body py-2 es-filtros">

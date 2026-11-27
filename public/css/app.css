@@ -2675,3 +2675,49 @@ label.ro-lv-item { cursor: pointer; }
 /* Estoque de T.I.: quem só dá baixa vê o estoque do seu local */
 .es-meu-local { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: #e0f2fe; color: #075985; font-size: .88rem; }
 [data-bs-theme="dark"] .es-meu-local { background: rgba(56,189,248,.14); color: #7dd3fc; }
+
+/* =====================================================================
+   Itens em manutenção (public/js/views/manutencao.js) e selo da manutenção nos itens
+   ===================================================================== */
+.mt-tag { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; white-space: nowrap; background: #fef3c7; color: #b45309; }
+.mt-tag i { font-size: .7rem; }
+.mt-pedida { background: #fef3c7; color: #b45309; }
+.mt-retirada, .mt-em_conserto { background: #ffedd5; color: #c2410c; }
+.mt-pronta { background: #dbeafe; color: #1d4ed8; }
+.mt-rota { background: #cffafe; color: #0e7490; }
+.mt-devolvida { background: #dcfce7; color: #15803d; }
+.mt-sem_conserto { background: #fee2e2; color: #b91c1c; }
+.mt-cancelada { background: #e5e7eb; color: #4b5563; }
+[data-bs-theme="dark"] .mt-tag { background: rgba(127,127,127,.2); }
+.mt-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.mt-card { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; border-left: 4px solid #f59e0b; }
+.mt-card-retirada, .mt-card-em_conserto { border-left-color: #f97316; }
+.mt-card-pronta, .mt-card-rota { border-left-color: #3b82f6; }
+.mt-card-devolvida { border-left-color: #22c55e; } .mt-card-sem_conserto { border-left-color: #ef4444; } .mt-card-cancelada { border-left-color: #9ca3af; opacity: .85; }
+.mt-card-cab { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
+.mt-card-cab > .mt-tag { flex: none; }
+.mt-problema { font-size: .86rem; color: var(--ink); background: rgba(127,127,127,.06); border-radius: 8px; padding: 6px 10px; }
+.mt-problema i, .mt-solucao i { color: var(--muted); margin-right: 4px; }
+.mt-solucao { font-size: .82rem; color: #15803d; }
+.mt-meta { font-size: .76rem; color: var(--muted); }
+.mt-tempo { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.mt-passo { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; color: var(--muted); opacity: .55; }
+.mt-passo b { font-weight: 600; }
+.mt-passo small { font-size: .64rem; }
+.mt-passo.feito { opacity: 1; color: var(--ink); }
+.mt-passo.atual b { color: #b45309; font-weight: 800; }
+.mt-seta { font-size: .6rem; color: var(--muted); opacity: .6; }
+.mt-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; border-top: 1px dashed var(--border); padding-top: 8px; }
+.mt-acoes label { display: flex; flex-direction: column; gap: 3px; font-size: .72rem; color: var(--muted); flex: 1 1 140px; min-width: 0; }
+.mt-escolha { display: flex; flex-direction: column; gap: 4px; }
+.mt-escolha-it { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.mt-escolha-it:hover:not([disabled]) { background: var(--c-blue-bg); }
+.mt-escolha-it[disabled] { opacity: .6; }
+
+/* rota: item que ainda não pode ir (aparece desmarcado com o motivo) e o que fazer com o item da manutenção */
+.ro-lv-item.indisp { opacity: .7; background: rgba(127,127,127,.05); border-style: dashed; }
+.ro-lv-item.indisp small { margin-left: 4px; }
+.mt-acao { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: .7rem; font-weight: 700; border-radius: 6px; padding: 2px 8px; }
+.mt-acao.buscar { background: #fef3c7; color: #92400e; }
+.mt-acao.devolver { background: #dbeafe; color: #1d4ed8; }
+[data-bs-theme="dark"] .mt-acao { background: rgba(127,127,127,.2); color: var(--ink); }

@@ -22,7 +22,7 @@ const hojeSP = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America
 const dataBR = (d) => String(d).slice(0, 10).split('-').reverse().join('/');
 
 // campos de uma rota (com as paradas); $1.. vêm de quem chama
-const CAMPOS = `p.id, to_char(p.data, 'YYYY-MM-DD') AS data, p.nota, p.status, p.technician_id, p.created_by, p.created_at, p.itens_fora,
+const CAMPOS = `p.id, to_char(p.data, 'YYYY-MM-DD') AS data, p.nota, p.status, p.technician_id, p.created_by, p.created_at, p.itens_fora, p.manut_fora,
             p.started_at, p.concluded_at, t.name AS technician_name, c.name AS created_by_name,
             si.name AS started_by_name, co.name AS concluded_by_name,
             (SELECT json_agg(json_build_object('location_id', s.location_id, 'location_name', l.name, 'city', l.city, 'address', l.address,
@@ -106,7 +106,7 @@ async function lerPlano(b, { dataAntiga } = {}) {
     if (!tecnico) return { error: 'Técnico inválido.' };
   }
   const nomes = locais.map((id) => achados.find((l) => String(l.id) === id).name);
-  return { data: b.data, locais, nomes, tecnico, nota: String(b.nota || '').trim().slice(0, 500) || null, itensFora: lerItensFora(b.itens_fora) };
+  return { data: b.data, locais, nomes, tecnico, nota: String(b.nota || '').trim().slice(0, 500) || null, itensFora: lerItensFora(b.itens_fora), manutFora: lerItensFora(b.manut_fora) };
 }
 
 // grava as paradas e põe a previsão dos pedidos desses locais no dia da rota
@@ -138,8 +138,8 @@ router.post('/', async (req, res) => {
   const v = await lerPlano(req.body || {});
   if (v.error) return res.status(422).json({ error: v.error });
   const plano = await withTransaction(async (q) => {
-    const { rows } = await q(`INSERT INTO route_plans (data, technician_id, nota, created_by, itens_fora) VALUES ($1, $2, $3, $4, $5::bigint[]) RETURNING id`,
-      [v.data, v.tecnico ? v.tecnico.id : null, v.nota, req.user.id, v.itensFora]);
+    const { rows } = await q(`INSERT INTO route_plans (data, technician_id, nota, created_by, itens_fora, manut_fora) VALUES ($1, $2, $3, $4, $5::bigint[], $6::bigint[]) RETURNING id`,
+      [v.data, v.tecnico ? v.tecnico.id : null, v.nota, req.user.id, v.itensFora, v.manutFora]);
     await gravarParadas(q, rows[0].id, v);
     return rows[0];
   });
@@ -159,7 +159,7 @@ router.put('/:id(\\d+)', async (req, res) => {
   const v = await lerPlano(req.body || {}, { dataAntiga: p.data });
   if (v.error) return res.status(422).json({ error: v.error });
   await withTransaction(async (q) => {
-    await q('UPDATE route_plans SET data = $2, technician_id = $3, nota = $4, itens_fora = $5::bigint[] WHERE id = $1', [p.id, v.data, v.tecnico ? v.tecnico.id : null, v.nota, v.itensFora]);
+    await q('UPDATE route_plans SET data = $2, technician_id = $3, nota = $4, itens_fora = $5::bigint[], manut_fora = $6::bigint[] WHERE id = $1', [p.id, v.data, v.tecnico ? v.tecnico.id : null, v.nota, v.itensFora, v.manutFora]);
     await gravarParadas(q, p.id, v);
   });
   // avisa: todos os locais se o dia mudou; senão, só os locais que entraram agora
@@ -178,7 +178,8 @@ router.put('/:id(\\d+)/itens', async (req, res) => {
   const p = await carregar(req.params.id);
   if (!p) return res.status(404).json({ error: 'Rota não encontrada.' });
   if (p.status === 'concluida') return res.status(422).json({ error: 'Essa rota já foi concluída.' });
-  await query('UPDATE route_plans SET itens_fora = $2::bigint[] WHERE id = $1', [p.id, lerItensFora(req.body?.itens_fora)]);
+  await query('UPDATE route_plans SET itens_fora = $2::bigint[], manut_fora = $3::bigint[] WHERE id = $1',
+    [p.id, lerItensFora(req.body?.itens_fora), req.body?.manut_fora !== undefined ? lerItensFora(req.body.manut_fora) : (p.manut_fora || []).map(String)]);
   res.json({ ok: true });
 });
 
@@ -190,8 +191,54 @@ router.post('/:id(\\d+)/comecar', async (req, res) => {
   if (p.status !== 'agendada') return res.status(422).json({ error: p.status === 'concluida' ? 'Essa rota já foi concluída.' : 'Essa rota já começou.' });
   if (p.data > hojeSP()) return res.status(422).json({ error: `Essa rota é para ${dataBR(p.data)}. Para sair hoje, mude o dia em Editar.` });
   await query(`UPDATE route_plans SET status = 'em_andamento', started_at = now(), started_by = $2 WHERE id = $1`, [p.id, req.user.id]);
+  await avisarOQueNaoVai(p, req.user).catch(() => {});
   res.json({ ok: true });
 });
+
+// Ao começar a rota: o gestor da empresa de cada parada fica sabendo o que NÃO vai nesta rota e por quê
+//   (pedido que ainda não chegou na ORCIM, item ainda em conserto, pedido ou manutenção desmarcados)
+const SIT_PEDIDO = {
+  solicitado: 'ainda está Pedido (a TI ainda não comprou)', comprado: 'ainda está aguardando chegar na ORCIM',
+  chegou: 'está na ORCIM, mas não vai nesta rota',
+};
+const SIT_MANUT = {
+  pedida: 'a TI ainda não vai buscar nesta rota', retirada: 'ainda está em manutenção (retirado pela TI)',
+  em_conserto: 'ainda está em manutenção (em conserto)', pronta: 'já foi consertado, mas não volta nesta rota',
+};
+async function avisarOQueNaoVai(p, user) {
+  const locais = (p.paradas || []).map((s) => String(s.location_id));
+  if (!locais.length) return;
+  // pedidos de material dos chamados abertos das paradas que não saíram (os marcados já estão "a caminho")
+  const mats = (await query(
+    `SELECT tm.name, tm.quantity, tm.unit, tm.status, tk.id AS ticket_id, COALESCE(tm.location_id, tk.location_id) AS location_id
+     FROM ticket_materials tm JOIN tickets tk ON tk.id = tm.ticket_id
+     WHERE COALESCE(tm.location_id, tk.location_id)::text = ANY($1::text[]) AND tk.status NOT IN (5,6,7)
+       AND tm.status IN ('solicitado','comprado','chegou')`, [locais])).rows;
+  // manutenções abertas das paradas: as que ainda estão no conserto e as desmarcadas (buscar ou devolver)
+  const fora = (p.manut_fora || []).map(String);
+  const mans = (await query(
+    `SELECT m.id, m.status, m.location_id, a.name, a.asset_tag FROM manutencoes m JOIN assets a ON a.id = m.asset_id
+     WHERE m.location_id::text = ANY($1::text[]) AND m.status IN ('pedida','retirada','em_conserto','pronta')`, [locais])).rows
+    .filter((m) => ['retirada', 'em_conserto'].includes(m.status) || fora.includes(String(m.id)));
+  if (!mats.length && !mans.length) return;
+  const nomes = new Map((p.paradas || []).map((s) => [String(s.location_id), s]));
+  for (const loc of locais) {
+    const linhas = [
+      ...mats.filter((x) => String(x.location_id) === loc).map((x) => `${x.quantity} ${x.unit || 'un'} ${x.name} (#${x.ticket_id}): ${SIT_PEDIDO[x.status]}`),
+      ...mans.filter((x) => String(x.location_id) === loc).map((x) => `${x.name}${x.asset_tag ? ` (${x.asset_tag})` : ''}: ${SIT_MANUT[x.status]}`),
+    ];
+    if (!linhas.length) continue;
+    const parada = nomes.get(loc);
+    const gestores = (await query(
+      `SELECT u.id FROM users u WHERE u.active AND u.role = 'client' AND u.client_level = 2 AND u.id <> $2
+         AND (u.entity_id = $1 OR EXISTS (SELECT 1 FROM user_entities ue WHERE ue.user_id = u.id AND ue.entity_id = $1))`, [parada.entity_id, user.id])).rows;
+    const temManut = mans.some((x) => String(x.location_id) === loc);
+    for (const g of gestores) {
+      await notify.createInApp(g.id, `Rota da TI em ${parada.location_name}: o que ainda não vai hoje`,
+        linhas.join(' · ').slice(0, 900), null, temManut ? '#/manutencao' : '#/pedidos').catch(() => {});
+    }
+  }
+}
 
 // Concluir a rota (fim do dia)
 router.post('/:id(\\d+)/concluir', async (req, res) => {

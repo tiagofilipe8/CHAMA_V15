@@ -103,7 +103,8 @@ const DEFAULTS = {
     'ticket.rating', 'dashboard.view', 'inventory.view', 'inventory.manage', 'users.manage',
     'locations.manage', 'materials.manage', 'inventory.secrets', 'stock.withdraw', 'stock.report',
   ],
-  user: ['ticket.create', 'ticket.approve', 'ticket.cancel', 'stock.withdraw'],
+  // o Usuário vê o inventário e o Estoque de T.I. só do local do seu cadastro (localFixo)
+  user: ['ticket.create', 'ticket.approve', 'ticket.cancel', 'stock.withdraw', 'inventory.view'],
 };
 
 const ALL_KEYS = PERMISSIONS.map((p) => p.key);

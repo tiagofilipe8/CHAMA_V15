@@ -201,6 +201,8 @@ const Roles = {
   canSeeInventory: (u) => Roles.can(u, 'inventory.view'),
   canManageUsers: (u) => Roles.can(u, 'users.manage'),
   canManageLocations: (u) => Roles.can(u, 'locations.manage'),
+  // perfil Usuário: vê inventário, estoque e manutenções só do local do seu cadastro (o gestor vê todos)
+  presoAoLocal: (u) => !!u && u.role === 'client' && Number(u.client_level) !== 2,
   label(u) {
     if (!u) return '';
     if (u.role === 'client') return LABELS.clientLevel[u.client_level] || 'Usuário';

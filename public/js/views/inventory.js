@@ -227,11 +227,12 @@ Views.inventory = async function inventory(el) {
   try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem('inv_prefs') || '{}') }; } catch { /* padrão */ }
   const salvar = () => { try { localStorage.setItem('inv_prefs', JSON.stringify(prefs)); } catch { /* sem armazenamento */ } };
   el.innerHTML = `
+    ${Roles.presoAoLocal(user) ? `<div class="es-meu-local mb-2"><i class="bi bi-geo-alt-fill"></i><span>${user.location_name ? `Inventário de <b>${esc(user.location_name)}</b>. Você vê só os itens do seu local; para pedir conserto de um item, abra a ficha dele e clique em <b>Pedir manutenção</b>.` : 'Seu usuário não está ligado a um local. Peça ao gestor para escolher o local no seu cadastro.'}</span></div>` : ''}
     <div class="card panel-card mb-3">
       <div class="card-body py-2 iv-filtros">
         <div class="iv-busca"><i class="bi bi-search"></i><input class="form-control form-control-sm" id="inv-q" placeholder="Buscar etiqueta, nome, serial, AnyDesk..."></div>
-        <select class="form-select form-select-sm" id="inv-entity"><option value="">Todas as empresas</option></select>
-        <select class="form-select form-select-sm" id="inv-loc"><option value="">Todos os locais</option></select>
+        <select class="form-select form-select-sm ${Roles.presoAoLocal(user) ? 'd-none' : ''}" id="inv-entity"><option value="">Todas as empresas</option></select>
+        <select class="form-select form-select-sm ${Roles.presoAoLocal(user) ? 'd-none' : ''}" id="inv-loc"><option value="">Todos os locais</option></select>
         <select class="form-select form-select-sm" id="inv-type">
           <option value="">Todas as categorias</option>
           ${Object.entries(INV_TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
@@ -241,10 +242,10 @@ Views.inventory = async function inventory(el) {
           ${Object.entries(INV_STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
         ${invVeSegredos() ? `<select class="form-select form-select-sm" id="inv-ordem" title="Ordem dos locais"><option value="nome">Locais por nome</option><option value="valor">Locais por valor (maior primeiro)</option></select>` : ''}
-        <span class="ms-auto d-flex gap-2">
+        ${Roles.can(user, 'inventory.manage') ? `<span class="ms-auto d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm" id="btn-agents"><i class="bi bi-cpu"></i> Agentes</button>
           <button class="btn btn-primary btn-sm" id="btn-new-asset"><i class="bi bi-plus-lg"></i> Novo equipamento</button>
-        </span>
+        </span>` : ''}
       </div>
     </div>
     <div class="iv-resumo small text-muted mb-2" id="inv-resumo"></div>
@@ -371,8 +372,8 @@ Views.inventory = async function inventory(el) {
   const selOrdem = document.getElementById('inv-ordem');
   if (selOrdem) { selOrdem.value = prefs.ordem === 'valor' ? 'valor' : 'nome'; selOrdem.addEventListener('change', () => { prefs.ordem = selOrdem.value; salvar(); load(); }); }
   selEnt.addEventListener('change', async () => { await carregarLocais(); load(); });
-  document.getElementById('btn-new-asset').onclick = () => openAssetModal(null, load);
-  document.getElementById('btn-agents').onclick = () => { location.hash = '#/inventory/agents'; };
+  const btNovo = document.getElementById('btn-new-asset'); if (btNovo) btNovo.onclick = () => openAssetModal(null, load);
+  const btAg = document.getElementById('btn-agents'); if (btAg) btAg.onclick = () => { location.hash = '#/inventory/agents'; };
   await load();
 };
 Views.inventory.openAssetModal = openAssetModal;
@@ -439,7 +440,9 @@ Views.assetDetail = async function assetDetail(id, el) {
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h4 class="mb-0">${Item.titulo(a, { link: false, semEtiqueta: true }).replace('class="it-tit"', 'class="it-tit it-grande"')}</h4>
       <div class="d-flex gap-2">
-        ${a.entity_id === null ? '<a class="btn btn-sm btn-outline-primary" href="#/orcim"><i class="bi bi-boxes"></i> Abrir no Estoque da ORCIM</a>' : `
+        ${a.entity_id !== null && !a.manut_status && Roles.can(user, 'ticket.create') && !['DISPOSED', 'LOST', 'ORDERED'].includes(a.status) ? `<a class="btn btn-sm btn-warning" href="#/new?entity_id=${a.entity_id}&asset_id=${a.id}&manutencao=1" title="Abre um chamado para a TI buscar e consertar este item"><i class="bi bi-tools"></i> Pedir manutenção</a>` : ''}
+        ${a.manut_status ? `<a class="btn btn-sm btn-outline-warning" href="#/manutencao"><i class="bi bi-tools"></i> Ver a manutenção</a>` : ''}
+        ${a.entity_id === null ? '<a class="btn btn-sm btn-outline-primary" href="#/orcim"><i class="bi bi-boxes"></i> Abrir no Estoque da ORCIM</a>' : !Roles.can(user, 'inventory.manage') ? '' : `
         ${Roles.can(user, 'inventory.manage') && a.status !== 'STOCK' ? '<button class="btn btn-sm btn-outline-success" id="btn-devolver"><i class="bi bi-box-arrow-in-down"></i> Devolver ao estoque</button>' : ''}
         ${Roles.can(user, 'inventory.manage') ? '<button class="btn btn-sm btn-outline-secondary" id="btn-transferir"><i class="bi bi-arrow-left-right"></i> Transferir</button>' : ''}
         <button class="btn btn-sm btn-outline-secondary" id="btn-edit-asset"><i class="bi bi-pencil"></i> Editar</button>
@@ -452,7 +455,7 @@ Views.assetDetail = async function assetDetail(id, el) {
         <div class="card panel-card mb-3"><div class="card-header">Identificação</div><div class="card-body small">
           <div class="row"><div class="col-6"><b>Nome:</b> ${esc(a.name||'—')}</div><div class="col-6"><b>Etiqueta da ORCIM:</b> ${a.asset_tag ? Item.tags(a, { estado: false, local: false, etapa: false }) : '—'}</div></div>
           <div class="row"><div class="col-6"><b>Categoria:</b> ${INV_TYPES[a.type]||a.type}</div><div class="col-6"><b>Estado:</b> ${invEstado(a.status)}</div></div>
-          <div class="row"><div class="col-6"><b>Local (posto):</b> ${Item.tags(a, { estado: false, etiqueta: false, etapa: false }) || '—'}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
+          <div class="row"><div class="col-6"><b>Local (posto):</b> ${Item.tags(a, { estado: false, etiqueta: false, etapa: false, manut: false }) || '—'}</div>${invVeSegredos() ? `<div class="col-6"><b>Preço:</b> ${a.controle === 'quantidade' ? `${invMoeda(a.price)} por unidade · ${a.quantity} un = <b>${invMoeda(Number(a.price || 0) * Number(a.quantity || 0))}</b>` : invMoeda(a.price)}</div>` : ''}</div>
           ${a.controle === 'quantidade' ? `<div class="row"><div class="col-6"><b>Quantidade:</b> ${a.quantity} un <small class="text-muted">(sem etiqueta, contado por quantidade)</small></div></div>` : ''}
           <div class="row"><div class="col-6"><b>Fabricante:</b> ${esc(a.manufacturer||'—')}</div><div class="col-6"><b>Modelo:</b> ${esc(a.model||'—')}</div></div>
           <div class="row"><div class="col-6"><b>N° Série / TAG:</b> ${esc(a.serial_number||'—')}</div><div class="col-6"><b>Cliente:</b> ${esc(a.entity_name||'—')}</div></div>
@@ -737,6 +740,11 @@ Views.assetDetail = async function assetDetail(id, el) {
   el.querySelectorAll('.btn-photo-primary').forEach(b=> b.addEventListener('click', async()=>{ try{ await API.post(`/inventory/assets/${a.id}/photos/${b.dataset.id}/primary`); toast('Foto principal definida','success'); Views.assetDetail(a.id, el); }catch(e){ showError(e); }}));
   el.querySelectorAll('.btn-photo-del').forEach(b=> b.addEventListener('click', async()=>{ if(!await confirmDialog({title:'Excluir foto', confirmText:'Excluir', danger:true})) return; try{ await API.del(`/inventory/assets/${a.id}/photos/${b.dataset.id}`); toast('Foto excluída','warning'); Views.assetDetail(a.id, el); }catch(e){ showError(e); }}));
   el.querySelectorAll('.photo-item').forEach(img=> img.addEventListener('click', ()=> window.open(img.src, '_blank')));
+  // quem só vê o inventário (ex.: perfil Usuário): sem os botões de cadastrar foto e manutenção
+  if (!Roles.can(user, 'inventory.manage')) {
+    ['btn-add-photo', 'btn-add-maint', 'btn-edit-plan'].forEach((id) => document.getElementById(id)?.remove());
+    el.querySelectorAll('.btn-photo-primary, .btn-photo-del, .btn-edit-maint').forEach((b) => b.remove());
+  }
 };
 
 Views.agents = async function agents(el){

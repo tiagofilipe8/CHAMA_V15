@@ -32,6 +32,15 @@ const INV_ICONES = {
   PERIPHERAL: 'bi-mouse2', OTHER: 'bi-box',
 };
 const invEstado = (s) => `<span class="est est-${esc(s)}">${esc(INV_STATUS[s] || s)}</span>`;
+// Etapas da manutenção de um item (Itens em manutenção): [nome, ícone]
+const MANUT_ETAPAS = {
+  pedida: ['Manutenção pedida', 'bi-tools'], retirada: ['Retirado pela TI', 'bi-box-arrow-in-down'],
+  em_conserto: ['Em conserto', 'bi-wrench-adjustable'], pronta: ['Pronto, na ORCIM', 'bi-check2-square'],
+  rota: ['A caminho do local', 'bi-signpost-split'], devolvida: ['Devolvido', 'bi-check2-circle'],
+  sem_conserto: ['Sem conserto', 'bi-x-octagon'], cancelada: ['Cancelada', 'bi-x-circle'],
+};
+const manutTag = (st) => { const [n, ic] = MANUT_ETAPAS[st] || [st, 'bi-tools']; return `<span class="mt-tag mt-${esc(st)}"><i class="bi ${ic}"></i>${esc(n)}</span>`; };
+window.MANUT_ETAPAS = MANUT_ETAPAS; window.manutTag = manutTag;
 window.INV_ICONES = INV_ICONES; window.invEstado = invEstado;
 
 const Item = {
@@ -89,6 +98,11 @@ const Item = {
       } else if (o.semEtiqueta && !qtd) {
         partes.push('<span class="it-chip it-sem" title="Ainda sem a etiqueta da ORCIM"><i class="bi bi-upc"></i>sem etiqueta</span>');
       }
+    }
+    if (o.manut !== false && Item.campo(a, 'manut_status')) {
+      const st = a.manut_status;
+      const [n, ic] = MANUT_ETAPAS[st] || [st, 'bi-tools'];
+      partes.push(Item.link('#/manutencao', `<i class="bi ${ic}"></i>${esc(n)}`, `Manutenção: ${n}`, `mt-tag mt-${esc(st)} it-etapa`));
     }
     if (o.etapa) {
       const etapa = Item.campo(a, 'pedido_status');

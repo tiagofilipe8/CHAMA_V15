@@ -925,6 +925,44 @@ ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS started_by BIGINT REFERENCES us
 ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS concluded_at TIMESTAMPTZ;
 ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS concluded_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
 -- O que levar: os itens de pedido das paradas entram marcados; aqui ficam os que a pessoa desmarcou
+-- =====================================================================
+-- Itens em manutenção (2026-11-27): pedido de manutenção de um item do inventário, com etapas
+--   pedida -> retirada -> em_conserto -> pronta -> rota -> devolvida | sem_conserto | cancelada
+--   estado_antes: estado do item quando a manutenção foi pedida (volta para ele na devolução)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS manutencoes (
+    id           BIGSERIAL PRIMARY KEY,
+    asset_id     BIGINT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    ticket_id    BIGINT REFERENCES tickets(id) ON DELETE SET NULL,
+    entity_id    BIGINT REFERENCES entities(id) ON DELETE SET NULL,
+    location_id  BIGINT REFERENCES locations(id) ON DELETE SET NULL,
+    problema     TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pedida',
+    estado_antes TEXT,
+    etapas       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    previsao     DATE,
+    solucao      TEXT,
+    pedido_por   BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    status_by    BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    status_at    TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE manutencoes DROP CONSTRAINT IF EXISTS manutencoes_status_check;
+ALTER TABLE manutencoes ADD CONSTRAINT manutencoes_status_check
+  CHECK (status IN ('pedida','retirada','em_conserto','pronta','rota','devolvida','sem_conserto','cancelada'));
+CREATE INDEX IF NOT EXISTS idx_manutencoes_asset ON manutencoes(asset_id);
+CREATE INDEX IF NOT EXISTS idx_manutencoes_abertas ON manutencoes(location_id) WHERE status NOT IN ('devolvida','sem_conserto','cancelada');
+-- rota: manutenções que a pessoa desmarcou (buscar ou devolver)
+ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS manut_fora BIGINT[] NOT NULL DEFAULT '{}';
+
+-- o perfil Usuário passa a ver o inventário (só do local do seu cadastro), uma vez só
+DO $marco$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_marcos WHERE nome = 'usuario_ve_inventario_do_local') THEN
+    INSERT INTO role_permissions (role_key, permission, allowed, updated_at) VALUES ('user', 'inventory.view', TRUE, now())
+      ON CONFLICT (role_key, permission) DO UPDATE SET allowed = TRUE, updated_at = now();
+    INSERT INTO schema_marcos (nome) VALUES ('usuario_ve_inventario_do_local');
+  END IF;
+END $marco$;
 ALTER TABLE route_plans ADD COLUMN IF NOT EXISTS itens_fora BIGINT[] NOT NULL DEFAULT '{}';
 
 -- Pedido ligado ao inventário: preço unitário, posto de destino, categoria e os equipamentos criados (2026-11-26)

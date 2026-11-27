@@ -133,6 +133,9 @@ const Rotas = (() => {
     try { return await API.post('/orcim/procurar', { materiais: lista }); } catch { return {}; }
   }
   const usaOrcim = (m, naOrcim) => { const o = naOrcim[m.id]; return !!(o && !m.comprado && o.disponivel >= Number(m.quantity || 1)); };
+  // pode ir nesta rota: já está na ORCIM (ou a caminho) ou sai do Estoque da ORCIM; o resto aparece desmarcado com o motivo
+  const disponivel = (m, naOrcim) => ['chegou', 'rota'].includes(m.status) || usaOrcim(m, naOrcim);
+  const MOTIVO = { solicitado: 'a TI ainda não comprou', comprado: 'ainda não chegou na ORCIM' };
   // modo: 'planejar' (caixinha marcada = vai nesta rota) | 'entregar' (rota em andamento) | 'ver' (só olhar)
   function itemLevar(m, { modo, fora, naOrcim, podeMexer }) {
     const nome = Item.titulo({ name: m.name, type: m.asset_type || 'PERIPHERAL' }, { link: false, estado: false, local: false, etapa: false, etiqueta: false });
@@ -141,6 +144,11 @@ const Rotas = (() => {
     const o = naOrcim[m.id];
     const tagOrcim = o && !m.comprado && !['entregue', 'rota'].includes(m.status)
       ? `<span class="pd-tag lv-orcim ${usaOrcim(m, naOrcim) ? '' : 'pouco'}" title="${esc(o.itens.map((a) => `${a.asset_tag ? `${a.asset_tag} · ` : ''}${a.name}`).join('\n'))}"><i class="bi bi-boxes"></i>${usaOrcim(m, naOrcim) ? 'sai do Estoque da ORCIM' : `a ORCIM tem só ${o.disponivel}`}</span>` : '';
+    if (modo === 'planejar' && !disponivel(m, naOrcim)) {
+      return `<div class="ro-lv-item indisp" title="Não dá para levar ainda">
+        <input type="checkbox" class="form-check-input" disabled>
+        ${meio}<span class="ro-lv-st">${tagOrcim}${pedidoTag(m.status)}<small class="text-muted">${MOTIVO[m.status] || 'não dá para levar ainda'}</small></span></div>`;
+    }
     if (modo === 'planejar') {
       const marcado = !fora.has(String(m.id));
       return `<label class="ro-lv-item ${marcado ? 'marcado' : 'fora'}">
@@ -156,16 +164,42 @@ const Rotas = (() => {
       <span class="ro-lv-acao"><select class="form-select form-select-sm" data-dest aria-label="Para onde vai">${Object.entries(dest).map(([k, v]) => `<option value="${k}" ${k === (m.destino || 'inventario') ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <button type="button" class="btn btn-sm btn-success" data-entregue><i class="bi bi-check2-circle"></i> Entregue</button></span></div>`;
   }
-  const contarLevar = (itens, fora) => {
-    const abertos = itens.filter((m) => m.status !== 'entregue');
-    return { total: abertos.length, marcados: abertos.filter((m) => !fora.has(String(m.id))).length };
+  // ---- manutenção na parada: buscar (pedida) ou devolver (pronto / a caminho); em conserto só aparece como aviso ----
+  const tipoManut = (o) => (o.status === 'pedida' ? 'buscar' : ['pronta', 'rota'].includes(o.status) ? 'devolver' : 'conserto');
+  function manutLevar(o, { modo, foraM, podeMexer }) {
+    const tipo = tipoManut(o);
+    const rot = { buscar: '<span class="mt-acao buscar"><i class="bi bi-box-arrow-in-down"></i> Buscar para manutenção</span>',
+      devolver: '<span class="mt-acao devolver"><i class="bi bi-box-arrow-up"></i> Devolver consertado</span>', conserto: '' }[tipo];
+    const nome = Item.titulo({ asset_id: o.asset_id, name: o.name, asset_tag: o.asset_tag, type: o.type }, { link: false, estado: false, local: false, etapa: false, manut: false });
+    const meio = `${rot}<span class="ro-lv-nome">${nome}</span><span class="ro-lv-st">${manutTag(o.status)}${tipo === 'buscar' ? `<small class="text-muted" title="${esc(o.problema)}">${esc(String(o.problema).slice(0, 60))}</small>` : ''}</span>`;
+    if (tipo === 'conserto') return `<div class="ro-lv-item indisp"><input type="checkbox" class="form-check-input" disabled>${meio}<small class="text-muted">ainda em conserto: não volta nesta rota</small></div>`;
+    if (modo === 'planejar') {
+      const marcado = !foraM.has(String(o.id));
+      return `<label class="ro-lv-item ${marcado ? 'marcado' : 'fora'}">
+        <input type="checkbox" class="form-check-input" data-manut="${o.id}" ${marcado ? 'checked' : ''} ${podeMexer ? '' : 'disabled'}>${meio}</label>`;
+    }
+    if (modo === 'entregar' && podeMexer && !foraM.has(String(o.id))) {
+      return `<div class="ro-lv-item" data-manut-id="${o.id}">${meio}<span class="ro-lv-acao">${tipo === 'buscar'
+        ? '<button type="button" class="btn btn-sm btn-warning" data-retirei><i class="bi bi-box-arrow-in-down"></i> Retirei</button>'
+        : '<button type="button" class="btn btn-sm btn-success" data-devolvido><i class="bi bi-check2-circle"></i> Devolvido</button>'}</span></div>`;
+    }
+    return `<div class="ro-lv-item">${meio}</div>`;
+  }
+  // quantos itens (pedidos que podem ir + manutenções para buscar/devolver) e quantos estão marcados
+  const contarLevar = (itens, fora, naOrcim, manuts = [], foraM = new Set()) => {
+    const abertos = itens.filter((m) => m.status !== 'entregue' && disponivel(m, naOrcim));
+    const ms = manuts.filter((o) => tipoManut(o) !== 'conserto');
+    return { total: abertos.length + ms.length, marcados: abertos.filter((m) => !fora.has(String(m.id))).length + ms.filter((o) => !foraM.has(String(o.id))).length };
   };
-  // ao marcar/desmarcar: atualiza o conjunto "fora", a aparência da linha e chama "depois"
-  const ligarCaixas = (raiz, fora, depois) => raiz.querySelectorAll('[data-levar]').forEach((c) => c.addEventListener('change', () => {
-    if (c.checked) fora.delete(c.dataset.levar); else fora.add(c.dataset.levar);
+  // ao marcar/desmarcar: atualiza o conjunto "fora" (pedidos) ou "foraM" (manutenção), a aparência da linha e chama "depois"
+  const ligarCaixas = (raiz, fora, depois, foraM = new Set()) => raiz.querySelectorAll('[data-levar], [data-manut]').forEach((c) => c.addEventListener('change', () => {
+    const conj = c.dataset.manut ? foraM : fora; const idc = c.dataset.manut || c.dataset.levar;
+    if (c.checked) conj.delete(idc); else conj.add(idc);
     const lin = c.closest('.ro-lv-item'); lin.classList.toggle('marcado', c.checked); lin.classList.toggle('fora', !c.checked);
     if (depois) depois();
   }));
+  // manutenções abertas por local
+  const manutPorLocal = (lista) => { const mp = new Map(); (lista || []).forEach((o) => { const k = String(o.location_id); if (!mp.has(k)) mp.set(k, []); mp.get(k).push(o); }); return mp; };
 
   // imprimir: abre os chamados de todas as paradas e volta depois
   const imprimir = (raiz) => {
@@ -325,12 +359,15 @@ const Rotas = (() => {
     const editarId = /^\d+$/.test(qs.get('editar') || '') ? qs.get('editar') : null;
     const h = hojeIso();
     el.innerHTML = spinner();
-    let urg; let todos = []; let tecnicos = []; let futuras = { rotas: [] }; let plano = null;
+    let urg; let todos = []; let tecnicos = []; let futuras = { rotas: [] }; let plano = null; let manuts = { itens: [] };
     try {
-      [urg, todos, tecnicos, futuras, plano] = await Promise.all([
+      [urg, todos, tecnicos, futuras, plano, manuts] = await Promise.all([
         API.get('/dashboard/urgencia'), API.get('/locations?active=true').catch(() => []), API.get('/rotas/tecnicos').catch(() => []),
-        API.get(`/rotas?de=${h}&ate=${somaDias(h, 60)}`).catch(() => ({ rotas: [] })), editarId ? API.get(`/rotas/${editarId}`) : null]);
+        API.get(`/rotas?de=${h}&ate=${somaDias(h, 60)}`).catch(() => ({ rotas: [] })), editarId ? API.get(`/rotas/${editarId}`) : null,
+        API.get('/manutencoes?situacao=abertas').catch(() => ({ itens: [] }))]);
     } catch (e) { el.innerHTML = emptyState('Não foi possível carregar', e.message, 'bi-exclamation-triangle'); return; }
+    // manutenções abertas por local (buscar no local ou devolver consertado)
+    const manutMap = manutPorLocal(manuts.itens);
     if (plano && (!plano.pode_editar || plano.status === 'concluida')) {
       toast(plano.status === 'concluida' ? 'Essa rota já foi concluída.' : 'Só quem agendou, o técnico da rota ou o admin mestre editam.', 'warning');
       location.hash = `#/rotas/${plano.id}`; return;
@@ -341,17 +378,23 @@ const Rotas = (() => {
     let porId = new Map();
     const montarMapa = () => {
       porId = new Map();
-      urg.locais.filter((l) => l.location_id && temCoord(l)).forEach((l) => porId.set(String(l.location_id), { ...l, lat: Number(l.latitude), lng: Number(l.longitude) }));
+      urg.locais.filter((l) => l.location_id && temCoord(l)).forEach((l) => porId.set(String(l.location_id), { ...l, lat: Number(l.latitude), lng: Number(l.longitude), manut: manutMap.get(String(l.location_id)) || [] }));
     };
     montarMapa();
-    const candidatos = () => urg.locais.filter((l) => l.location_id && temCoord(l)).map((l) => String(l.location_id));
+    // candidatos: locais com chamado aberto (por score) e, depois, os que só têm item para buscar ou devolver da manutenção
+    const candidatos = () => {
+      const c = urg.locais.filter((l) => l.location_id && temCoord(l)).map((l) => String(l.location_id));
+      [...manutMap.keys()].filter((k) => !c.includes(k) && (manutMap.get(k) || []).some((o) => tipoManut(o) !== 'conserto')
+        && todos.some((l) => String(l.id) === k && temCoord(l))).forEach((k) => c.push(k));
+      return c;
+    };
     const pegar = (id) => {
       id = String(id);
       if (porId.has(id)) return porId.get(id);
       const l = todos.find((x) => String(x.id) === id) || (plano && (plano.paradas || []).map((p) => ({ ...p, id: p.location_id, name: p.location_name })).find((x) => String(x.id) === id));
       if (!l) return null;
       const p = { location_id: l.id, location_name: l.name, city: l.city, address: l.address, entity_name: l.entity_name, latitude: l.latitude, longitude: l.longitude,
-        lat: Number(l.latitude), lng: Number(l.longitude), score: 0, chamados: [], atrasados: 0 };
+        lat: Number(l.latitude), lng: Number(l.longitude), score: 0, chamados: [], atrasados: 0, manut: manutMap.get(id) || [] };
       porId.set(id, p);
       return p;
     };
@@ -370,7 +413,8 @@ const Rotas = (() => {
     let modoOrdem = 'curto'; // 'curto' (o sistema calcula) | 'manual' (a pessoa arrastou)
     let ordemManual = null; let fimId = '';
     let meuGps = null;
-    const fora = new Set();
+    const fora = new Set(); // pedidos desmarcados
+    const foraM = new Set(); // manutenções desmarcadas (buscar ou devolver)
     let naOrcim = {};
     const diaPedido = qs.get('dia');
     const campos = {
@@ -383,6 +427,7 @@ const Rotas = (() => {
       escolhidos.forEach(pegar);
       modoOrdem = 'manual'; ordemManual = [...escolhidos];
       (plano.itens_fora || []).forEach((x) => fora.add(String(x)));
+      (plano.manut_fora || []).forEach((x) => foraM.add(String(x)));
     } else escolhidos = candidatos().slice(0, Math.max(1, prefs.n));
 
     const pontoInicio = () => {
@@ -419,11 +464,14 @@ const Rotas = (() => {
       const linha = (id, pos) => {
         const l = pegar(id); if (!l) return '';
         const marcado = escolhidos.includes(id);
+        const mb = (l.manut || []).filter((o) => tipoManut(o) === 'buscar').length;
+        const md = (l.manut || []).filter((o) => tipoManut(o) === 'devolver').length;
+        const infoManut = [mb ? `${mb} para buscar` : '', md ? `${md} para devolver` : ''].filter(Boolean).join(' e ');
         return `<label class="ro-cand ${marcado ? 'sel' : ''}">
           <input type="checkbox" class="form-check-input" data-loc="${id}" ${marcado ? 'checked' : ''}>
           <span class="ro-pos">${pos || ''}</span>
           <span class="ro-cand-tx"><b>${esc(l.location_name)}</b>
-            <small>${l.chamados.length ? `${l.chamados.length} chamado(s)${l.atrasados ? ` · ${l.atrasados} atrasado(s)` : ''}` : 'sem chamado aberto'}${l.city ? ` · ${esc(l.city)}` : ''}${jaTemRota[id] ? ` · <span class="text-primary"><i class="bi bi-truck"></i> já tem rota ${nomeDia(jaTemRota[id])}</span>` : ''}</small></span>
+            <small>${l.chamados.length ? `${l.chamados.length} chamado(s)${l.atrasados ? ` · ${l.atrasados} atrasado(s)` : ''}` : 'sem chamado aberto'}${l.city ? ` · ${esc(l.city)}` : ''}${infoManut ? ` · <span class="text-warning-emphasis"><i class="bi bi-tools"></i> manutenção: ${infoManut}</span>` : ''}${jaTemRota[id] ? ` · <span class="text-primary"><i class="bi bi-truck"></i> já tem rota ${nomeDia(jaTemRota[id])}</span>` : ''}</small></span>
           ${l.chamados.length ? scorePill(l.score, U.temParada(l.chamados)) : ''}
         </label>`;
       };
@@ -543,10 +591,13 @@ const Rotas = (() => {
       if (faltaOrcim.length) Object.assign(naOrcim, await procurarOrcim(faltaOrcim));
       if (passo !== 3) return;
       const url = mapsUrl(ordem, pontoInicio());
-      const op = { modo: 'planejar', fora, naOrcim, podeMexer: true };
+      const op = { modo: 'planejar', fora, foraM, naOrcim, podeMexer: true };
+      const manutsRota = ordem.flatMap((p) => p.manut || []);
       const blocos = ordem.map((p, i) => {
         const lista = itensDaParada(p).filter((m) => m.status !== 'entregue');
-        return lista.length ? `<div class="ro-lv-parada"><div class="ro-lv-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b></div>${lista.map((m) => itemLevar(m, op)).join('')}</div>` : '';
+        const ms = p.manut || [];
+        return lista.length || ms.length ? `<div class="ro-lv-parada"><div class="ro-lv-cab"><span class="ur-num">${i + 1}</span><b>${esc(p.location_name)}</b></div>
+          ${lista.map((m) => itemLevar(m, op)).join('')}${ms.map((o) => manutLevar(o, op)).join('')}</div>` : '';
       }).join('');
       tela.innerHTML = `<div class="card panel-card ro-tela">
         <div class="ro-q"><b>Quando e quem?</b></div>
@@ -560,8 +611,8 @@ const Rotas = (() => {
         </div>
         <div class="ro-levar-box">
           <div class="ro-levar-cab">${U.caixaPixel(30)}<span><b>O que levar</b><small id="ro-lv-conta"></small></span>
-            ${itens.length ? '<button type="button" class="btn btn-sm btn-link ms-auto" id="ro-lv-todos"></button>' : ''}</div>
-          ${blocos || '<div class="ro-sem-ch">Nenhum material pedido nos chamados dessas paradas.</div>'}
+            ${contarLevar(itens, fora, naOrcim, manutsRota, foraM).total ? '<button type="button" class="btn btn-sm btn-link ms-auto" id="ro-lv-todos"></button>' : ''}</div>
+          ${blocos || '<div class="ro-sem-ch">Nenhum material pedido nem item de manutenção nessas paradas.</div>'}
         </div>
         <div class="ro-nav"><button type="button" class="btn btn-outline-secondary" data-ir2="2"><i class="bi bi-arrow-left"></i> Ordem</button>
           <span class="d-flex gap-2 flex-wrap ms-auto">
@@ -570,15 +621,20 @@ const Rotas = (() => {
         <div class="small text-muted text-end">Quem é desses locais recebe um aviso com o dia da visita.</div>
       </div>`;
       const conta = () => {
-        const c = contarLevar(itens, fora);
-        const txt = $('#ro-lv-conta'); if (txt) txt.textContent = c.total ? `${c.marcados} de ${c.total} item(ns) marcados para levar · desmarque o que não vai` : '';
+        const c = contarLevar(itens, fora, naOrcim, manutsRota, foraM);
+        const txt = $('#ro-lv-conta'); if (txt) txt.textContent = c.total ? `${c.marcados} de ${c.total} marcados para esta rota · desmarque o que não vai. O que ainda não chegou fica desmarcado e o gestor é avisado quando a rota começar.` : 'Nada para levar ou buscar nessas paradas.';
         const bt = $('#ro-lv-todos'); if (bt) bt.textContent = c.marcados === c.total ? 'Desmarcar todos' : 'Marcar todos';
       };
-      ligarCaixas(tela, fora, conta);
+      ligarCaixas(tela, fora, conta, foraM);
       $('#ro-lv-todos')?.addEventListener('click', () => {
-        const todosMarcados = contarLevar(itens, fora).marcados === itens.length;
-        itens.forEach((m) => { if (todosMarcados) fora.add(String(m.id)); else fora.delete(String(m.id)); });
-        tela.querySelectorAll('[data-levar]').forEach((c) => { c.checked = !todosMarcados; const l = c.closest('.ro-lv-item'); l.classList.toggle('marcado', !todosMarcados); l.classList.toggle('fora', todosMarcados); });
+        const c = contarLevar(itens, fora, naOrcim, manutsRota, foraM);
+        const todosMarcados = c.marcados === c.total;
+        tela.querySelectorAll('[data-levar], [data-manut]').forEach((cx) => {
+          cx.checked = !todosMarcados;
+          const conj = cx.dataset.manut ? foraM : fora; const idc = cx.dataset.manut || cx.dataset.levar;
+          if (todosMarcados) conj.add(idc); else conj.delete(idc);
+          const l = cx.closest('.ro-lv-item'); l.classList.toggle('marcado', !todosMarcados); l.classList.toggle('fora', todosMarcados);
+        });
         conta();
       });
       conta();
@@ -591,7 +647,9 @@ const Rotas = (() => {
         if (!campos.dia) { toast('Escolha o dia da rota.', 'warning'); return; }
         // só guarda os desmarcados que ainda estão nas paradas desta rota
         const ids = new Set(itens.map((m) => String(m.id)));
-        const corpo = { data: campos.dia, technician_id: campos.tec || null, nota: campos.nota.trim(), locais: ordem.map((p) => p.location_id), itens_fora: [...fora].filter((x) => ids.has(x)) };
+        const idsM = new Set(manutsRota.map((o) => String(o.id)));
+        const corpo = { data: campos.dia, technician_id: campos.tec || null, nota: campos.nota.trim(), locais: ordem.map((p) => p.location_id),
+          itens_fora: [...fora].filter((x) => ids.has(x)), manut_fora: [...foraM].filter((x) => idsM.has(x)) };
         const btn = $('#ro-salvar'); btn.disabled = true;
         try {
           let id = plano ? plano.id : null;
@@ -617,16 +675,21 @@ const Rotas = (() => {
   // ---------------- Página da rota ----------------
   async function pagina(id, el) {
     el.innerHTML = spinner();
-    let r; let urg;
-    try { [r, urg] = await Promise.all([API.get(`/rotas/${id}`), API.get('/dashboard/urgencia')]); } catch (e) { el.innerHTML = emptyState('Não foi possível abrir a rota', e.message, 'bi-exclamation-triangle'); return; }
+    let r; let urg; let manuts;
+    try {
+      [r, urg, manuts] = await Promise.all([API.get(`/rotas/${id}`), API.get('/dashboard/urgencia'), API.get('/manutencoes?situacao=abertas').catch(() => ({ itens: [] }))]);
+    } catch (e) { el.innerHTML = emptyState('Não foi possível abrir a rota', e.message, 'bi-exclamation-triangle'); return; }
     if (window.migalhaDetalhe) window.migalhaDetalhe(`Rota de ${nomeDia(r.data)}`);
     const porLoc = new Map(urg.locais.filter((l) => l.location_id).map((l) => [String(l.location_id), l]));
+    const manutMap = manutPorLocal(manuts.itens);
     const ordem = (r.paradas || []).map((p) => {
       const l = porLoc.get(String(p.location_id));
       return { ...p, lat: p.latitude == null ? NaN : Number(p.latitude), lng: p.longitude == null ? NaN : Number(p.longitude),
-        score: l ? l.score : 0, chamados: l ? l.chamados : [], atrasados: l ? l.atrasados : 0 };
+        score: l ? l.score : 0, chamados: l ? l.chamados : [], atrasados: l ? l.atrasados : 0, manut: manutMap.get(String(p.location_id)) || [] };
     });
     const fora = new Set((r.itens_fora || []).map(String));
+    const foraM = new Set((r.manut_fora || []).map(String));
+    const todasManut = ordem.flatMap((p) => p.manut);
     const sit = situacao(r);
     const modo = r.status === 'agendada' ? 'planejar' : r.status === 'em_andamento' ? 'entregar' : 'ver';
     const todosItens = ordem.flatMap(itensDaParada);
@@ -636,19 +699,25 @@ const Rotas = (() => {
     const h = r.hoje || hojeIso();
     const podeComecar = r.pode_agendar && r.status === 'agendada' && r.data <= h;
     const podeConcluir = r.pode_agendar && r.status !== 'concluida' && r.data <= h && (r.status === 'em_andamento' || sit === 'nao_concluida');
-    const op = { modo, fora, naOrcim, podeMexer: podeEntregar() && r.pode_agendar && r.status !== 'concluida' };
+    const op = { modo, fora, foraM, naOrcim, podeMexer: podeEntregar() && r.pode_agendar && r.status !== 'concluida' };
     const quem = [r.started_at ? `começou ${fmt.dateTime(r.started_at)}${r.started_by_name ? ` (${esc(r.started_by_name)})` : ''}` : '',
       r.concluded_at ? `concluída ${fmt.dateTime(r.concluded_at)}${r.concluded_by_name ? ` (${esc(r.concluded_by_name)})` : ''}` : ''].filter(Boolean).join(' · ');
     // o que levar de cada parada: antes de começar, a caixinha diz o que vai; depois, só os marcados (com "Entregue")
     const levarDaParada = (p) => {
       let itens = itensDaParada(p);
+      let ms = p.manut || [];
       if (modo === 'planejar') itens = itens.filter((m) => m.status !== 'entregue');
-      const deixados = modo === 'planejar' ? [] : itens.filter((m) => m.status !== 'entregue' && fora.has(String(m.id)));
-      if (modo !== 'planejar') itens = itens.filter((m) => m.status === 'entregue' || !fora.has(String(m.id)));
-      if (!itens.length && !deixados.length) return '';
-      return `<div class="ro-levar-parada"><div class="ro-levar-parada-tit"><i class="bi bi-box-seam"></i> Levar para cá</div>
-        ${itens.map((m) => itemLevar(m, op)).join('')}
-        ${deixados.length ? `<div class="ro-sem-ch">${deixados.length} item(ns) ficaram para outra rota.</div>` : ''}</div>`;
+      // depois de começar: só o que foi marcado (e saiu); o resto fica para outra rota (o gestor já foi avisado)
+      const deixados = modo === 'planejar' ? 0 : itens.filter((m) => m.status !== 'entregue' && m.status !== 'rota').length
+        + ms.filter((o) => foraM.has(String(o.id)) || tipoManut(o) === 'conserto').length;
+      if (modo !== 'planejar') {
+        itens = itens.filter((m) => m.status === 'entregue' || m.status === 'rota');
+        ms = ms.filter((o) => !foraM.has(String(o.id)) && tipoManut(o) !== 'conserto');
+      }
+      if (!itens.length && !ms.length && !deixados) return '';
+      return `<div class="ro-levar-parada"><div class="ro-levar-parada-tit"><i class="bi bi-box-seam"></i> Nesta parada</div>
+        ${itens.map((m) => itemLevar(m, op)).join('')}${ms.map((o) => manutLevar(o, op)).join('')}
+        ${deixados ? `<div class="ro-sem-ch">${deixados} item(ns) ficaram para outra rota.</div>` : ''}</div>`;
     };
     el.innerHTML = `
       <div class="card panel-card mb-3 ro-cab ro-cab-${sit}">
@@ -680,9 +749,9 @@ const Rotas = (() => {
     const recarregar = () => pagina(id, el);
     const abertos = todosItens.filter((m) => m.status !== 'entregue');
     const resumoLevar = () => {
-      const c = contarLevar(todosItens, fora);
+      const c = contarLevar(todosItens, fora, naOrcim, todasManut, foraM);
       const s = el.querySelector('#ro-lv-resumo');
-      if (s) s.innerHTML = c.total ? `<i class="bi bi-box-seam"></i> levar ${c.marcados} de ${c.total} item(ns) de pedido` : '';
+      if (s) s.innerHTML = c.total && modo === 'planejar' ? `<i class="bi bi-box-seam"></i> ${c.marcados} de ${c.total} marcados para levar ou buscar` : '';
     };
     resumoLevar();
     // marcar/desmarcar antes de começar: salva sozinho
@@ -691,9 +760,16 @@ const Rotas = (() => {
       resumoLevar();
       clearTimeout(espera);
       espera = setTimeout(async () => {
-        try { await API.request('PUT', `/rotas/${r.id}/itens`, { itens_fora: [...fora] }); } catch (e) { showError(e); }
+        try { await API.request('PUT', `/rotas/${r.id}/itens`, { itens_fora: [...fora], manut_fora: [...foraM] }); } catch (e) { showError(e); }
       }, 400);
-    });
+    }, foraM);
+    // manutenção na parada (rota em andamento): buscou o item ou devolveu consertado
+    const mudarManut = async (b, status, msg) => {
+      b.disabled = true;
+      try { await API.request('PATCH', `/manutencoes/${b.closest('[data-manut-id]').dataset.manutId}`, { status }); toast(msg, 'success'); recarregar(); } catch (e) { b.disabled = false; showError(e); }
+    };
+    el.querySelectorAll('[data-retirei]').forEach((b) => b.addEventListener('click', () => mudarManut(b, 'retirada', 'Item retirado para manutenção.')));
+    el.querySelectorAll('[data-devolvido]').forEach((b) => b.addEventListener('click', () => mudarManut(b, 'devolvida', 'Item devolvido ao local.')));
     // entregue no local (rota em andamento)
     el.querySelectorAll('[data-entregue]').forEach((b) => b.addEventListener('click', async () => {
       const lin = b.closest('.ro-lv-item');
@@ -707,16 +783,22 @@ const Rotas = (() => {
     el.querySelector('#ro-imprimir').addEventListener('click', () => imprimir(el));
     el.querySelector('#ro-comecar')?.addEventListener('click', async () => {
       // os itens marcados (que ainda não saíram) ficam "a caminho do local" e quem pediu é avisado
-      const sair = podeEntregar() ? abertos.filter((m) => m.status !== 'rota' && !fora.has(String(m.id))) : [];
-      if (!await confirmDialog({ title: 'Começar rota', body: `${sair.length ? `${sair.length} item(ns) marcados ficam a caminho do local e quem pediu é avisado. ` : ''}A rota fica em andamento até você concluir no fim do dia.`, confirmText: 'Começar rota' })) return;
+      const sair = podeEntregar() ? abertos.filter((m) => m.status !== 'rota' && disponivel(m, naOrcim) && !fora.has(String(m.id))) : [];
+      // itens consertados marcados voltam junto ("a caminho do local")
+      const voltam = podeEntregar() ? todasManut.filter((o) => o.status === 'pronta' && !foraM.has(String(o.id))) : [];
+      const nSai = sair.length + voltam.length;
+      if (!await confirmDialog({ title: 'Começar rota', body: `${nSai ? `${nSai} item(ns) marcados ficam a caminho do local e quem pediu é avisado. ` : ''}O gestor de cada local recebe um aviso do que ainda não vai nesta rota. A rota fica em andamento até você concluir no fim do dia.`, confirmText: 'Começar rota' })) return;
       let falhou = 0;
       for (const m of sair) {
         try { await API.post(`/tickets/${m.ticket_id}/materials/${m.id}/rota`, { destino: m.destino || 'inventario', orcim: usaOrcim(m, naOrcim) }); } catch (e) { falhou += 1; showError(e); }
       }
+      for (const o of voltam) {
+        try { await API.request('PATCH', `/manutencoes/${o.id}`, { status: 'rota' }); } catch (e) { falhou += 1; showError(e); }
+      }
       try {
         await API.post(`/rotas/${r.id}/comecar`);
         if (window.recarregarRotasHoje) window.recarregarRotasHoje();
-        toast(`Rota começada${sair.length - falhou ? `: ${sair.length - falhou} item(ns) a caminho do local` : ''}.`, 'success'); recarregar();
+        toast(`Rota começada${nSai - falhou ? `: ${nSai - falhou} item(ns) a caminho do local` : ''}.`, 'success'); recarregar();
       } catch (e) { showError(e); }
     });
     el.querySelector('#ro-concluir')?.addEventListener('click', async () => {

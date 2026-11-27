@@ -7,15 +7,22 @@ const regrasArquivo = require('../uploadRules');
 const config = require('../config');
 const { query } = require('../db');
 const {
-  requireAuth, scopeConditions, canAccessEntity, isStaff, isMaster, entityIdsOf, has,
+  requireAuth, scopeConditions, canAccessEntity, isStaff, isMaster, entityIdsOf, has, localFixo,
 } = require('../middleware/auth');
 
 // Inventario: ver exige "Ver o inventario"; criar/editar/excluir exige "Cadastrar e editar equipamentos"
-const requireInv = [requireAuth, (req, res, next) => {
+//   perfil Usuário: qualquer coisa de um equipamento (ficha, fotos, histórico...) só se for do seu local
+const requireInv = [requireAuth, async (req, res, next) => {
   const perm = req.method === 'GET' ? 'inventory.view' : 'inventory.manage';
   // a lista simples de equipamentos tambem serve para escolher o equipamento ao abrir chamado
   if (req.method === 'GET' && req.path === '/assets' && has(req.user, 'ticket.create')) return next();
   if (!has(req.user, perm)) return res.status(403).json({ error: 'Seu perfil não tem permissão para esta ação no inventário.' });
+  const fixo = localFixo(req.user);
+  const assetId = req.params.assetId || (/^\/assets\/\d+/.test(req.path) ? req.params.id : null);
+  if (fixo !== null && assetId && /^\d+$/.test(String(assetId))) {
+    const { rows } = await query('SELECT location_id FROM assets WHERE id = $1', [assetId]);
+    if (rows.length && String(rows[0].location_id || '') !== String(fixo)) return res.status(403).json({ error: 'Você vê só os equipamentos do seu local.' });
+  }
   next();
 }];
 
@@ -108,7 +115,11 @@ function sanitizeTz(v) {
 const PEDIDO_DO_ITEM = `LEFT JOIN LATERAL (
        SELECT tm.status AS pedido_status, tm.ticket_id AS pedido_ticket_id FROM ticket_materials tm
        WHERE (tm.asset_id = a.id OR tm.asset_ids @> ARRAY[a.id]) AND tm.status <> 'cancelado'
-       ORDER BY tm.id DESC LIMIT 1) pd ON TRUE`;
+       ORDER BY tm.id DESC LIMIT 1) pd ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT mt.id AS manut_id, mt.status AS manut_status FROM manutencoes mt
+       WHERE mt.asset_id = a.id AND mt.status NOT IN ('devolvida','sem_conserto','cancelada')
+       ORDER BY mt.id DESC LIMIT 1) mt ON TRUE`;
 
 // Lista ativos com filtros
 router.get('/assets', requireInv, async (req, res) => {
@@ -123,6 +134,10 @@ router.get('/assets', requireInv, async (req, res) => {
   } else if (!isStaff(user)) {
     // fora da equipe: apenas as empresas do usuario
     add('a.entity_id::text = ANY(?::text[])', entityIdsOf(user));
+  }
+  // perfil Usuário: só os equipamentos do local do seu cadastro
+  if (localFixo(user) !== null) {
+    add('a.location_id = ?', localFixo(user));
   }
   if (type) add('a.type = ?', type);
   if (status) add('a.status = ?', status);
@@ -141,7 +156,7 @@ router.get('/assets', requireInv, async (req, res) => {
               a.primary_photo_id,
               (SELECT ap.id FROM asset_photos ap WHERE ap.asset_id=a.id ORDER BY ap.is_primary DESC, ap.created_at ASC LIMIT 1)
             ) AS display_photo_id,
-            ag.status AS agent_status, ag.last_seen_at AS agent_last_seen, pd.pedido_status, pd.pedido_ticket_id
+            ag.status AS agent_status, ag.last_seen_at AS agent_last_seen, pd.pedido_status, pd.pedido_ticket_id, mt.manut_id, mt.manut_status
      FROM assets a
      JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id
@@ -156,7 +171,7 @@ router.get('/assets', requireInv, async (req, res) => {
 // Detalhe do ativo
 router.get('/assets/:id', requireInv, async (req, res) => {
   const { rows } = await query(
-    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name, pd.pedido_status, pd.pedido_ticket_id
+    `SELECT a.*, e.name AS entity_name, u.name AS responsible_name, lo.name AS location_name, pd.pedido_status, pd.pedido_ticket_id, mt.manut_id, mt.manut_status
      FROM assets a
      LEFT JOIN entities e ON e.id=a.entity_id
      LEFT JOIN users u ON u.id=a.responsible_user_id

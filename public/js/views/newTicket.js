@@ -122,6 +122,11 @@ Views.newTicket = async function newTicket(el) {
   const hashParams = new URLSearchParams((location.hash.split('?')[1] || '').split('#')[0]);
   const preEntity = hashParams.get('entity_id');
   const preAsset = hashParams.get('asset_id');
+  // veio de "Pedir manutenção" (ficha do item ou Itens em manutenção): o chamado também abre a manutenção do item
+  const pedeManutencao = hashParams.get('manutencao') === '1' && !!preAsset;
+  if (pedeManutencao) {
+    el.insertAdjacentHTML('afterbegin', `<div class="es-meu-local mb-3"><i class="bi bi-tools"></i><span><b>Pedido de manutenção.</b> Escolha o problema e conte o que está acontecendo com o item. A TI busca o item no local, conserta e devolve; você acompanha em <b>Itens em manutenção</b>.</span></div>`);
+  }
 
   let catMode = 'complex';
   let pickedSimple = null;
@@ -356,7 +361,8 @@ Views.newTicket = async function newTicket(el) {
       + (outros.length ? `<optgroup label="${loc ? 'Outros locais' : 'Equipamentos'}">${outros.map(opt).join('')}</optgroup>` : '')
       + '<optgroup label="Sem etiqueta"><option value="nao_aplica">Não se aplica (item sem etiqueta, ex.: mouse, teclado)</option>'
       + '<option value="nao_encontrei">Não encontrei a etiqueta (a TI marca depois)</option></optgroup>';
-    if ([...sel.options].some((o) => o.value === atual)) sel.value = atual;
+    // mantém o que a pessoa já escolheu; se ainda não escolheu, vem o item que abriu esta tela (ficha do item / Pedir manutenção)
+    if (atual && [...sel.options].some((o) => o.value === atual)) sel.value = atual;
     else if (preAsset && [...sel.options].some((o) => o.value === String(preAsset))) sel.value = String(preAsset);
   }
   document.getElementById('nt-location').addEventListener('change', atualizarEquip);
@@ -498,6 +504,13 @@ Views.newTicket = async function newTicket(el) {
         try { await API.post(`/tickets/${t.id}/attachments`, fd, true); }
         catch (e2) { toast('Chamado aberto, mas falhou o anexo: ' + (e2.message || ''), 'warning'); }
       }
+      let manutOk = false;
+      if (pedeManutencao && payload.asset_id) {
+        try {
+          await API.post('/manutencoes', { asset_id: payload.asset_id, ticket_id: t.id, problema: document.getElementById('nt-desc')?.value.trim() || payload.description || payload.title || 'Manutenção pedida pelo chamado' });
+          manutOk = true;
+        } catch (e3) { toast('Chamado aberto, mas não foi possível registrar a manutenção: ' + (e3.message || ''), 'warning'); }
+      }
       el.innerHTML = `
         <div class="row justify-content-center"><div class="col-lg-7">
           <div class="card panel-card text-center"><div class="card-body py-5">
@@ -506,6 +519,7 @@ Views.newTicket = async function newTicket(el) {
             <p class="text-muted mb-1">Status: <b>${esc(LABELS.status[t.status] || '')}</b></p>
             <p class="text-muted">A equipe vai analisar e informar a previsão de atendimento.
               Você recebe um aviso a cada novidade.</p>
+            ${manutOk ? '<p class="mb-3"><span class="mt-tag mt-pedida"><i class="bi bi-tools"></i>Manutenção pedida</span> Acompanhe o conserto do item em <a href="#/manutencao">Itens em manutenção</a>.</p>' : ''}
             <div class="d-flex flex-wrap gap-2 justify-content-center">
               <a class="btn btn-primary" href="#/tickets/${t.id}"><i class="bi bi-eye me-1"></i> Acompanhar chamado</a>
               <button type="button" class="btn btn-outline-primary" id="nt-outro"><i class="bi bi-plus-lg me-1"></i> Abrir outro chamado</button>

@@ -262,8 +262,14 @@ async function canModifyTicket(user, ticket, mode = 'update') {
   return canMessage(user, ticket);
 }
 
+// Usuário comum (perfil Usuário): vê equipamentos, estoque e manutenções só do local do seu cadastro.
+//   Devolve o id do local (0 = sem local no cadastro) ou null quando a pessoa vê todos os postos
+//   (gestor, técnico, moderador, admin).
+const localFixo = (u) => (isClient(u) && !isManager(u) && !isMaster(u) ? (Number(u.location_id) || 0) : null);
+
 module.exports = {
   USER_SELECT,
+  localFixo,
   isMaster,
   isLocalAdmin,
   isModerator,

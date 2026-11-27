@@ -1,6 +1,6 @@
 const express = require('express');
 const { query, withTransaction } = require('../db');
-const { requireAuth, canAccessEntity, entityIdsOf, has } = require('../middleware/auth');
+const { requireAuth, canAccessEntity, entityIdsOf, has, localFixo } = require('../middleware/auth');
 const notify = require('../services/notify');
 const { perfilDaEmpresa, doPerfil } = require('./optionProfiles');
 
@@ -21,10 +21,7 @@ const PODE_PEGAR = ['STOCK', 'READY'];
 const veSegredos = (u) => has(u, 'inventory.secrets');
 const podeVer = (u) => has(u, 'stock.withdraw') || has(u, 'inventory.view');
 
-// Quem só dá baixa (sem "Ver o inventário", ex.: perfil Usuário) fica preso ao local do seu cadastro:
-//   vê e pega itens só do Estoque de T.I. desse local. Devolve o id do local, 0 se o usuário não tem local,
-//   ou null quando a pessoa vê todos os postos (gestor, técnico, admin).
-const localFixo = (u) => (has(u, 'inventory.view') ? null : Number(u.location_id) || 0);
+// localFixo (middleware/auth.js): o perfil Usuário vê e pega itens só do Estoque de T.I. do seu local
 
 function filtroEmpresas(user, params, alias = 'a') {
   const ents = entityIdsOf(user);
@@ -80,8 +77,10 @@ router.get('/', async (req, res) => {
     `SELECT a.id, a.name, a.asset_tag, a.type, a.status, a.price, a.manufacturer, a.model, a.notes, a.updated_at, a.controle, a.quantity,
             a.entity_id, e.name AS entity_name, a.location_id, l.name AS location_name,
             (SELECT max(m.created_at) FROM stock_movements m WHERE m.asset_id = a.id AND m.kind IN ('entry','return','transfer')) AS desde,
-            pd.pedido_status, pd.pedido_ticket_id
+            pd.pedido_status, pd.pedido_ticket_id, mt.manut_id, mt.manut_status
      FROM assets a JOIN entities e ON e.id = a.entity_id LEFT JOIN locations l ON l.id = a.location_id
+     LEFT JOIN LATERAL (SELECT mt.id AS manut_id, mt.status AS manut_status FROM manutencoes mt
+       WHERE mt.asset_id = a.id AND mt.status NOT IN ('devolvida','sem_conserto','cancelada') ORDER BY mt.id DESC LIMIT 1) mt ON TRUE
      LEFT JOIN LATERAL (SELECT tm.status AS pedido_status, tm.ticket_id AS pedido_ticket_id FROM ticket_materials tm
        WHERE (tm.asset_id = a.id OR tm.asset_ids @> ARRAY[a.id]) AND tm.status <> 'cancelado' ORDER BY tm.id DESC LIMIT 1) pd ON TRUE
      WHERE ${where}
@@ -131,6 +130,8 @@ router.post('/:id/withdraw', async (req, res) => {
   if (!PODE_PEGAR.includes(item.status)) return res.status(422).json({ error: 'Esse item não está disponível no estoque.' });
   const reservado = await pedidoReservado(item.id);
   if (reservado) return res.status(422).json({ error: `Esse item está reservado para o pedido do chamado #${reservado}. Ele fica livre depois de entregue.` });
+  const emManut = (await query(`SELECT 1 FROM manutencoes WHERE asset_id = $1 AND status NOT IN ('devolvida','sem_conserto','cancelada')`, [item.id])).rows.length;
+  if (emManut) return res.status(422).json({ error: 'Esse item está em manutenção. Ele fica livre quando a TI devolver.' });
   const porQuantidade = item.controle === 'quantidade';
   const qtd = porQuantidade ? parseInt(req.body?.quantidade, 10) || 1 : 1;
   if (porQuantidade && (qtd < 1 || qtd > item.quantity)) {
